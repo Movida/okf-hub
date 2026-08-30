@@ -59,6 +59,12 @@ Tu obtiens le `GOVERNANCE.md` (le périmètre et les golden rules), le `schema.y
 s'il existe, et la structure du corpus. **Lis les golden rules avant de juger quoi
 que ce soit** : ce sont elles qui décident, pas ton avis général sur la question.
 
+Si la sortie s'ouvre sur **⚠ GOUVERNANCE EN BROUILLON** (le `GOVERNANCE.md` porte
+`status: draft`), dis-le à l'humain dès l'ouverture de la session, en une phrase :
+*« les règles appliquées ne sont pas validées »*. Tu instruis quand même, avec ces
+règles ; mais l'humain doit savoir sur quoi il arbitre. C'est une convention
+documentée, pas un blocage : rien ne change au déroulé.
+
 ### 2. Inventorier
 
 ```

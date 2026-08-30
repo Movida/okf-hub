@@ -107,7 +107,8 @@ def test_cycle_mcp_complet(hub_avec_base):
         outils = await session.list_tools()
         noms = {t.name for t in outils.tools}
         assert noms == {
-            "kb_list", "kb_search", "kb_read", "kb_governance", "kb_propose", "kb_hub_rescan"
+            "kb_list", "kb_search", "kb_read", "kb_governance", "kb_propose",
+            "kb_proposal_status", "kb_hub_rescan",
         }
         # La description énumère les bases connues : c'est ce qui permet le
         # routage sans appel préalable (§ 5.1).

@@ -9,12 +9,20 @@
 > **Cette spécification fait autorité sur l'implémentation.** Les écarts assumés
 > sont recensés dans [`ARCHITECTURE.md`](ARCHITECTURE.md), section « Écarts
 > assumés » — nulle part ailleurs.
+>
+> **Révision courante : 4.1.** L'amendement rév. 4.1 (premier retour d'usage
+> réel d'une session consommatrice, post-J5) a été intégré dans le corps du
+> texte, section par section, plutôt qu'annexé : les renvois « § x.y » du code
+> restent ainsi la seule adresse d'une exigence. Les passages issus de
+> l'amendement portent la mention **(rév. 4.1)**. La rév. 4 reste le document de
+> référence : en cas de conflit non identifié entre les deux textes, elle
+> prévaut et le conflit est remonté au propriétaire.
 
-Document d'implémentation, révision 4 — version finale pour implémentation
-(intègre les retours des trois relectures croisées). Public : session Claude
-chargée de la réalisation. Les sections marquées **[v1+]** sont hors périmètre
-de la première implémentation mais documentées pour ne pas être contredites par
-les choix v0.
+Document d'implémentation, révision 4.1 — révision 4 (version finale pour
+implémentation, intégrant les retours des trois relectures croisées), amendée
+par le premier retour d'usage réel. Public : session Claude chargée de la
+réalisation. Les sections marquées **[v1+]** sont hors périmètre de la première
+implémentation mais documentées pour ne pas être contredites par les choix v0.
 
 **Convention de nommage :** « v0 » dans le texte désigne la présente
 spécification, dont l'identifiant de version dans les manifestes est
@@ -225,6 +233,27 @@ Comment les documents sont structurés, nommés, rangés.
 Ton, format, langue, granularité des documents.
 ```
 
+**Statut de maturité — frontmatter optionnel (rév. 4.1).** `GOVERNANCE.md` peut
+porter un frontmatter YAML :
+
+```yaml
+---
+status: draft        # draft | stable — défaut si absent : stable
+---
+```
+
+Effets, et rien d'autre :
+
+- `kb_governance` préfixe sa sortie de `[GOUVERNANCE EN BROUILLON — les règles
+  peuvent évoluer, les propositions restent acceptées]` ;
+- la skill `kb-review` (§ 7.1) le signale à l'humain en début de session de
+  revue : « les règles appliquées ne sont pas validées ».
+
+C'est une **convention documentée, pas une machine à états** : rien n'est
+interdit en `draft`, les propositions restent acceptées et la revue reste
+possible. Une valeur inconnue vaut `stable` et est journalisée. Une base
+antérieure à cette convention ne devient pas un brouillon.
+
 ### 3.5 schema.yaml (optionnel)
 
 Déclare les champs frontmatter du corpus. Format minimal v0 :
@@ -376,6 +405,19 @@ rendre l'erreur, avec **cooldown de 5 s par instance**. Le re-scan silencieux
 émet aussi `tools/list_changed` si la liste a changé (sans garantie que le client
 l'honore, § 4.2).
 
+**Re-scan implicite de `kb_list` (rév. 4.1).** Tout appel de `kb_list` déclenche
+d'abord la découverte (§ 4.2), **sous le même cooldown de 5 s et le même
+compteur** que le re-scan sur `UNKNOWN_BASE` — ce n'est pas un second mécanisme,
+et deux `kb_list` en moins de cinq secondes ne provoquent qu'un seul parcours de
+`bases-dir`. Si la liste a changé : `tools/list_changed` est émise et la
+description de `kb_list` régénérée. Toute session qui liste voit donc l'état réel
+du disque.
+
+Un rescan **partagé au niveau du hub** est explicitement **rejeté** : il
+supposerait un état partagé entre instances ou un démon, contraires au présent
+§ 4.4. La limitation résiduelle — description d'outil périmée chez un client qui
+ignore la notification — devient cosmétique, et reste documentée au README.
+
 #### d) Lectures
 
 **Aucun verrou en lecture** (`kb_search`, `kb_read`). Une lecture pendant une
@@ -418,9 +460,9 @@ standard gérées par le SDK.
 
 **Convention transverse — chemins :** relatifs à `corpus-dir`, séparateur `/`.
 
-**Convention transverse — plafond de sortie** (principe § 1.5) : `kb_search` et
-`kb_list` plafonnent leur sortie à ~4 000 tokens (caractères/4), avec troncature
-signalée (`[résultats tronqués, ...]`).
+**Convention transverse — plafond de sortie** (principe § 1.5) : `kb_search`,
+`kb_list` et `kb_proposal_status` (§ 5.7) plafonnent leur sortie à ~4 000 tokens
+(caractères/4), avec troncature signalée (`[résultats tronqués, ...]`).
 
 ### 5.1 kb_list
 
@@ -469,12 +511,27 @@ préalable.
 extraits (ligne touchée ± 2 lignes, **max 3 par document**), frontmatter limité à
 `title`, dates, `tags`. Plafond transverse applicable.
 
+**Heading de section par extrait (rév. 4.1).** Chaque extrait est accompagné du
+**texte normalisé** du heading (même normalisation que § 5.3 / § 11.4) de la
+section contenant **la ligne touchée** — et non celle du début de la fenêtre de
+contexte, qui peut déborder sur la section précédente. Une ligne précédant tout
+heading porte `(préambule)`.
+
+Effet recherché : le chaînage direct `kb_search` → `kb_read(path, section)` sans
+passage par la table des headings, ce qui supprime un aller-retour sur les
+documents dépassant `read-toc-threshold`. Coût : quelques dizaines de caractères
+par extrait, dans le plafond existant.
+
 **Liste d'exclusions transverse** (applicable à `kb_search`, `kb_read` et au
 comptage de documents de `kb_list`) : `proposals/`, `okf-bundle.yaml`,
 `GOVERNANCE.md`, `schema.yaml`, `CLAUDE.md`, `.okf-hub.lock`, `.git/`. Comme
 `corpus-dir` ne peut être ni la racine du bundle ni contenir `proposals/`
 (§ 3.3), ces fichiers sont hors corpus par construction ; la liste sert de
 **défense en profondeur**.
+
+**Unique exception à cette liste (rév. 4.1) :** `kb_proposal_status` (§ 5.7) lit
+`proposals/`. Exception limitée à cet outil et **en lecture seule**, avec la même
+mécanique de confinement que le § 5.3.
 
 ### 5.3 kb_read
 
@@ -511,6 +568,10 @@ headings (avec tailles approximatives) au lieu du contenu, et l'indiquer.
 **Entrée :** `{ "base": "string" }`
 
 **Sortie :** contenu de `GOVERNANCE.md` + `schema.yaml` s'il existe.
+
+**(rév. 4.1)** Si `GOVERNANCE.md` porte `status: draft` (§ 3.4), la sortie est
+préfixée de `[GOUVERNANCE EN BROUILLON — les règles peuvent évoluer, les
+propositions restent acceptées]`, avant toute autre ligne.
 
 ### 5.5 kb_propose
 
@@ -571,6 +632,23 @@ outil** : les doublons sont traités par le gestionnaire à la revue (§ 7.1).
 `kb_list` avec `include_pending_concerns` permet au contributeur diligent de
 vérifier avant, sans obligation.
 
+**Clarification normative sur `schema.yaml` (rév. 4.1).** À ajouter à la
+description MCP de l'outil et au README :
+
+> Le `schema.yaml` d'une base décrit le frontmatter de son **corpus**, pas celui
+> des propositions. Une proposition n'a pas à s'y conformer : soumettez
+> l'information, sa mise en forme conforme au schéma relève du gestionnaire à
+> l'intégration. Les champs de cet outil sont le seul format requis.
+
+Motif : le retour d'usage a montré qu'un agent consommateur croit devoir valider
+son frontmatter contre le schéma du corpus — contresens du modèle « affirmation
+sémantique » (§ 6.1). Toute demande de **validation automatique contre
+`schema.yaml` avant dépôt** est **refusée** à ce titre.
+
+**(rév. 4.1)** La description de l'outil renvoie à `kb_proposal_status` (§ 5.7)
+pour la consultation du verdict ; la mention d'une limitation v0 sur ce point est
+supprimée.
+
 ### 5.6 kb_hub_rescan
 
 **Entrée :** aucune. Relance la découverte (§ 4.2).
@@ -579,7 +657,60 @@ vérifier avant, sans obligation.
 collisions de `name`, avertissements de compatibilité `bundle-spec`.
 
 **Description de l'outil :** mentionne explicitement la **portée mono-instance**
-(§ 4.4.c).
+(§ 4.4.c). **(rév. 4.1)** Le re-scan implicite de `kb_list` ne rend pas cet outil
+inutile : il reste le moyen d'obtenir le **rapport** de découverte (bundles
+invalides, collisions de `name`, avertissements de compatibilité).
+
+### 5.7 kb_proposal_status (rév. 4.1)
+
+Lève la limitation v0 du § 6.2 : la résolution d'une proposition devient
+consultable via MCP. **Lecture pure** — aucun verrou, aucun état nouveau, git
+reste canonique.
+
+**Entrée :**
+
+```json
+{
+  "base": "string (requis)",
+  "id": "string (optionnel) — id exact d'une proposition",
+  "submitted_by": "string (optionnel) — filtre par contributeur déclaré",
+  "status": "pending | accepted | rejected (optionnel) — filtre",
+  "limit": "int (défaut: 20, max: 50) — propositions les plus récentes d'abord"
+}
+```
+
+**Contrainte :** au moins un de `id` ou `submitted_by` est requis, sinon
+`INVALID_INPUT` — sans quoi l'appel par défaut déverserait `proposals/` en
+entier. `status` et `limit` ne font que raffiner.
+
+**Comportement :** parcours des trois répertoires
+`proposals/pending|accepted|rejected/` ; parsing du frontmatter de chaque fichier
+correspondant aux filtres ; tri par `submitted-at` **décroissant**.
+
+**Sortie, par proposition :** `id`, `status`, `type`, `concerns`, `submitted-at`,
+`submitted-by`, et si résolue : `resolved-at`, `resolution`, puis
+`rejection-reason` ou `integrated-into`.
+
+Le `status` est **déduit de l'emplacement, qui fait foi** (§ 6.2) ; le champ
+`status` du frontmatter n'est qu'affiché. En cas de divergence, signaler
+`[incohérence status/emplacement]` **sans échouer**.
+
+Le **corps** de la proposition n'est pas retourné : économie de tokens, l'`id` et
+`integrated-into` suffisent pour aller lire le corpus via `kb_read`.
+
+**Plafond :** convention transverse (~4 000 tokens), troncature signalée.
+
+**Cas limites :** `id` introuvable dans les trois répertoires → `NOT_FOUND` ; un
+`submitted_by` sans proposition n'est pas une erreur mais un résultat vide.
+Fichier au frontmatter illisible → ignoré du résultat, avec mention
+`[N fichiers illisibles ignorés]` et journalisation.
+
+**Sécurité :** lecture confinée à `proposals/` (mécanique de confinement du
+§ 5.3). C'est la seule exception à la liste d'exclusions transverse du § 5.2.
+
+**Description de l'outil :** mentionne que `submitted_by` étant déclaratif
+(§ 8), le filtre retrouve les propositions **déclarées** sous ce nom, sans
+garantie d'identité.
 
 ---
 
@@ -651,12 +782,11 @@ reposent sur la validation anti-injection (§ 5.5) et sont restaurés par la
 réconciliation (§ 7.1, étape 0) dans le cas de la fenêtre de crash du § 5.5 (le
 commit de récupération tient alors lieu de commit de soumission).
 
-**Consultation par le contributeur — limitation v0 assumée :** un contributeur
-MCP-only peut voir le pendant (`kb_list` + `include_pending_concerns`) mais **ne
-peut pas lire le motif de rejet ni la résolution** de ses propositions
-(`accepted/` et `rejected/` ne sont lisibles que via un accès git direct). À
-documenter dans le README et dans la description de `kb_propose`.
-**[v1+]** : outil `kb_proposal_status`.
+**Consultation par le contributeur (rév. 4.1) :** la limitation v0 sur ce point
+est **levée**. `kb_proposal_status` (§ 5.7) rend l'état et la résolution — motif
+de rejet ou `integrated-into` — lisibles via MCP, sans accès git. Le **corps**
+d'une proposition résolue reste, lui, hors MCP : il se relit par accès git direct
+dans `proposals/accepted|rejected/`.
 
 ---
 
@@ -683,7 +813,10 @@ qui échoue silencieusement.
    frontmatter. Pour chaque fichier malformé : le signaler à l'humain **sans le
    committer**. Cette étape rattrape la fenêtre de crash du § 5.5.
 1. **Charger le contexte :** `GOVERNANCE.md`, `schema.yaml` si présent, structure
-   du corpus (arborescence + titres).
+   du corpus (arborescence + titres). **(rév. 4.1)** Si `GOVERNANCE.md` porte
+   `status: draft` (§ 3.4), le signaler à l'humain en début de session : « les
+   règles appliquées ne sont pas validées ». La revue se déroule normalement — ce
+   n'est pas un blocage.
 2. **Inventorier** `proposals/pending/`, trier par date, **regrouper par sujet**
    (propositions au `concerns` proche : doublons, contradictions, compléments).
 3. Pour chaque proposition ou groupe :
@@ -742,7 +875,9 @@ dans ce cadre ; ce qui n'y résiste pas est marqué.
 structure § 3.1 avec :
 
 - `okf-bundle.yaml` pré-rempli, placeholders commentés ;
-- `GOVERNANCE.md` avec les sections § 3.4 et exemples de golden rules ;
+- `GOVERNANCE.md` avec les sections § 3.4 et exemples de golden rules, **livré
+  avec `status: draft` (rév. 4.1)** : les règles d'un template sont des exemples
+  que personne n'a validés pour la base qu'on instancie ;
 - `CLAUDE.md` expliquant : les exigences documentaires du hub (§ 3.2), le résumé
   opérationnel OKF si la tâche J0 a abouti (sinon lien + mention
   « déclaratif »), la structure du bundle, la règle « ne jamais modifier le
@@ -751,9 +886,55 @@ structure § 3.1 avec :
   `.git/info/exclude` du § 4.4.b.1, volontairement) ;
 - un document d'exemple dans `knowledge/` ;
 - `INSTANTIATE.md` : checklist d'instanciation (renommer, remplir le manifeste,
-  écrire les golden rules, cloner dans `bases/`, rescan), rédigée pour être
+  écrire les golden rules, **valider la gouvernance et passer `status` à
+  `stable`** (rév. 4.1), cloner dans `bases/`, rescan), rédigée pour être
   **exécutable par une session Claude interrogeant l'humain** — c'est le
   « questionnaire d'instanciation ».
+
+**Bases par défaut (rév. 4.1).** Le hub livre deux instanciations standard du
+template, qui documentent le hub plutôt qu'un domaine métier. Ce sont des bundles
+**ordinaires** : aucun traitement de faveur dans le code, elles s'alimentent et se
+révisent par le circuit commun. Le serveur les annonce dans son champ
+`instructions` — le seul texte qu'une session reçoit sans dépenser d'appel — et
+uniquement si elles sont réellement déployées.
+
+Leur **source** est versionnée dans `bundles/`, à la racine du hub ; le serveur
+installe au démarrage celles qui manquent dans `bases-dir`. `bases-dir` reste
+ignoré par git (§ 4.2) : une base déployée doit être **son propre dépôt git**,
+faute de quoi le `git -C <racine du bundle>` du § 4.4.b.2 remonte au dépôt
+englobant et `kb_propose` commite sur la branche du hub. Le déploiement ne crée
+que ce qui manque, se réexécute sans effet, et publie par un `rename()` atomique
+depuis un répertoire temporaire caché — plusieurs instances peuvent démarrer
+simultanément sur une installation neuve (§ 4.4).
+
+`okf-hub-guide` répond à une lacune structurelle : une session consommatrice ne
+voit ni le `README.md` du hub, ni sa documentation d'API, ni son `CLAUDE.md`. Elle
+porte les **séquences d'appels**, la **stratégie** de recherche et de lecture, les
+**rôles** et la frontière de confiance à l'écriture, ce qu'est une **proposition
+recevable**, et le **cycle de vie d'une base** — créer, déployer, alimenter,
+réviser, retirer — en indiquant à chaque étape le rôle qui l'exécute et le moyen
+employé.
+
+Elle exclut par golden rule **tout schéma d'outil** : noms de paramètres, types,
+bornes, format des sorties. La source de vérité en est la description de chaque
+outil, dérivée du code. Une copie dans un corpus serait la seule qu'aucun test ne
+garde — et une base se met à jour par le circuit de propositions, quand une
+référence d'API doit bouger en verrou avec le code. Ce que le corpus décrit, ce
+sont des **procédures et des mécanismes**, qui changent lentement.
+
+Cette exclusion est vérifiée mécaniquement, pas seulement par relecture : la suite
+de tests du hub échoue si un corpus meta cite un outil inexistant, attribue à un
+outil un paramètre absent de son schéma, ou introduit un tableau de référence.
+
+`okf-hub-feedback` est dédiée aux retours sur **l'outillage du hub lui-même** (les outils `kb_*`, la skill `kb-review`, les scripts `bin/`) — jamais
+au contenu métier des autres bases. Ses golden rules exigent qu'un retour cite
+l'outil concerné et décrive le comportement observé ; son `GOVERNANCE.md` est en
+`status: stable` d'emblée, ses règles ayant été arbitrées à la création. Corpus
+initial : la roadmap des évolutions (décidées, reportées, refusées, avec motif)
+et les limitations documentées. Les retours d'usage arrivent désormais par le
+circuit standard — `kb_propose`, revue par `kb-review`, verdict par
+`kb_proposal_status` — au lieu d'un canal manuel : le hub devient son propre
+premier cas d'usage. **Aucun code** : ce sont des instanciations du template.
 
 ---
 
@@ -829,11 +1010,26 @@ bundle ne demande rien d'autre qu'un clone + rescan.
 ### 10.3 Hors périmètre v0 (rappel consolidé)
 
 Extensions `tools`/`skills` ; `review: agent|auto` ; validation automatique de
-schéma ; `kb_proposal_status` ; authentification des contributeurs ; politique
-d'incrément de version ; index de recherche dérivé (n'ajouter que si ripgrep
-devient mesurablement insuffisant) ; revue d'import de bundles tiers ;
-synchronisation remote (push/pull) : manuelle et hors garanties (§ 4.5) ;
-multi-hub.
+schéma ; authentification des contributeurs ; politique d'incrément de version ;
+index de recherche dérivé (n'ajouter que si ripgrep devient mesurablement
+insuffisant) ; revue d'import de bundles tiers ; synchronisation remote
+(push/pull) : manuelle et hors garanties (§ 4.5) ; multi-hub.
+
+`kb_proposal_status` a quitté cette liste : livré en rév. 4.1 (§ 5.7).
+
+**Reporté — `kb_search` multi-bases (rév. 4.1).** Demande d'un `base: [...]` ou
+`base: "*"`. Reportée en **v1 optionnelle** : un seul retour, on attend la
+récurrence avant d'élargir la surface d'outils. Spec pré-cadrée pour que la
+reprise soit mécanique : **plafond de sortie global unique réparti** entre les
+bases interrogées (et non un plafond par base), **résultats groupés par base**.
+
+**Refusé (rév. 4.1).** Deux demandes issues du même retour d'usage sont refusées,
+pas reportées :
+
+| Demande | Motif |
+|---|---|
+| Validation du frontmatter d'une proposition contre `schema.yaml` avant dépôt | Contresens du modèle d'affirmation sémantique (§ 5.5, § 6.1). |
+| Re-scan « partagé au niveau du hub » | Supposerait un état partagé ou un démon, contraire au § 4.4. Le besoin est couvert par le re-scan implicite de `kb_list` (§ 4.4.c). |
 
 ---
 
@@ -855,6 +1051,36 @@ multi-hub.
 
 ---
 
-*Fin de spécification (rév. 4 — finale).* **Toute déviation par rapport aux
-principes du § 1 ou aux mécanismes du § 4.4.b doit être remontée au propriétaire
-du projet avant implémentation.**
+## 12. Journal des révisions
+
+### rév. 4.1 — amendement du premier retour d'usage (post-J5)
+
+Origine : premier retour d'usage réel d'une session consommatrice. Un **audit de
+conformité préalable et bloquant** de l'implémentation vis-à-vis de la rév. 4 a
+précédé toute modification — dix points portant sur le commit par
+`GIT_INDEX_FILE`, le verrou `flock()`, l'interopérabilité `okf-lock`, la
+validation anti-injection, l'étape 0 de la skill, les trailers d'audit, le
+frontmatter des propositions résolues, les plafonds de sortie, le cooldown de
+re-scan et le format du journal. **Aucun écart constaté.**
+
+| § amendé | Objet |
+|---|---|
+| § 5.7 (nouveau) | `kb_proposal_status` — la résolution devient consultable en MCP |
+| § 6.2 | Limitation v0 sur la consultation du verdict : levée |
+| § 4.4.c | Re-scan implicite de `kb_list`, sous le cooldown existant |
+| § 5.2 | Heading de section par extrait de `kb_search` ; exception d'exclusion pour § 5.7 |
+| § 5.5 | Clarification `schema.yaml` ≠ frontmatter de proposition ; validation avant dépôt refusée |
+| § 3.4, § 5.4, § 7.1 | Convention `status: draft \| stable` sur `GOVERNANCE.md` |
+| § 9 | Template livré en `draft` ; bundle de dogfooding `okf-hub-feedback` |
+| § 10.3 | Consolidation du reporté (`kb_search` multi-bases) et du refusé |
+
+Non retenu : `kb_search` multi-bases (reporté v1, spec pré-cadrée au § 10.3),
+validation de frontmatter avant dépôt (refusée), rescan partagé au niveau du hub
+(refusé, besoin couvert), authentification de `submitted_by` ([v1+] inchangé).
+
+---
+
+*Fin de spécification (rév. 4.1).* **Toute déviation par rapport aux principes du
+§ 1 ou aux mécanismes du § 4.4.b doit être remontée au propriétaire du projet
+avant implémentation.** En cas de conflit non identifié entre la rév. 4 et le
+présent amendement, **la rév. 4 prévaut** et le conflit est remonté.
