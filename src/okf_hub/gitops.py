@@ -97,6 +97,11 @@ def _run_with_lock_retry(
             delay = min(delay * 2, _RETRY_MAX_S)
 
 
+def git_output(repo: Path, args: list[str]) -> str:
+    """Exécute une commande git de lecture et retourne sa sortie standard."""
+    return _run(repo, args)
+
+
 def has_head(repo: Path) -> bool:
     """True si HEAD référence un commit (§ 4.4.b.2, cas du dépôt vierge)."""
     proc = subprocess.run(
@@ -138,10 +143,15 @@ def commit_paths(
     if not paths:
         raise GitError("aucun chemin à commiter")
 
+    repo_resolved = repo.resolve()
     rel_paths: list[str] = []
     for path in paths:
+        # `resolve()` échouerait à cadrer un chemin supprimé : on résout le
+        # parent, qui existe toujours, puis on recolle le nom.
+        absolute = path if path.is_absolute() else (repo_resolved / path)
+        cadre = absolute.parent.resolve() / absolute.name
         try:
-            rel_paths.append(path.resolve().relative_to(repo.resolve()).as_posix())
+            rel_paths.append(cadre.relative_to(repo_resolved).as_posix())
         except ValueError as exc:
             raise GitError(f"chemin hors du dépôt : {path}") from exc
 
@@ -163,7 +173,10 @@ def commit_paths(
         # Dépôt sans HEAD : l'index vide est le comportement correct pour ce
         # tout premier commit (§ 4.4.b.2, cas limite).
 
-        _run_with_lock_retry(repo, ["add", "--"] + rel_paths, env, deadline)
+        # `--all` sur des pathspecs explicites : enregistre aussi bien les
+        # ajouts que les suppressions, ce dont a besoin une résolution qui
+        # déplace une proposition de pending/ vers accepted/.
+        _run_with_lock_retry(repo, ["add", "--all", "--"] + rel_paths, env, deadline)
         _run_with_lock_retry(
             repo, ["commit", "--no-verify", "-m", message], env, deadline
         )
@@ -203,7 +216,9 @@ def _sync_shared_index(repo: Path, rel_paths: list[str], deadline: float) -> Non
     échec n'invalide pas la proposition — le commit, lui, est déjà acquis.
     """
     try:
-        _run_with_lock_retry(repo, ["update-index", "--add", "--"] + rel_paths, None, deadline)
+        _run_with_lock_retry(
+            repo, ["update-index", "--add", "--remove", "--"] + rel_paths, None, deadline
+        )
     except GitError as exc:
         hublog.warning(
             f"index partagé non synchronisé dans {repo.name} ({exc.message}) — "

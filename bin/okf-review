@@ -1,0 +1,28 @@
+#!/bin/sh
+# okf-review — moteur de revue du rôle gestionnaire (§ 7).
+#
+#   okf-review context   <base>
+#   okf-review inventory <base> [--full]
+#   okf-review reconcile <base> [--apply]
+#   okf-review resolve   <base> --plan <plan.json> [--dry-run]
+#
+# Le verrouillage est intégré : `resolve` et `reconcile --apply` acquièrent
+# eux-mêmes le verrou de la base à la granularité imposée (§ 4.4.b.3), une
+# résolution complète = une acquisition. Ne les enveloppez PAS dans okf-lock,
+# et ne reproduisez jamais le protocole de verrouillage à la main.
+
+set -eu
+
+script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)
+HUB_ROOT=${OKF_HUB_ROOT:-$(dirname -- "$script_dir")}
+
+if [ -n "${OKF_HUB_PYTHON:-}" ]; then
+    PY=$OKF_HUB_PYTHON
+elif [ -x "$HUB_ROOT/.venv/bin/python" ]; then
+    PY="$HUB_ROOT/.venv/bin/python"
+else
+    PY=python3
+fi
+
+OKF_HUB_ROOT="$HUB_ROOT" PYTHONPATH="$HUB_ROOT/src${PYTHONPATH:+:$PYTHONPATH}" \
+    exec "$PY" -m okf_hub.review --hub-root "$HUB_ROOT" "$@"
