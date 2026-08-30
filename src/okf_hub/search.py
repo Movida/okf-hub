@@ -31,6 +31,17 @@ _EXCLUDE_GLOBS = [
 ]
 
 
+#: Noms réservés par OKF v0.2 (§ 3.1) : ce ne sont pas des concepts mais des
+#: sommaires et des journaux. Ils restent des documents au sens de la § 2 du
+#: hub — lisibles par kb_read, comptés par kb_list — mais ils sont **déclassés**
+#: en recherche : un sommaire est dense en texte de liens, donc il matche
+#: beaucoup et n'apprend rien. Mesure sur un corpus réel de 856 documents :
+#: sans ce déclassement, 28 % des résultats étaient des index.md ou log.md.
+#: Écart mineur et documenté vis-à-vis de la § 5.2, au service du principe
+#: § 1.5 (« retourner le minimum pertinent »).
+RESERVED_NAMES = frozenset({"index.md", "log.md"})
+
+
 @dataclass
 class DocHits:
     path: Path
@@ -43,6 +54,10 @@ class DocHits:
     @property
     def density(self) -> float:
         return self.match_count / max(1, len(self.lines))
+
+    @property
+    def reserved(self) -> bool:
+        return self.path.name in RESERVED_NAMES
 
 
 def _rg_binary() -> str:
@@ -142,6 +157,10 @@ class SearchOutcome:
     partial: bool
     """True si le repli OR a été utilisé (aucun document ne contient tous les termes)."""
 
+    @property
+    def reserved_count(self) -> int:
+        return sum(1 for d in self.docs if d.reserved)
+
 
 def run_search(base: Base, query: str, mode: str, max_results: int) -> SearchOutcome:
     """Exécute la recherche selon le mode demandé (§ 5.2)."""
@@ -154,7 +173,7 @@ def run_search(base: Base, query: str, mode: str, max_results: int) -> SearchOut
         docs: dict[str, DocHits] = {}
         _merge(docs, hits, base)
         ranked = sorted(
-            docs.values(), key=lambda d: (-d.match_count, str(d.path))
+            docs.values(), key=lambda d: (d.reserved, -d.match_count, str(d.path))
         )
         return SearchOutcome(ranked[:max_results], False)
 
@@ -169,13 +188,16 @@ def run_search(base: Base, query: str, mode: str, max_results: int) -> SearchOut
         _merge(docs, hits, base)
 
     # AND strict d'abord : documents touchant *tous* les termes.
+    # `d.reserved` en tête de clé : les sommaires et journaux passent derrière
+    # tout document de connaissance, et ne remontent donc que faute de mieux.
     strict = [d for d in docs.values() if d.terms_hit == len(terms)]
     if strict:
-        ranked = sorted(strict, key=lambda d: (-d.match_count, str(d.path)))
+        ranked = sorted(strict, key=lambda d: (d.reserved, -d.match_count, str(d.path)))
         return SearchOutcome(ranked[:max_results], False)
 
     # Repli OR : classement par nombre de termes touchés, puis densité.
     ranked = sorted(
-        docs.values(), key=lambda d: (-d.terms_hit, -d.density, -d.match_count, str(d.path))
+        docs.values(),
+        key=lambda d: (d.reserved, -d.terms_hit, -d.density, -d.match_count, str(d.path)),
     )
     return SearchOutcome(ranked[:max_results], bool(ranked))

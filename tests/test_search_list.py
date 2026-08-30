@@ -6,7 +6,7 @@ import pytest
 
 from okf_hub.errors import INVALID_INPUT, ToolError
 from okf_hub.textutil import CHAR_CAP, BudgetedWriter
-from okf_hub.tools import governance_tool, list_tool, search_tool
+from okf_hub.tools import governance_tool, list_tool, read_tool, search_tool
 
 
 def build(make_bundle, registry, docs: dict[str, str], **manifest):
@@ -235,3 +235,39 @@ def test_kb_governance_sans_schema(hub, make_bundle, registry):
     build(make_bundle, registry, {"a.md": "# A\n"})
     out = governance_tool.run(registry, {"base": "ma-base"})
     assert "aucun schema.yaml" in out
+
+
+# --- déclassement des noms réservés OKF (§ 3.1 OKF, écart documenté § 5.2) ---
+
+
+def test_index_et_log_declasses_en_recherche(hub, make_bundle, registry):
+    build(
+        make_bundle, registry,
+        {
+            "index.md": "# Sommaire\n\n* [Connexion SSO](sso.md) - la procédure de connexion SSO\n",
+            "log.md": "# Journal\n\n## 2026-01-01\n* Ajout de la connexion SSO\n",
+            "sso.md": "# SSO\n\nProcédure de connexion.\n",
+        },
+    )
+    out = search_tool.run(registry, {"base": "ma-base", "query": "connexion"})
+    # Un sommaire dense en texte de liens ne doit pas passer devant le document.
+    # On compare les en-têtes de résultat, pas le texte brut : la note de
+    # déclassement mentionne elle-même « index.md ».
+    ordre = [l.split("### ")[1].split(" —")[0] for l in out.splitlines() if l.startswith("### ")]
+    assert ordre[0] == "sso.md", ordre
+    assert set(ordre[1:]) == {"index.md", "log.md"}, ordre
+    assert "déclassés" in out
+
+
+def test_sommaire_reste_trouvable_faute_de_mieux(hub, make_bundle, registry):
+    build(make_bundle, registry, {"index.md": "# Sommaire\n\nrubrique-unique\n"})
+    out = search_tool.run(registry, {"base": "ma-base", "query": "rubrique-unique"})
+    assert "index.md" in out
+
+
+def test_sommaire_reste_lisible_et_compte(hub, make_bundle, registry):
+    build(make_bundle, registry, {"index.md": "# Sommaire\n\nrubrique\n"})
+    # Le déclassement ne concerne que le classement de kb_search : un sommaire
+    # reste un document au sens de la § 2.
+    assert "rubrique" in read_tool.run(registry, {"base": "ma-base", "path": "index.md"})
+    assert "documents : 2" in list_tool.run(registry, {})
