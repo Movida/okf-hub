@@ -8,7 +8,7 @@ le ferait Claude Desktop ou Claude Code, et déroule le cycle complet du § 10.2
 from __future__ import annotations
 
 import json
-import shutil
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -23,10 +23,33 @@ from okf_hub.registry import Registry
 
 from conftest import HUB_ROOT, git
 
-TEMPLATE = Path("/home/morva/okf-bundle-template")
+def _find_template() -> Path | None:
+    """Localise le dépôt template, livrable distinct du hub.
+
+    Ordre : variable d'environnement, puis répertoire voisin du hub (disposition
+    de développement), puis le home de l'exécutant (disposition de la CI).
+    """
+    candidats = []
+    if env := os.environ.get("OKF_BUNDLE_TEMPLATE"):
+        candidats.append(Path(env))
+    candidats += [
+        HUB_ROOT.parent / "okf-bundle-template",
+        Path.home() / "okf-bundle-template",
+    ]
+    for c in candidats:
+        if (c / "okf-bundle.yaml").is_file():
+            return c
+    return None
+
+
+TEMPLATE = _find_template()
 
 pytestmark = pytest.mark.skipif(
-    not TEMPLATE.is_dir(), reason="template okf-bundle-template absent"
+    TEMPLATE is None,
+    reason=(
+        "dépôt okf-bundle-template introuvable — le cloner à côté du hub, "
+        "ou pointer OKF_BUNDLE_TEMPLATE dessus"
+    ),
 )
 
 
@@ -60,7 +83,6 @@ async def _dialogue(hub_root: Path, scenario):
     """Lance le serveur exactement comme le ferait un client Claude, en stdio."""
     from mcp import ClientSession, StdioServerParameters
     from mcp.client.stdio import stdio_client
-    import os
 
     params = StdioServerParameters(
         command=sys.executable,
@@ -301,7 +323,7 @@ def test_okf_review_en_ligne_de_commande(hub_avec_base, tmp_path):
     """Le moteur de revue est utilisable tel que la skill l'appelle."""
     hub_root, bundle = hub_avec_base
     env = {
-        **__import__("os").environ,
+        **os.environ,
         "OKF_HUB_ROOT": str(hub_root),
         "OKF_HUB_PYTHON": sys.executable,
         "PYTHONPATH": str(HUB_ROOT / "src"),
