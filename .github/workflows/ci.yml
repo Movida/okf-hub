@@ -1,0 +1,74 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.11", "3.12"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # ripgrep est une dépendance d'exécution de kb_search, pas un confort :
+      # sans lui la moitié de la suite échoue avec IO_ERROR.
+      - name: Installer ripgrep
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq ripgrep
+
+      - name: Installer uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Synchroniser les dépendances
+        run: uv sync --python ${{ matrix.python }}
+
+      # Les tests créent de vrais dépôts git et commitent dedans. Le hub passe
+      # toujours son identité explicitement (§ 4.4.e), mais les fixtures de test
+      # utilisent git directement : sans identité, elles échoueraient.
+      - name: Configurer git
+        run: |
+          git config --global user.name "CI"
+          git config --global user.email "ci@local"
+          git config --global init.defaultBranch main
+
+      - name: Suite complète
+        run: uv run pytest -q
+        # Inclut la boucle de stress à deux processus et les tests
+        # d'interopérabilité de verrou flock(1) ↔ fcntl.flock.
+
+  bout-en-bout:
+    # Le cycle complet exige le dépôt template, qui est un livrable distinct.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Installer ripgrep
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq ripgrep
+
+      - name: Installer uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Récupérer le template de bundle
+        continue-on-error: true
+        run: git clone --depth 1 https://github.com/Movida/okf-bundle-template.git /home/runner/okf-bundle-template
+
+      - name: Configurer git
+        run: |
+          git config --global user.name "CI"
+          git config --global user.email "ci@local"
+          git config --global init.defaultBranch main
+
+      - name: Cycle de bout en bout
+        run: uv run pytest -q tests/test_end_to_end.py
+        # Les tests s'auto-sautent proprement si le template est absent.
