@@ -7,6 +7,17 @@ sans jamais les modifier directement**.
 Implémente la spécification « OKF Bundle Hub v0 » (identifiant de version dans
 les manifestes : `bundle-spec: "0.1"`).
 
+## Documentation
+
+| Document | Contenu |
+|---|---|
+| [`docs/SPEC-okf-bundle-hub-v0.md`](docs/SPEC-okf-bundle-hub-v0.md) | **La spécification.** Elle fait autorité ; tous les renvois « § x.y » du code y renvoient. |
+| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Conception : choix d'implémentation, mécanismes de correction, écarts assumés, traçabilité test ↔ exigence. |
+| [`docs/API.md`](docs/API.md) | Contrat des six outils `kb_*` : schémas, sorties, codes d'erreur, séquences typiques. |
+| [`docs/J0-verification-okf.md`](docs/J0-verification-okf.md) | La spec OKF externe et ses trois divergences avec celle du hub. |
+| [`CLAUDE.md`](CLAUDE.md) | Orientation pour une session ouvrant ce dépôt. |
+| [`skills/kb-review/SKILL.md`](skills/kb-review/SKILL.md) | Déroulé de revue du rôle gestionnaire. |
+
 ## Principes
 
 - **Git est canonique.** Tout l'état vit dans les dépôts git des bases. Aucune
@@ -307,53 +318,24 @@ src/okf_hub/
 └── tools/          un module par outil kb_*
 ```
 
-Décisions d'implémentation laissées ouvertes par la spec (§ 10.1) :
-
-- **Python 3.12** avec le SDK MCP officiel (API bas niveau : les descriptions
-  d'outils doivent être régénérées à chaque rescan) ;
-- **PyYAML** pour tout sérialiser — jamais de templating de chaînes ;
-- **git par la CLI**, pas libgit2 : `GIT_INDEX_FILE` et `read-tree` y sont
-  directs ;
-- **`fcntl.flock`** côté serveur, **`flock(1)`** côté script, interopérabilité
-  vérifiée par test.
+Langage, SDK, bibliothèque YAML, accès git, forme du wrapper de verrouillage :
+ces choix étaient laissés ouverts par la spec (§ 10.1). Le raisonnement derrière
+chacun, la carte détaillée des modules et les parcours d'appel sont dans
+[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
 ## Écarts assumés par rapport à la spec
 
-Deux, tous deux mesurés et réversibles.
+Deux, tous deux mesurés, documentés et réversibles :
 
-### 1. Déclassement des noms réservés OKF dans kb_search
+1. **Déclassement de `index.md` et `log.md` dans `kb_search`** — sur un corpus
+   réel de 856 documents, 28 % des résultats étaient des sommaires générés ;
+   2 % après déclassement.
+2. **Synchronisation de l'index git partagé après commit** — sans elle,
+   `git status` affiche toutes les propositions commitées comme supprimées, et
+   l'étape de réconciliation les re-commite, cassant l'invariant d'audit.
 
-`index.md` et `log.md` sont réservés par OKF (§ 3.1) : ce sont des sommaires et
-des journaux, souvent générés. Ils restent des documents au sens de la § 2 —
-lisibles par `kb_read`, comptés par `kb_list` — mais passent **derrière tout
-document de connaissance** dans le classement de `kb_search`, et la sortie le
-signale.
-
-Motif : mesure sur un corpus réel de 856 documents, sur 8 requêtes
-d'exploitation. Sans déclassement, **28 % des résultats** étaient des sommaires
-pleins de texte de liens. Avec, **2 %**. Un sommaire reste trouvable quand rien
-d'autre ne matche.
-
-Retirer ce comportement : supprimer `d.reserved` des clés de tri dans
-`search.run_search`.
-
-### 2. Synchronisation de l'index git partagé
-
-`gitops._sync_shared_index` reporte les chemins commités dans l'index partagé du
-dépôt, alors que le § 4.4.b.2 demande de n'avoir « aucune interaction avec
-l'index partagé ».
-
-Motif : un commit construit via `GIT_INDEX_FILE` fait avancer HEAD sans toucher
-`.git/index`. L'index reste donc sur l'ancien tree, et `git status` affiche
-toutes les propositions commitées comme **supprimées**, avec `proposals/` en
-untracked. L'étape de réconciliation (§ 7.1.0) prendrait alors ces fichiers pour
-des propositions non commitées et les re-commiterait, violant l'invariant
-« exactement deux commits par proposition ». Et le propriétaire de la base
-ouvrant un terminal verrait un dépôt qui semble avoir tout perdu.
-
-La synchronisation est additive et chirurgicale — seuls les chemins qu'on vient
-de commiter, sous le même verrou —, ce qui préserve les modifications indexées à
-la main par l'opérateur.
+Motif complet, mesure et manière de les annuler :
+[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md), section « Écarts assumés ».
 
 ## Tests
 
