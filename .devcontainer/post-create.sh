@@ -4,7 +4,11 @@ set -euo pipefail
 
 echo "→ ripgrep (requis par kb_search)"
 if ! command -v rg >/dev/null 2>&1; then
-    sudo apt-get update -qq
+    # -o Dir::Etc::sourceparts=/dev/null : ignore sources.list.d, où l'image
+    # de base peut embarquer des dépôts tiers cassés (ex. yarn.list à clé GPG
+    # expirée) sans rapport avec le hub. On n'a besoin que des dépôts Debian
+    # officiels pour ripgrep.
+    sudo apt-get update -qq -o Dir::Etc::sourceparts=/dev/null
     sudo apt-get install -y -qq ripgrep
 fi
 rg --version | head -1
