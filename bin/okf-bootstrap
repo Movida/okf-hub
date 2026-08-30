@@ -1,0 +1,27 @@
+#!/bin/sh
+# okf-bootstrap — installe dans bases/ les bases livrées avec le hub (bundles/).
+#
+#   okf-bootstrap [--list] [--force] [<nom>...]
+#
+# Le serveur fait déjà cela au démarrage : ce script sert à réinstaller
+# explicitement, à forcer une réécriture, ou à travailler sur un hub configuré
+# avec `bootstrap-bundles: false`.
+#
+# Une base déjà déployée n'est JAMAIS écrasée sans --force : elle a pu recevoir
+# des propositions et des résolutions que la source ignore.
+
+set -eu
+
+script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)
+HUB_ROOT=${OKF_HUB_ROOT:-$(dirname -- "$script_dir")}
+
+if [ -n "${OKF_HUB_PYTHON:-}" ]; then
+    PY=$OKF_HUB_PYTHON
+elif [ -x "$HUB_ROOT/.venv/bin/python" ]; then
+    PY="$HUB_ROOT/.venv/bin/python"
+else
+    PY=python3
+fi
+
+OKF_HUB_ROOT="$HUB_ROOT" PYTHONPATH="$HUB_ROOT/src${PYTHONPATH:+:$PYTHONPATH}" \
+    exec "$PY" -m okf_hub.bootstrap --hub-root "$HUB_ROOT" "$@"

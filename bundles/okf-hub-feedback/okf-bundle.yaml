@@ -1,0 +1,28 @@
+bundle-spec: "0.1"
+
+name: okf-hub-feedback
+title: "OKF Bundle Hub — retours d'usage sur l'outillage"
+
+# Description rédigée pour le ROUTAGE : elle est injectée dans les descriptions
+# d'outils MCP de toutes les sessions connectées au hub, et c'est sur elle qu'un
+# agent décide de déposer ici plutôt que dans une base métier.
+description: >
+  Retours d'usage, anomalies et demandes d'évolution concernant les outils du
+  hub lui-même (kb_search, kb_read, kb_list, kb_governance, kb_propose,
+  kb_proposal_status, kb_hub_rescan, la skill kb-review). Déposez ici toute
+  observation sur l'outillage, pas sur le contenu métier des autres bases. On y
+  trouve la roadmap des évolutions décidées, reportées et refusées, et les
+  limitations connues avec leur contournement.
+
+version: "0.1.0"
+okf-spec: "0.2"
+
+corpus-dir: knowledge
+
+governance:
+  rules: ./GOVERNANCE.md
+  frontmatter-schema: ./schema.yaml
+  review: human
+
+tools: []
+skills: []

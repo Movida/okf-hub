@@ -1,0 +1,16 @@
+# Dépôts canoniques des bases livrées avec le hub.
+#
+# Une base listée ici est INSTALLÉE PAR CLONE, jamais semée depuis bundles/ :
+# son contenu vit et s'enrichit ailleurs, et semer localement produirait une
+# histoire git sans rapport avec la sienne. Toute proposition déposée sur une
+# telle base orpheline serait irrécupérable — « refusing to merge unrelated
+# histories » au moment de la remonter.
+#
+# Si le clone échoue (hors ligne, droits manquants), la base n'est PAS installée
+# et un avertissement est journalisé. Absente vaut mieux qu'orpheline.
+#
+# Une base absente de ce fichier est semée depuis bundles/ : c'est le cas des
+# bases rédigées par les mainteneurs, en verrou avec le code, dont la source de
+# vérité est le dépôt du hub lui-même (okf-hub-guide).
+
+okf-hub-feedback: git@github.com:Movida/okf-hub-feedback.git

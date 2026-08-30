@@ -1,0 +1,58 @@
+# Schéma de frontmatter du corpus de `okf-hub-feedback`.
+#
+# En v0, ce fichier est de la DOCUMENTATION : il est injecté dans le contexte du
+# gestionnaire, mais aucune validation automatique n'est effectuée.
+#
+# RAPPEL (amendement rév. 4.1, § B4) : ce schéma décrit le frontmatter du
+# CORPUS, pas celui des propositions. Une proposition déposée par `kb_propose`
+# n'a pas à s'y conformer — sa mise en forme relève du gestionnaire, à
+# l'intégration.
+
+required:
+  - name: type
+    type: string
+    description: >
+      Nature du document. Valeurs utilisées dans cette base :
+      `Roadmap`, `Limitation`, `Retour`, `Décision`.
+
+optional:
+  - name: title
+    type: string
+    description: Nom lisible. Utilisé par kb_search pour intituler les résultats.
+  - name: description
+    type: string
+    description: Une phrase de résumé, reprise dans index.md.
+  - name: tags
+    type: list[string]
+    description: >
+      Convention de cette base : un tag par outil concerné, sous sa forme exacte
+      (`kb_search`, `kb_propose`, `kb-review`, `okf-lock`…). C'est ce qui rend
+      un retour retrouvable par outil.
+
+  # --- provenance (OKF § 5.1) ---
+  - name: sources
+    type: list[object]
+    description: >
+      D'où vient l'affirmation. Pour cette base : l'id de la proposition qui l'a
+      introduite (`prop-AAAA-MM-JJ-xxxx`), la révision de spec concernée, ou la
+      référence de la session qui a constaté le comportement.
+
+  # --- confiance (OKF § 5.2) ---
+  - name: generated
+    type: object
+    description: "{ by: <acteur>, at: <ISO 8601 UTC> }."
+  - name: verified
+    type: list[object]
+    description: "[{ by: <acteur>, at: <ISO 8601 UTC> }]."
+
+  # --- cycle de vie (OKF § 5.4) ---
+  - name: status
+    type: string
+    description: draft | stable | deprecated. Absent vaut `stable`.
+
+  # --- propre à cette base ---
+  - name: applies-to
+    type: string
+    description: >
+      Révision de la spécification du hub à laquelle le contenu se rapporte,
+      ex. `rév. 4.1`. Golden rule 6 : toute affirmation porte sa version.
