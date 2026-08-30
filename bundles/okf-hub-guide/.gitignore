@@ -1,0 +1,13 @@
+# Fichier de verrou du hub (§ 4.4.b.1 de la spec du hub).
+#
+# Redondant, volontairement : le hub ajoute déjà cette entrée au
+# .git/info/exclude local de chaque clone, précisément pour couvrir les bundles
+# tiers dont le .gitignore ne la prévoit pas. La garder ici évite de dépendre de
+# ce mécanisme quand on travaille sur le bundle hors du hub.
+.okf-hub.lock
+
+# Temporaires d'écriture atomique des propositions
+.okf-tmp-*
+
+.DS_Store
+Thumbs.db

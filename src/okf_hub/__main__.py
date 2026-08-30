@@ -10,7 +10,7 @@ from pathlib import Path
 import anyio
 from mcp.server.stdio import stdio_server
 
-from . import hublog
+from . import bootstrap, hublog
 from .config import HubConfig
 from .server import HubServer
 
@@ -63,6 +63,14 @@ def main(argv: list[str] | None = None) -> int:
         f"démarrage — hub_root={config.hub_root} bases_dir={config.bases_dir} "
         f"read_toc_threshold={config.read_toc_threshold}"
     )
+
+    # Les bases livrées avec le hub (bundles/) sont installées avant la
+    # découverte, pour qu'une installation neuve ne démarre pas muette. Ne crée
+    # que ce qui manque, ne lève jamais, et supporte des instances concurrentes
+    # (§ 4.4) — voir bootstrap.py.
+    if config.bootstrap_bundles:
+        for nom in bootstrap.deploy_missing(config):
+            hublog.info(f"première installation de la base livrée '{nom}'")
 
     hub = HubServer(config)
     try:

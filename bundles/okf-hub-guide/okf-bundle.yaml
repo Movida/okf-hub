@@ -1,0 +1,29 @@
+bundle-spec: "0.1"
+
+name: okf-hub-guide
+title: "OKF Bundle Hub — mode d'emploi pour une session"
+
+# Description rédigée pour le ROUTAGE. Elle est injectée dans les descriptions
+# d'outils de toutes les sessions connectées : c'est elle qui doit faire
+# comprendre, sans autre appel, quand cette base est la bonne.
+description: >
+  Comment une session travaille avec ce hub : dans quel ordre enchaîner
+  kb_search, kb_read, kb_governance, kb_propose et kb_proposal_status ;
+  comment formuler une recherche et lire une section plutôt qu'un document
+  entier ; ce qu'est une proposition recevable ; qui a le droit d'écrire
+  dans un corpus, et par quel moyen ; le cycle de vie d'une base, de sa
+  création à son retrait. Aucun schéma d'outil : les paramètres sont dans
+  les descriptions des outils.
+
+version: "0.1.0"
+okf-spec: "0.2"
+
+corpus-dir: knowledge
+
+governance:
+  rules: ./GOVERNANCE.md
+  frontmatter-schema: ./schema.yaml
+  review: human
+
+tools: []
+skills: []

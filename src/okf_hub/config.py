@@ -13,6 +13,11 @@ DEFAULT_BASES_DIR = "./bases"
 DEFAULT_READ_TOC_THRESHOLD = 8192
 DEFAULT_LOG_FILE = "./hub.log"
 
+#: Les bases livrées dans `bundles/` sont installées au démarrage si elles
+#: manquent. Un opérateur qui veut maîtriser entièrement le contenu de
+#: `bases-dir` met `bootstrap-bundles: false`.
+DEFAULT_BOOTSTRAP_BUNDLES = True
+
 
 @dataclass(frozen=True)
 class HubConfig:
@@ -20,6 +25,7 @@ class HubConfig:
     bases_dir: Path
     read_toc_threshold: int
     log_file: Path | None
+    bootstrap_bundles: bool = DEFAULT_BOOTSTRAP_BUNDLES
 
     @staticmethod
     def load(hub_root: Path) -> "HubConfig":
@@ -43,11 +49,16 @@ class HubConfig:
         log_raw = raw.get("log-file", DEFAULT_LOG_FILE)
         log_file = None if log_raw in (None, False, "") else _resolve(hub_root, log_raw)
 
+        bootstrap = raw.get("bootstrap-bundles", DEFAULT_BOOTSTRAP_BUNDLES)
+        if not isinstance(bootstrap, bool):
+            raise ValueError(f"{path} : bootstrap-bundles doit être un booléen")
+
         return HubConfig(
             hub_root=hub_root,
             bases_dir=bases_dir,
             read_toc_threshold=threshold,
             log_file=log_file,
+            bootstrap_bundles=bootstrap,
         )
 
 
