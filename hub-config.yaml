@@ -1,0 +1,11 @@
+# Configuration du hub (§ 4.1).
+# Les chemins relatifs sont résolus par rapport à la racine du hub.
+
+bases-dir: ./bases          # répertoire scanné pour la découverte (§ 4.2)
+
+read-toc-threshold: 8192    # octets ; au-delà, kb_read sans `section` retourne
+                            # la table des headings au lieu du contenu (§ 5.3).
+                            # Configurable car la granularité des corpus varie
+                            # beaucoup d'une base à l'autre.
+
+log-file: ./hub.log         # journal partagé par toutes les instances (§ 4.1)
