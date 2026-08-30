@@ -153,7 +153,7 @@ Puis `kb_hub_rescan` depuis une session connectée. **Il n'y a pas d'autre
 étape** — c'est un invariant du produit.
 
 Pour créer une base : partir du template
-[`okf-bundle-template`](../okf-bundle-template) et dérouler son
+[`okf-bundle-template`](https://github.com/Movida/okf-bundle-template) et dérouler son
 `INSTANTIATE.md`.
 
 ### ⚠ Avant d'importer un bundle tiers
@@ -357,3 +357,19 @@ Extensions `tools`/`skills` ; `review: agent|auto` ; validation automatique de
 schéma ; `kb_proposal_status` ; authentification des contributeurs ; politique
 d'incrément de version ; index de recherche dérivé ; revue d'import outillée ;
 synchronisation remote ; multi-hub.
+
+## Licence
+
+[Apache 2.0](LICENSE). Voir [`NOTICE`](NOTICE).
+
+La spécification transcrite dans `docs/` est de David Morvan et suit la même
+licence. Le format OKF auquel le hub se réfère est publié séparément par
+Google Cloud Platform, également sous Apache 2.0.
+
+## Contribuer
+
+[`CONTRIBUTING.md`](CONTRIBUTING.md) — et lire d'abord la section « Ce qui ne se
+négocie pas ».
+
+Vulnérabilité : [`SECURITY.md`](SECURITY.md), advisory privée, jamais d'issue
+publique.
