@@ -317,7 +317,27 @@ Décisions d'implémentation laissées ouvertes par la spec (§ 10.1) :
 - **`fcntl.flock`** côté serveur, **`flock(1)`** côté script, interopérabilité
   vérifiée par test.
 
-## Écart assumé par rapport à la spec
+## Écarts assumés par rapport à la spec
+
+Deux, tous deux mesurés et réversibles.
+
+### 1. Déclassement des noms réservés OKF dans kb_search
+
+`index.md` et `log.md` sont réservés par OKF (§ 3.1) : ce sont des sommaires et
+des journaux, souvent générés. Ils restent des documents au sens de la § 2 —
+lisibles par `kb_read`, comptés par `kb_list` — mais passent **derrière tout
+document de connaissance** dans le classement de `kb_search`, et la sortie le
+signale.
+
+Motif : mesure sur un corpus réel de 856 documents, sur 8 requêtes
+d'exploitation. Sans déclassement, **28 % des résultats** étaient des sommaires
+pleins de texte de liens. Avec, **2 %**. Un sommaire reste trouvable quand rien
+d'autre ne matche.
+
+Retirer ce comportement : supprimer `d.reserved` des clés de tri dans
+`search.run_search`.
+
+### 2. Synchronisation de l'index git partagé
 
 `gitops._sync_shared_index` reporte les chemins commités dans l'index partagé du
 dépôt, alors que le § 4.4.b.2 demande de n'avoir « aucune interaction avec

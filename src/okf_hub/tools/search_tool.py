@@ -118,6 +118,11 @@ def run(registry: Registry, arguments: dict) -> str:
     header = f"{len(outcome.docs)} résultat(s) dans '{base.name}' pour : {query}"
     if outcome.partial:
         header += "\n[aucun document ne contient tous les termes — résultats partiels]"
+    if outcome.reserved_count:
+        header += (
+            f"\n[{outcome.reserved_count} sommaire(s) index.md/log.md en fin de liste — "
+            f"déclassés car ce sont des tables de matières, pas de la connaissance]"
+        )
     writer.add_forced(header)
 
     for doc in outcome.docs:
