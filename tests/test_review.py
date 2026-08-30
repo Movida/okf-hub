@@ -362,3 +362,23 @@ def test_cli_inventory_et_context(base, registry, capsys):
     out = capsys.readouterr().out
     assert "Gouvernance" in out
     assert "sso.md — Procédure SSO" in out
+
+
+# --- gouvernance en brouillon signalée à la revue (rév. 4.1, § B5) -----------
+
+
+def test_context_signale_une_gouvernance_en_brouillon(base, registry):
+    (base.root / "GOVERNANCE.md").write_text(
+        "---\nstatus: draft\n---\n\n# Gouvernance\n\nRègles provisoires.\n",
+        encoding="utf-8",
+    )
+    registry.scan()
+    out = review.cmd_context(registry.get("ma-base"))
+    assert "GOUVERNANCE EN BROUILLON" in out
+    assert "Signale-le à l'humain" in out
+    assert "Règles provisoires." in out
+
+
+def test_context_muet_sur_une_gouvernance_stable(base, registry):
+    out = review.cmd_context(registry.get("ma-base"))
+    assert "BROUILLON" not in out

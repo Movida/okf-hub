@@ -198,6 +198,25 @@ def extract_section(text: str, section: str) -> SectionMatch | None:
     return SectionMatch(heading=first, content=content, duplicates=len(matches) - 1)
 
 
+def heading_at_line(headings: list[Heading], line: int) -> Heading | None:
+    """Heading de la section contenant `line` (index base 0), ou None.
+
+    Sert à `kb_search` (amendement rév. 4.1, § B3) : un extrait accompagné du
+    heading de sa section se rejoue directement en `kb_read(path, section)`,
+    sans passer par la table des headings du document. `headings` est supposée
+    dans l'ordre du document — c'est ce que produit `parse_headings`.
+
+    None signifie que la ligne précède tout heading : c'est le préambule, pas
+    une absence d'information.
+    """
+    trouve: Heading | None = None
+    for h in headings:
+        if h.line > line:
+            break
+        trouve = h
+    return trouve
+
+
 def headings_table(text: str, body_offset: int = 0) -> list[tuple[Heading, int]]:
     """Table des headings avec la taille approximative de chaque section.
 

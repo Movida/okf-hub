@@ -29,6 +29,7 @@ import yaml
 from . import gitops, hublog
 from .config import HubConfig
 from .errors import INVALID_INPUT, NOT_FOUND, ToolError
+from .governance import DRAFT, status_of_text
 from .locking import base_lock, ensure_git_exclude
 from .mdutil import extract_section, parse_document
 from .registry import ACCEPTED_SUBDIR, PENDING_SUBDIR, REJECTED_SUBDIR, Base, Registry
@@ -439,12 +440,21 @@ def _corpus_outline(base: Base, limit: int = 300) -> str:
 
 def cmd_context(base: Base) -> str:
     m = base.manifest
-    parts = [
-        f"# Contexte de revue — {m.name} ({m.title})",
+    regles = m.governance_rules.read_text(encoding="utf-8")
+    parts = [f"# Contexte de revue — {m.name} ({m.title})"]
+    # § B5 : la skill doit prévenir l'humain avant de lui faire arbitrer selon
+    # des règles que personne n'a encore validées.
+    if status_of_text(regles, source=str(m.governance_rules)) == DRAFT:
+        parts.append(
+            "\n⚠ GOUVERNANCE EN BROUILLON (`status: draft`) — les règles appliquées "
+            "dans cette revue ne sont pas validées. Signale-le à l'humain avant "
+            "de présenter tes recommandations."
+        )
+    parts += [
         f"\nrépertoire : {base.root}",
         f"corpus : {base.corpus_dir}",
         f"\n## {m.governance_rules.name}\n",
-        m.governance_rules.read_text(encoding="utf-8"),
+        regles,
     ]
     if m.frontmatter_schema:
         parts += [

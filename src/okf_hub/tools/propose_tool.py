@@ -85,10 +85,15 @@ def description(registry: Registry) -> str:
         "La proposition n'est PAS intégrée automatiquement : elle est déposée "
         "dans proposals/pending/ et attend la revue du gestionnaire, qui "
         "l'intègre ou la rejette selon les règles de la base (kb_governance). "
-        "Limitation v0 : la résolution (intégration ou motif de rejet) n'est "
-        "pas consultable via MCP — elle l'est par accès git direct au dépôt. "
-        "kb_list avec include_pending_concerns permet de vérifier avant "
-        "soumission qu'une proposition proche n'est pas déjà en attente."
+        "Le verdict — intégration et documents modifiés, ou motif de rejet — se "
+        "consulte ensuite avec kb_proposal_status, en lui donnant l'id retourné "
+        "ici. kb_list avec include_pending_concerns permet de vérifier avant "
+        "soumission qu'une proposition proche n'est pas déjà en attente.\n\n"
+        "Le `schema.yaml` d'une base décrit le frontmatter de son CORPUS, pas "
+        "celui des propositions. Une proposition n'a pas à s'y conformer : "
+        "soumettez l'information, sa mise en forme conforme au schéma relève du "
+        "gestionnaire à l'intégration. Les champs de cet outil sont le seul "
+        "format requis."
     )
     if not bases:
         return head + " Aucune base n'est actuellement enregistrée."
@@ -317,5 +322,7 @@ def run(registry: Registry, arguments: dict) -> str:
         f"chemin : {rel}\n"
         f"base : {base.name}\n\n"
         f"Elle est en attente de revue par le gestionnaire de la base. "
-        f"Le corpus n'a pas été modifié."
+        f"Le corpus n'a pas été modifié.\n"
+        f"Pour connaître le verdict plus tard : "
+        f"kb_proposal_status(base: \"{base.name}\", id: \"{prop_id}\")."
     )
