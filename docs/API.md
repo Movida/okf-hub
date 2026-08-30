@@ -1,6 +1,6 @@
 # Référence d'API — outils MCP `kb_*`
 
-Contrat exact des six outils du noyau. Vérifié contre les schémas réels du code
+Contrat exact des sept outils du noyau. Vérifié contre les schémas réels du code
 (`src/okf_hub/tools/*.py`, constante `SCHEMA`) : si ce document et le code
 divergent, **le code fait foi** et ce fichier est en dette.
 
@@ -44,7 +44,8 @@ un `isError` — c'est le SDK MCP qui la génère, avant d'atteindre l'outil.
 
 ### Plafond de sortie
 
-`kb_search` et `kb_list` plafonnent leur sortie à **~4 000 tokens**
+`kb_search`, `kb_list` et `kb_proposal_status` plafonnent leur sortie à
+**~4 000 tokens**
 (approximation caractères/4, soit 16 000 caractères). La troncature s'arrête sur
 un résultat entier — jamais au milieu — et est signalée par une ligne
 `[résultats tronqués, N élément(s) omis — …]`.
@@ -54,8 +55,8 @@ rôle. `kb_governance` ne l'est pas non plus, conformément à la spec.
 
 ### Descriptions dynamiques
 
-Les descriptions de `kb_list`, `kb_search`, `kb_read`, `kb_governance` et
-`kb_propose` **énumèrent les bases connues** avec leur titre et leur objet, et
+Les descriptions de `kb_list`, `kb_search`, `kb_read`, `kb_governance`,
+`kb_propose` et `kb_proposal_status` **énumèrent les bases connues** avec leur titre et leur objet, et
 sont recalculées à chaque `tools/list`. C'est ce qui permet à une session de
 router sa requête vers la bonne base **sans appel préalable**.
 
@@ -125,15 +126,31 @@ invalide remonte `INVALID_INPUT` **avec le message de ripgrep tel quel**.
 ```
 ### procedures/sso.md — Procédure de reconnexion SSO
 frontmatter : {title: Procédure de reconnexion SSO, tags: [sso], last-verified: 2026-01-15}
-  L12-16 | ## Reconnexion
-         | 
-         | Cliquer sur « réauthentifier » dans le menu profil.
+  L12-16 § reconnexion
+           | ## Reconnexion
+           | 
+           | Cliquer sur « réauthentifier » dans le menu profil.
 ```
 
 - `path` relatif au corpus, puis le titre (frontmatter `title`, sinon premier `#`) ;
 - frontmatter **limité à `title`, dates et `tags`** — le reste n'est pas exposé ;
 - extraits : ligne touchée ± 2 lignes, **3 au maximum par document**, fenêtres
-  qui se recouvrent fusionnées.
+  qui se recouvrent fusionnées ;
+- après `§`, le **heading de la section contenant la ligne touchée**, sous sa
+  forme normalisée — ou `(préambule)` si la ligne précède tout heading.
+
+**Le `§` est fait pour être recopié.** C'est exactement ce que `kb_read` attend
+dans `section` :
+
+```
+kb_search base=… query="réauthentifier"      → "  L12-16 § reconnexion"
+kb_read   base=… path=procedures/sso.md section="reconnexion"
+```
+
+Sur un document dépassant `read-toc-threshold`, cela économise l'aller-retour par
+la table des headings. Le heading retenu suit la **ligne touchée**, pas le début
+de la fenêtre de contexte : celle-ci déborde de deux lignes et peut mordre sur la
+section précédente.
 
 **Déclassement des sommaires** — `index.md` et `log.md` (noms réservés OKF)
 passent **derrière tout autre document**, et la sortie le signale. Ce sont des
@@ -199,6 +216,16 @@ Retourne les règles d'une base.
 **Sortie** — le contenu intégral de `GOVERNANCE.md`, suivi de `schema.yaml` dans
 un bloc de code s'il est déclaré, ou de `[aucun schema.yaml déclaré pour cette
 base]`.
+
+**Bandeau de gouvernance en brouillon** — si `GOVERNANCE.md` porte
+`status: draft` dans son frontmatter, la sortie s'ouvre sur :
+
+```
+[GOUVERNANCE EN BROUILLON — les règles peuvent évoluer, les propositions restent acceptées]
+```
+
+Rien n'est bloqué pour autant : c'est un avertissement sur la maturité des
+règles, pas une machine à états. Absent ou inconnu, le statut vaut `stable`.
 
 **Quand l'appeler** — **avant `kb_propose`**, pour savoir ce que la base attend
 d'une proposition (sources exigées, seuil de confiance, périmètre). Et
@@ -267,10 +294,76 @@ proposal: prop-2026-08-30-a3f2 (correction) — procédure de reconnexion SSO
 Submitted-By: human:morva
 ```
 
-**Limitation v0** — vous ne pourrez **pas relire la résolution** de votre
-proposition via MCP. `accepted/` et `rejected/` ne sont lisibles que par accès
-git direct au dépôt de la base. `kb_list` avec `include_pending_concerns` montre
-seulement ce qui est encore en attente.
+**Relire le verdict** — `kb_proposal_status` avec l'`id` retourné ici. La sortie
+de `kb_propose` rappelle l'appel exact. Seul le **corps** d'une proposition
+résolue reste hors MCP : il se relit par accès git direct dans
+`proposals/accepted|rejected/`.
+
+**`schema.yaml` ne s'applique pas ici** — il décrit le frontmatter du **corpus**,
+pas celui des propositions. Ne cherchez pas à vous y conformer : soumettez
+l'information, sa mise en forme conforme au schéma relève du gestionnaire à
+l'intégration. Les champs de cet outil sont le seul format requis.
+
+---
+
+## kb_proposal_status
+
+Consulte l'état et la résolution des propositions. **Lecture pure** : aucun
+verrou, aucun état, git reste canonique.
+
+| Paramètre | Type | Défaut | Rôle |
+|---|---|---|---|
+| `base` | `string` | **requis** | Nom de la base. |
+| `id` | `string` | — | Id exact d'une proposition, tel que retourné par `kb_propose`. |
+| `submitted_by` | `string` | — | Contributeur déclaré. Correspondance exacte, casse ignorée. |
+| `status` | `"pending"` \| `"accepted"` \| `"rejected"` | — | Restreint à ce statut. |
+| `limit` | `integer` 1–50 | `20` | Les plus récentes d'abord. |
+
+**Au moins un de `id` ou `submitted_by` est requis** — sinon `INVALID_INPUT`.
+Sans filtre, l'outil déverserait `proposals/` en entier. `status` et `limit` ne
+font que raffiner.
+
+**Sortie** — par proposition :
+
+```
+2 proposition(s) dans 'solution-editeur-x' pour : submitted_by=human:morva
+### prop-2026-08-30-a3f2 — accepted
+type : correction | concerns : procédure de reconnexion SSO
+soumise : 2026-08-30T09:12:00Z par human:morva
+résolue : 2026-08-31T14:02:11Z — accepted
+integrated-into : procedures/sso.md  (lisibles via kb_read)
+### prop-2026-08-29-b81c — rejected
+type : observation | concerns : bouton déplacé
+soumise : 2026-08-29T16:40:00Z par human:morva
+résolue : 2026-08-31T14:02:11Z — rejected
+rejection-reason : doublon de prop-2026-08-30-a3f2, moins bien sourcé
+```
+
+Tri par `submitted-at` **décroissant** ; une proposition sans date passe en fin
+de liste. Le **corps** n'est pas retourné : suivez `integrated-into` avec
+`kb_read` pour lire ce qui a été intégré.
+
+**Le statut vient de l'emplacement du fichier**, qui fait foi (§ 6.2). Le champ
+`status` du frontmatter n'est qu'affiché. En cas de divergence, la ligne
+`[incohérence status/emplacement : … — l'emplacement fait foi]` est ajoutée et
+l'appel réussit quand même.
+
+**Cas limites**
+
+| Situation | Comportement |
+|---|---|
+| `id` introuvable dans les trois répertoires | `NOT_FOUND` |
+| `submitted_by` sans aucune proposition | Résultat vide, **pas** une erreur |
+| Frontmatter illisible ou absent | Fichier ignoré, `[N fichier(s) illisible(s) ignoré(s)]`, journalisé |
+| Plus de résultats que `limit` | `[N plus ancienne(s) non listée(s) — augmentez limit]` |
+
+**`submitted_by` n'est pas authentifié** (§ 8). Le filtre retrouve les
+propositions **déclarées** sous ce nom, sans garantie d'identité.
+
+**Confinement** — cet outil est la **seule exception** à la liste d'exclusions
+transverse du § 5.2, qui retire `proposals/` des lectures. Exception limitée à
+lui, en lecture seule : un lien symbolique déposé dans `pending/` et pointant
+hors du bundle est ignoré, comme pour `kb_read`.
 
 ---
 
@@ -284,7 +377,7 @@ Relance la découverte des bases. Aucun paramètre.
 Découverte terminée : 2 base(s) enregistrée(s).
 ajoutées (1) : phoenix
 retirées (0) : —
-inchangées (1) : base-demo
+inchangées (1) : okf-hub-feedback
 
 Bundles invalides (ignorés) :
 - brouillon : champ obligatoire manquant : governance.rules
@@ -296,14 +389,21 @@ Avertissements :
 - [phoenix] bundle-spec '9.9' différent de la version supportée '0.1' — chargement tenté et réussi
 ```
 
-**PORTÉE MONO-INSTANCE.** Le rescan n'affecte que la session qui l'appelle. Les
-autres sessions connectées au même hub continueront d'ignorer une base
-nouvellement importée jusqu'à leur propre rescan ou redémarrage.
+**PORTÉE MONO-INSTANCE.** Le rescan n'affecte que la session qui l'appelle —
+comme toute découverte sur ce hub : chaque client MCP a son instance et son
+registre, il n'y a ni état partagé ni démon (§ 4.4).
 
-**Vous n'avez généralement pas besoin de l'appeler** : une erreur
-`UNKNOWN_BASE` déclenche déjà un re-scan silencieux (cooldown 5 s) et retente
-l'appel. Il sert surtout à *vérifier* qu'un import s'est bien passé, et à voir
-les bundles rejetés avec leur motif.
+**Vous n'avez généralement pas besoin de l'appeler.** Deux mécanismes couvrent
+déjà le besoin, sous un **cooldown commun de 5 s par instance** :
+
+- une erreur `UNKNOWN_BASE` déclenche un re-scan silencieux puis retente l'appel ;
+- **tout `kb_list` déclenche la découverte** avant de répondre : une base
+  importée après le démarrage d'une session lui devient donc visible dès qu'elle
+  liste, sans rescan explicite ni redémarrage.
+
+Ce qui reste propre à `kb_hub_rescan` : le **rapport** ci-dessus — bundles
+rejetés avec leur motif, collisions de `name`, avertissements de compatibilité.
+C'est un outil de diagnostic d'import, pas de rafraîchissement.
 
 ---
 
@@ -326,7 +426,18 @@ kb_governance base=…                      → ce que la base exige
 kb_list       include_pending_concerns=true  → quelqu'un l'a-t-il déjà signalé ?
 kb_search     base=… query="sujet"        → que dit le corpus aujourd'hui ?
 kb_propose    base=… type=correction …    → dépôt. Le corpus n'est pas modifié.
+                                            → note l'`id` retourné.
 ```
+
+**Relire le verdict d'une proposition** — plus tard, éventuellement dans une
+autre session :
+
+```
+kb_proposal_status base=… id=prop-…            → pending / accepted / rejected
+kb_read            base=… path=<integrated-into>  → ce qui a réellement été écrit
+```
+
+Aucun accès git n'est nécessaire côté contributeur pour cette boucle.
 
 **Ce qu'une session consommatrice ne fait jamais** — écrire dans le corpus,
 `git commit` sur un dépôt de base, ou considérer qu'une proposition déposée est

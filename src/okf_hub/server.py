@@ -22,6 +22,7 @@ from .registry import Registry
 from .tools import (
     governance_tool,
     list_tool,
+    proposal_status_tool,
     propose_tool,
     read_tool,
     rescan_tool,
@@ -30,8 +31,18 @@ from .tools import (
 
 SERVER_NAME = "okf-hub"
 
-#: Cooldown du re-scan silencieux déclenché par UNKNOWN_BASE (§ 4.4.c).
+#: Cooldown du re-scan silencieux (§ 4.4.c). **Un seul compteur** pour les deux
+#: déclencheurs : `UNKNOWN_BASE` (§ 4.4.c) et l'appel de `kb_list` (amendement
+#: rév. 4.1, § B2). Ce n'est pas un second mécanisme — deux `kb_list` en moins de
+#: cinq secondes ne provoquent qu'un seul parcours de `bases-dir`.
 SILENT_RESCAN_COOLDOWN_S = 5.0
+
+#: Outils dont l'appel déclenche la découverte avant exécution (§ B2). `kb_list`
+#: est le point où une session demande « qu'y a-t-il sur ce hub ? » : y répondre
+#: depuis un registre périmé était la lacune signalée par le retour d'usage.
+#: L'alternative rejetée — un rescan partagé au niveau du hub — supposerait un
+#: état partagé ou un démon, contraire au modèle multi-instances (§ 4.4).
+RESCAN_BEFORE = frozenset({"kb_list"})
 
 
 class ToolSpec:
@@ -53,6 +64,9 @@ TOOLS: list[ToolSpec] = [
     ToolSpec("kb_read", read_tool, read_tool.SCHEMA),
     ToolSpec("kb_governance", governance_tool, governance_tool.SCHEMA),
     ToolSpec("kb_propose", propose_tool, propose_tool.SCHEMA),
+    ToolSpec(
+        "kb_proposal_status", proposal_status_tool, proposal_status_tool.SCHEMA
+    ),
     ToolSpec("kb_hub_rescan", rescan_tool, rescan_tool.SCHEMA),
 ]
 
@@ -69,14 +83,15 @@ class HubServer:
 
     # --- re-scan silencieux (§ 4.4.c) ---------------------------------------
 
-    def _silent_rescan(self) -> tuple[bool, bool]:
+    def _silent_rescan(self, trigger: str) -> tuple[bool, bool]:
         """Rescan sous cooldown. Retourne (rescan effectué, liste changée)."""
         with self._lock:
             now = time.monotonic()
             if now - self._last_silent_rescan < SILENT_RESCAN_COOLDOWN_S:
+                hublog.info(f"re-scan silencieux ignoré (cooldown) — {trigger}")
                 return False, False
             self._last_silent_rescan = now
-        hublog.info("re-scan silencieux déclenché par UNKNOWN_BASE")
+        hublog.info(f"re-scan silencieux déclenché par {trigger}")
         report = self.registry.scan()
         return True, report.changed
 
@@ -106,6 +121,16 @@ class HubServer:
         arguments = dict(params.arguments or {})
 
         notify_changed = False
+
+        # § B2 : un kb_list répond depuis l'état réel du disque, pas depuis un
+        # registre figé au démarrage de l'instance. Le cooldown est celui du
+        # § 4.4.c, partagé avec le re-scan sur UNKNOWN_BASE.
+        if spec.name in RESCAN_BEFORE:
+            _, changed = await anyio.to_thread.run_sync(
+                lambda: self._silent_rescan(spec.name)
+            )
+            notify_changed = changed
+
         try:
             text = await anyio.to_thread.run_sync(
                 lambda: spec.run(self.registry, arguments)
@@ -115,8 +140,10 @@ class HubServer:
                 # Atténuation § 4.4.c : la base a peut-être été importée depuis
                 # le démarrage de cette instance. On re-scanne puis on retente
                 # une fois avant de rendre l'erreur.
-                rescanned, changed = await anyio.to_thread.run_sync(self._silent_rescan)
-                notify_changed = changed
+                rescanned, changed = await anyio.to_thread.run_sync(
+                    lambda: self._silent_rescan(UNKNOWN_BASE)
+                )
+                notify_changed = notify_changed or changed
                 if rescanned:
                     try:
                         text = await anyio.to_thread.run_sync(
@@ -144,16 +171,47 @@ class HubServer:
         return Server(
             SERVER_NAME,
             version="0.1.0",
-            instructions=(
-                "Ce hub expose des bases de connaissance markdown versionnées en "
-                "git. Lecture : kb_list, kb_search, kb_read, kb_governance. "
-                "Contribution : kb_propose dépose une proposition dans "
-                "proposals/pending/ — le corpus n'est jamais modifié directement, "
-                "seul le rôle gestionnaire intègre."
-            ),
+            instructions=_instructions(self.registry),
             on_list_tools=self.on_list_tools,
             on_call_tool=self.on_call_tool,
         )
+
+
+#: Bases « meta » : elles documentent le hub lui-même plutôt qu'un domaine
+#: métier. Signalées dans les instructions du serveur, qui sont le seul texte
+#: qu'une session reçoit sans dépenser d'appel d'outil — et donc le seul endroit
+#: d'où l'on peut rendre le guide découvrable.
+META_BASES = {
+    "okf-hub-guide": (
+        "mode d'emploi de ce hub — séquences d'appels, stratégie de recherche, "
+        "ce qu'est une proposition recevable, cycle de vie d'une base"
+    ),
+    "okf-hub-feedback": (
+        "retours d'usage sur l'outillage du hub lui-même, roadmap et limitations "
+        "connues"
+    ),
+}
+
+
+def _instructions(registry: Registry) -> str:
+    """Instructions du serveur, complétées des bases meta réellement déployées.
+
+    Ne jamais annoncer une base absente : une session qui appellerait un guide
+    inexistant dépenserait un aller-retour pour un UNKNOWN_BASE.
+    """
+    base = (
+        "Ce hub expose des bases de connaissance markdown versionnées en git. "
+        "Lecture : kb_list, kb_search, kb_read, kb_governance. "
+        "Contribution : kb_propose dépose une proposition dans "
+        "proposals/pending/ — le corpus n'est jamais modifié directement, seul le "
+        "rôle gestionnaire intègre — et kb_proposal_status en restitue le verdict "
+        "une fois la revue passée."
+    )
+    connues = registry.bases
+    lignes = [f"- {nom} : {objet}" for nom, objet in META_BASES.items() if nom in connues]
+    if not lignes:
+        return base
+    return base + "\n\nBases décrivant le hub lui-même :\n" + "\n".join(lignes)
 
 
 async def _maybe_notify(ctx: ServerRequestContext, changed: bool) -> None:

@@ -13,7 +13,7 @@ les manifestes : `bundle-spec: "0.1"`).
 |---|---|
 | [`docs/SPEC-okf-bundle-hub-v0.md`](docs/SPEC-okf-bundle-hub-v0.md) | **La spécification.** Elle fait autorité ; tous les renvois « § x.y » du code y renvoient. |
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Conception : choix d'implémentation, mécanismes de correction, écarts assumés, traçabilité test ↔ exigence. |
-| [`docs/API.md`](docs/API.md) | Contrat des six outils `kb_*` : schémas, sorties, codes d'erreur, séquences typiques. |
+| [`docs/API.md`](docs/API.md) | Contrat des sept outils `kb_*` : schémas, sorties, codes d'erreur, séquences typiques. |
 | [`docs/J0-verification-okf.md`](docs/J0-verification-okf.md) | La spec OKF externe et ses trois divergences avec celle du hub. |
 | [`CLAUDE.md`](CLAUDE.md) | Orientation pour une session ouvrant ce dépôt. |
 | [`skills/kb-review/SKILL.md`](skills/kb-review/SKILL.md) | Déroulé de revue du rôle gestionnaire. |
@@ -53,14 +53,20 @@ uv run pytest -q
 | Outil | Rôle |
 |---|---|
 | `kb_list` | Bases disponibles, avec titre, objet, nombre de documents et de propositions en attente. `include_pending_concerns` ajoute les sujets en attente. |
-| `kb_search` | Recherche plein texte dans une base. Mode `keyword` (ET strict, repli automatique en OU signalé) ou `regex` (dialecte ripgrep). |
+| `kb_search` | Recherche plein texte dans une base. Mode `keyword` (ET strict, repli automatique en OU signalé) ou `regex` (dialecte ripgrep). Chaque extrait porte le heading de sa section, après `§`, à reporter tel quel dans `kb_read`. |
 | `kb_read` | Lecture d'un document, ou d'une seule section. Au-delà du seuil, retourne la table des headings — `force: true` pour passer outre. |
-| `kb_governance` | Golden rules et schéma de frontmatter d'une base. |
+| `kb_governance` | Golden rules et schéma de frontmatter d'une base. Signale par un bandeau une gouvernance en `status: draft`. |
 | `kb_propose` | Dépose une proposition dans `proposals/pending/`. Seul outil d'écriture, et il ne touche jamais au corpus. |
-| `kb_hub_rescan` | Relance la découverte des bases. **Portée mono-instance**, voir plus bas. |
+| `kb_proposal_status` | État et résolution des propositions : intégrée (avec les documents modifiés) ou rejetée (avec le motif). Lecture pure. `id` ou `submitted_by` requis. |
+| `kb_hub_rescan` | Rapport de découverte : bundles rejetés avec motif, collisions de `name`. La découverte elle-même est déjà déclenchée par `kb_list`. |
 
 Le paramètre `base` est toujours le champ `name` du manifeste, jamais le nom du
 répertoire dans `bases/` — les deux diffèrent dès qu'un clone est renommé.
+
+**Le `schema.yaml` d'une base décrit le frontmatter de son corpus, pas celui des
+propositions.** Une proposition n'a pas à s'y conformer : soumettez
+l'information, sa mise en forme conforme au schéma relève du gestionnaire à
+l'intégration. Les champs de `kb_propose` sont le seul format requis.
 
 ## Connecter un client Claude
 
@@ -182,26 +188,33 @@ Le transport stdio implique qu'**une instance du serveur tourne par client
 connecté**. Plusieurs processus opèrent donc simultanément sur les mêmes dépôts
 git. Conséquences pratiques :
 
-### Un rescan n'affecte que la session qui l'exécute
+### Chaque instance découvre les bases pour elle-même
 
-Une base importée pendant qu'une autre session est ouverte restera invisible de
-celle-ci jusqu'à son propre `kb_hub_rescan` ou son redémarrage.
+Il n'y a ni état partagé ni démon : la vérité est sur le disque, chaque instance
+la relit. Deux mécanismes automatiques, sous un **cooldown commun de 5 s par
+instance**, font qu'une base importée après le démarrage d'une session lui
+devient visible sans intervention :
 
-Atténuation automatique : une erreur `UNKNOWN_BASE` déclenche un re-scan
-silencieux (avec un délai de garde de 5 s) avant de rendre l'erreur. Une session
-qui tente d'utiliser une base fraîchement importée la trouvera donc, sans rien
-faire de particulier.
+- **tout `kb_list` déclenche la découverte** avant de répondre ;
+- une erreur `UNKNOWN_BASE` déclenche un re-scan silencieux, puis retente
+  l'appel.
+
+`kb_hub_rescan` reste utile pour *voir le rapport* d'un import — bundles rejetés
+avec leur motif, collisions de `name` — pas pour rafraîchir.
+
+Un rescan « partagé au niveau du hub » a été demandé et **refusé** : il
+supposerait précisément l'état partagé que ce modèle exclut.
 
 ### Certains clients ignorent `tools/list_changed`
 
 Le serveur émet la notification MCP `tools/list_changed` quand la liste des
 bases change. Claude Desktop l'a historiquement ignorée. **L'implémentation ne
-compte pas dessus** : c'est le re-scan sur `UNKNOWN_BASE` qui garantit le
+compte pas dessus** : ce sont les re-scans ci-dessus qui garantissent le
 fonctionnement.
 
-Conséquence visible : la description de `kb_list`, qui énumère les bases
-connues, peut rester périmée dans le contexte d'une session jusqu'à son
-prochain rescan.
+Conséquence visible, et purement cosmétique : la *description* de `kb_list`,
+qui énumère les bases connues, peut rester périmée dans le contexte d'une
+session. Le *contenu* que l'outil retourne, lui, est à jour.
 
 ### Les écritures sont sérialisées, les lectures ne le sont pas
 
@@ -254,19 +267,26 @@ Le verrou doit couvrir la séquence **complète**, jamais commande par commande.
 
 ## Limitations v0 assumées
 
-### La résolution d'une proposition n'est pas consultable via MCP
+### Le corps d'une proposition résolue n'est pas relisible via MCP
 
-Un contributeur qui n'a que l'accès MCP voit ce qui est en attente
-(`kb_list` avec `include_pending_concerns`) mais **ne peut pas lire le motif de
-rejet ni la résolution de ses propositions** : `accepted/` et `rejected/` ne
-sont lisibles que par accès git direct au dépôt.
+`kb_proposal_status` rend l'état, la résolution, `integrated-into` et le motif de
+rejet — c'est la boucle complète du contributeur, sans accès git. Ce qu'il ne
+rend **pas**, délibérément, c'est le **corps** de la proposition : il peut peser
+16 Ko, et une fois intégrée, ce qui compte est le corpus, lisible par `kb_read`
+en suivant `integrated-into`.
+
+Pour relire le texte exact d'une proposition rejetée :
 
 ```sh
 git -C bases/<nom> log --grep "Proposal: prop-2026-08-30-a3f2"
 cat bases/<nom>/proposals/rejected/prop-2026-08-30-a3f2.md
 ```
 
-Un outil `kb_proposal_status` est prévu en v1+.
+### La recherche est mono-base
+
+`kb_search` interroge une base à la fois. L'extension multi-bases est reportée en
+v1 optionnelle : un seul retour d'usage l'a demandée, on attend la récurrence
+avant d'élargir la surface d'outils.
 
 ### `submitted_by` n'est pas authentifié
 
@@ -284,6 +304,88 @@ Pratique recommandée : pousser après chaque session de revue.
 ```sh
 git -C bases/<nom> push
 ```
+
+## Bases par défaut
+
+Deux bases documentent le hub lui-même. Ce sont des **bundles ordinaires** —
+aucun traitement de faveur dans le code, et le hub tourne sans elles — mais elles
+comblent une lacune structurelle : une session connectée en MCP ne voit ni ce
+README, ni `docs/API.md`, ni `CLAUDE.md`. Elle ne dispose que des outils et de
+leurs descriptions.
+
+Le serveur les annonce dans son champ `instructions`, le seul texte qu'une
+session reçoit sans dépenser d'appel — et seulement si elles sont déployées.
+
+### `okf-hub-guide` — mode d'emploi pour une session
+
+Séquences d'appels, stratégie de recherche et de lecture, rôles et frontière de
+confiance à l'écriture, ce qu'est une proposition recevable, et le cycle de vie
+complet d'une base : créer, déployer, alimenter, réviser, retirer — avec à chaque
+étape le rôle qui l'exécute et le moyen employé.
+
+**Elle ne contient aucun schéma d'outil**, par golden rule. La référence vit dans
+les descriptions d'outils et dans `docs/API.md` ; une troisième copie serait la
+seule qu'aucun test ne garde, et une base se met à jour par le circuit de
+propositions quand une référence d'API doit bouger en verrou avec le code.
+
+Cette exclusion n'est pas qu'une intention : `tests/test_bases_meta.py` lit les
+`SCHEMA` du code et échoue si un corpus meta cite un outil inexistant, attribue à
+un outil un paramètre absent de son schéma, ou introduit un tableau de référence.
+
+### `okf-hub-feedback` — retours sur l'outillage
+
+Le hub est son propre premier cas d'usage : les retours sur **les outils** — pas
+sur le contenu métier des autres bases — arrivent par le circuit standard.
+
+```
+kb_governance      base=okf-hub-feedback        → ce qu'un retour recevable contient
+kb_propose         base=okf-hub-feedback …      → le dépôt
+kb_proposal_status base=okf-hub-feedback id=…   → le verdict, plus tard
+```
+
+Deux golden rules décident de la recevabilité : **citer l'outil concerné** et
+**décrire le comportement observé** (entrées, base, sortie obtenue, sortie
+attendue) avant toute demande d'évolution. Son corpus porte la roadmap des
+évolutions — décidées, reportées, refusées, avec le motif de chaque arbitrage —
+et les limitations connues.
+
+### Elles s'installent au premier lancement
+
+Leur **source** est versionnée dans [`bundles/`](bundles/). Au démarrage, le
+serveur installe dans `bases/` celles qui manquent : un `git clone` du hub suffit
+donc à disposer du guide, sans second dépôt à cloner.
+
+```sh
+bin/okf-bootstrap --list     # ce qui est livré, et ce qui est déployé
+bin/okf-bootstrap            # installe ce qui manque, sans rien écraser
+```
+
+Pour maîtriser entièrement le contenu de `bases/`, mettre
+`bootstrap-bundles: false` dans `hub-config.yaml`.
+
+**Pourquoi deux emplacements.** Une base doit être **son propre dépôt git**. Si
+elle n'était qu'un sous-répertoire du dépôt du hub, `gitops.commit_paths`
+exécuterait `git -C` dans le dépôt englobant, et un `kb_propose` de n'importe
+quelle session **commiterait sur la branche `main` du hub** — sans erreur. Le
+détail est dans [`bundles/README.md`](bundles/README.md).
+
+La source de vérité diffère ensuite selon la base.
+
+**`okf-hub-guide`** est rédigée par les mainteneurs, en verrou avec le code :
+`bundles/` fait foi, elle est semée de là, et un test vérifie que la copie
+déployée n'en diverge pas.
+
+**`okf-hub-feedback`** est alimentée par les sessions : son dépôt publié est
+l'original, et elle est donc **clonée**, pas semée.
+
+<https://github.com/Movida/okf-hub-feedback>
+
+Semer une base qui a un dépôt canonique produirait sur chaque machine une
+histoire git sans rapport avec la sienne, et les propositions qu'on y déposerait
+seraient irrécupérables. Les dépôts canoniques sont déclarés dans
+[`bundles/upstreams.yaml`](bundles/upstreams.yaml) ; si le clone échoue, la base
+n'est pas installée et le journal dit comment rattraper — absente vaut mieux
+qu'orpheline.
 
 ## Invariants d'audit
 
@@ -305,13 +407,15 @@ forger de faux trailers.
 ```
 src/okf_hub/
 ├── __main__.py     point d'entrée stdio
-├── server.py       câblage MCP, re-scan sur UNKNOWN_BASE, notifications
+├── server.py       câblage MCP, re-scan (kb_list et UNKNOWN_BASE), notifications
 ├── config.py       hub-config.yaml
 ├── registry.py     découverte, corpus, exclusions, confinement des chemins
 ├── manifest.py     validation de okf-bundle.yaml
 ├── locking.py      flock() — fd neuf par acquisition
 ├── gitops.py       index git temporaire initialisé depuis HEAD, identité explicite
 ├── search.py       ripgrep, ET strict puis repli OU
+├── bootstrap.py    installation des bases livrées (bundles/ → bases/)
+├── governance.py   statut draft/stable d'un GOVERNANCE.md
 ├── mdutil.py       frontmatter, headings, sections
 ├── textutil.py     plafonnement des sorties
 ├── review.py       moteur du rôle gestionnaire
@@ -351,12 +455,18 @@ HEAD, collision d'identifiant, tentatives d'injection de trailers, exclusion
 mutuelle entre `okf-lock` et le serveur, et deux instances proposant en
 parallèle.
 
+`tests/test_boucle_contribution.py` déroule le **critère d'acceptation** de la
+rév. 4.1 : dépôt d'une proposition par un vrai client MCP en stdio, résolution
+par `okf-review`, puis relecture du verdict — intégration ou motif de rejet —
+toujours en MCP seul. Il tourne sur une copie du bundle `okf-hub-feedback`
+réellement déployé quand il est présent.
+
 ## Hors périmètre v0
 
 Extensions `tools`/`skills` ; `review: agent|auto` ; validation automatique de
-schéma ; `kb_proposal_status` ; authentification des contributeurs ; politique
-d'incrément de version ; index de recherche dérivé ; revue d'import outillée ;
-synchronisation remote ; multi-hub.
+schéma ; authentification des contributeurs ; politique d'incrément de version ;
+index de recherche dérivé ; revue d'import outillée ; synchronisation remote ;
+multi-hub. Reporté en v1 optionnelle : `kb_search` multi-bases.
 
 ## Licence
 

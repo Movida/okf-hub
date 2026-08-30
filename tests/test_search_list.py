@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 
 from okf_hub.errors import INVALID_INPUT, ToolError
+from okf_hub.governance import DRAFT_BANNER
 from okf_hub.textutil import CHAR_CAP, BudgetedWriter
 from okf_hub.tools import governance_tool, list_tool, read_tool, search_tool
 
@@ -271,3 +272,125 @@ def test_sommaire_reste_lisible_et_compte(hub, make_bundle, registry):
     # reste un document au sens de la § 2.
     assert "rubrique" in read_tool.run(registry, {"base": "ma-base", "path": "index.md"})
     assert "documents : 2" in list_tool.run(registry, {})
+
+
+# --- heading de section dans les résultats (amendement rév. 4.1, § B3) --------
+
+
+def _section_de(sortie: str) -> str:
+    """Le libellé qui suit « § » sur la première ligne d'extrait."""
+    ligne = next(l for l in sortie.splitlines() if l.startswith("  L"))
+    return ligne.split("§", 1)[1].strip()
+
+
+def test_extrait_annote_du_heading_de_sa_section(hub, make_bundle, registry):
+    build(
+        make_bundle, registry,
+        {"a.md": "# Titre\n\n## Reconnexion SSO\n\nle mot cible est ici\n"},
+    )
+    out = search_tool.run(registry, {"base": "ma-base", "query": "cible"})
+    assert _section_de(out) == "reconnexion sso"
+
+
+def test_extrait_avant_tout_heading_annote_preambule(hub, make_bundle, registry):
+    build(make_bundle, registry, {"a.md": "le mot cible est ici\n\n# Titre\n\nsuite\n"})
+    out = search_tool.run(registry, {"base": "ma-base", "query": "cible"})
+    assert _section_de(out) == search_tool.PREAMBLE_LABEL
+
+
+def test_le_heading_suit_la_ligne_touchee_pas_le_debut_de_fenetre(hub, make_bundle, registry):
+    """La fenêtre de contexte déborde de deux lignes : elle peut mordre sur la
+    section précédente, pas le libellé."""
+    build(
+        make_bundle, registry,
+        {"a.md": "# A\n\ntexte\n\n## Section deux\n\ncible\n"},
+    )
+    out = search_tool.run(registry, {"base": "ma-base", "query": "cible"})
+    assert _section_de(out) == "section deux"
+
+
+def test_le_libelle_se_rejoue_tel_quel_dans_kb_read(hub, make_bundle, registry):
+    """Chaînage direct kb_search → kb_read(path, section), sans table des
+    headings intermédiaire — y compris sur un heading formaté (§ 11.4)."""
+    build(
+        make_bundle, registry,
+        {"a.md": "# A\n\n## Piège `relativePath` **confirmé**\n\nle mot cible\n"},
+    )
+    out = search_tool.run(registry, {"base": "ma-base", "query": "cible"})
+    section = _section_de(out)
+
+    lu = read_tool.run(registry, {"base": "ma-base", "path": "a.md", "section": section})
+    assert "le mot cible" in lu
+
+
+def test_chainage_en_un_appel_sur_un_gros_document(hub, make_bundle, registry):
+    """Le cas signalé : sur un document au-delà de read-toc-threshold, kb_read
+    sans section ne rend que la table des headings."""
+    remplissage = "\n".join(f"ligne de remplissage {i}" for i in range(1500))
+    build(
+        make_bundle, registry,
+        {"gros.md": f"# Gros\n\n## Bruit\n\n{remplissage}\n\n## Cible utile\n\nle mot cible\n"},
+    )
+    assert (registry.get("ma-base").corpus_dir / "gros.md").stat().st_size > (
+        registry.config.read_toc_threshold
+    )
+
+    out = search_tool.run(registry, {"base": "ma-base", "query": "cible"})
+    section = _section_de(out)
+
+    lu = read_tool.run(registry, {"base": "ma-base", "path": "gros.md", "section": section})
+    assert "le mot cible" in lu
+    assert "table des headings" not in lu
+
+
+def test_le_heading_dans_un_bloc_de_code_n_est_pas_une_section(hub, make_bundle, registry):
+    build(
+        make_bundle, registry,
+        {"a.md": "# A\n\n## Vraie section\n\n```\n# Faux heading\n```\n\ncible\n"},
+    )
+    out = search_tool.run(registry, {"base": "ma-base", "query": "cible"})
+    assert _section_de(out) == "vraie section"
+
+
+# --- convention `status` du GOVERNANCE.md (amendement rév. 4.1, § B5) --------
+
+
+def gouvernance(make_bundle, registry, texte: str):
+    b = make_bundle("ma-base", name="ma-base", git_init=False)
+    b.governance(texte)
+    b.init_git()
+    registry.scan()
+    return b
+
+
+def test_gouvernance_brouillon_prefixee_d_un_bandeau(hub, make_bundle, registry):
+    gouvernance(make_bundle, registry, "---\nstatus: draft\n---\n\n# G\n\nRègles.\n")
+    out = governance_tool.run(registry, {"base": "ma-base"})
+    assert out.startswith(DRAFT_BANNER)
+    assert "les propositions restent acceptées" in out
+
+
+def test_gouvernance_stable_sans_bandeau(hub, make_bundle, registry):
+    gouvernance(make_bundle, registry, "---\nstatus: stable\n---\n\n# G\n\nRègles.\n")
+    assert DRAFT_BANNER not in governance_tool.run(registry, {"base": "ma-base"})
+
+
+def test_absence_de_frontmatter_vaut_stable(hub, make_bundle, registry):
+    """Une base antérieure à la convention ne devient pas un brouillon."""
+    gouvernance(make_bundle, registry, "# G\n\nRègles.\n")
+    assert DRAFT_BANNER not in governance_tool.run(registry, {"base": "ma-base"})
+
+
+def test_status_inconnu_traite_comme_stable(hub, make_bundle, registry):
+    gouvernance(make_bundle, registry, "---\nstatus: brouilon\n---\n\n# G\n")
+    assert DRAFT_BANNER not in governance_tool.run(registry, {"base": "ma-base"})
+
+
+def test_status_insensible_a_la_casse(hub, make_bundle, registry):
+    gouvernance(make_bundle, registry, "---\nstatus: Draft\n---\n\n# G\n")
+    assert DRAFT_BANNER in governance_tool.run(registry, {"base": "ma-base"})
+
+
+def test_les_regles_restent_lisibles_en_brouillon(hub, make_bundle, registry):
+    gouvernance(make_bundle, registry, "---\nstatus: draft\n---\n\n# G\n\nRègle unique.\n")
+    assert "Règle unique." in governance_tool.run(registry, {"base": "ma-base"})

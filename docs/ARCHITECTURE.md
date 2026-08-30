@@ -32,14 +32,19 @@ src/okf_hub/
 ├── __main__.py     Point d'entrée stdio. Charge la config, ouvre le journal,
 │                   instancie HubServer, lance anyio.
 ├── server.py       Câblage MCP. Dispatch des outils, conversion ToolError →
-│                   isError, re-scan silencieux sur UNKNOWN_BASE, émission de
+│                   isError, re-scan silencieux (avant kb_list et sur
+│                   UNKNOWN_BASE, compteur de cooldown unique), émission de
 │                   tools/list_changed.
 │
 ├── config.py       hub-config.yaml → HubConfig (immuable).
 ├── hublog.py       Journal multi-instances : O_APPEND, une entrée = un write.
 ├── errors.py       Codes d'erreur et ToolError.
 ├── textutil.py     Plafond de sortie (BudgetedWriter), normalisation.
-├── mdutil.py       Frontmatter, headings, sections, normalisation de heading.
+├── mdutil.py       Frontmatter, headings, sections, normalisation de heading,
+│                   heading de la section contenant une ligne donnée.
+├── governance.py   Statut draft/stable d'un GOVERNANCE.md et son bandeau.
+├── bootstrap.py    Installation des bases livrées (bundles/ → bases/), au
+│                   démarrage et en ligne de commande. Publication atomique.
 │
 ├── manifest.py     Validation de okf-bundle.yaml (§ 3.3).
 ├── registry.py     Découverte, énumération du corpus, exclusions transverses,
@@ -181,6 +186,40 @@ ne laisse pas le dépôt à moitié modifié
 
 ---
 
+### 4.3 `kb_proposal_status` — la lecture qui ne verrouille rien
+
+```
+run()
+ ├─ registry.get(base)                      UNKNOWN_BASE si inconnue
+ ├─ contrainte id | submitted_by             INVALID_INPUT si aucun des deux
+ ├─ pour chaque statut retenu :
+ │   └─ Base.proposal_files(statut)          confinement § 5.3 : resolve() puis
+ │       │                                    vérification d'inclusion stricte
+ │       └─ parse_document()                 frontmatter illisible → compté, ignoré
+ ├─ tri par submitted-at décroissant
+ ├─ filtres id / submitted_by                id sans résultat → NOT_FOUND
+ └─ BudgetedWriter                           plafond transverse
+```
+
+**Aucun verrou n'est pris**, et c'est correct : la lecture peut voir un état
+intermédiaire pendant une résolution (§ 4.4.d), au pire une proposition juste
+avant son déplacement. Prendre le verrou ferait payer 15 s d'attente à une
+consultation pour un gain nul — git reste canonique, la lecture suivante sera
+juste.
+
+**L'emplacement fait foi.** Le statut vient du répertoire, pas du frontmatter.
+Une divergence est signalée dans la sortie et n'interrompt rien : un fichier
+déposé à la main dans `accepted/` avec `status: pending` reste lisible.
+
+**Le confinement est dans `registry`, pas dans l'outil.** `Base.proposal_files`
+résout canoniquement chaque candidat et vérifie son inclusion stricte dans
+`proposals/<statut>/` — même mécanique que `resolve_document` pour le corpus. Un
+lien symbolique déposé dans `pending/` et pointant hors du bundle est ignoré.
+C'est ce qui permet d'affirmer que l'exception à la liste d'exclusions du § 5.2
+ne perce pas le confinement.
+
+---
+
 ## 5. Écarts assumés par rapport à la spécification
 
 La spec impose (§ 11, clôture) de remonter toute déviation aux principes du § 1
@@ -258,6 +297,72 @@ git tiers ne peut donc pas la tromper.
 
 ---
 
+## 6 bis. Décisions d'implémentation de l'amendement rév. 4.1
+
+L'amendement laissait quelques points à l'implémenteur. Voici ce qui a été
+décidé, et pourquoi.
+
+| Point | Décision | Motif |
+|---|---|---|
+| Où brancher le re-scan de `kb_list` (§ B2) | Dans `server.on_call_tool`, via `RESCAN_BEFORE`, **pas** dans `list_tool.run` | Les modules de `tools/` reçoivent un `Registry`, pas le serveur : eux ne connaissent ni le cooldown ni la session à notifier. Le brancher là aurait dupliqué le compteur — exactement ce que l'amendement interdit (« même compteur partagé, pas un second mécanisme »). |
+| Ancre de section d'un extrait (§ B3) | La **ligne touchée**, pas le début de la fenêtre | La fenêtre de contexte déborde de deux lignes et peut mordre sur la section précédente ; annoter avec le heading de celle-ci enverrait `kb_read` au mauvais endroit. |
+| Forme du libellé de section (§ B3) | Texte **normalisé** (`Heading.normalized`) | L'amendement le dit explicitement (« le texte normalisé du heading, même normalisation que § 5.3/§ 11.4 »). Le texte brut aurait aussi fonctionné pour le chaînage — `normalize_heading` est idempotente sur lui — mais la spec fait autorité, et le normalisé garantit le round-trip sans hypothèse. |
+| Filtre `submitted_by` (§ B1) | Correspondance **exacte, casse ignorée** | Un champ déclaratif est saisi à la main : `Human:Alice` et `human:alice` sont la même intention. Une correspondance partielle, elle, ferait fuiter les propositions d'un homonyme. |
+| Frontmatter « illisible » (§ B1) | Frontmatter **absent ou non parseable** | Un frontmatter présent mais incomplet reste affiché avec `(non renseigné)` : c'est une information, pas une erreur. Absent, la proposition n'a pas d'identité exploitable — on ne devine pas. |
+| `NOT_FOUND` sur `submitted_by` | **Non** — résultat vide | Un contributeur qui n'a encore rien déposé n'est pas une erreur. `NOT_FOUND` reste réservé à un `id` explicitement demandé et introuvable. |
+| Statut de gouvernance inconnu (§ B5) | Vaut `stable`, avec avertissement au journal | `status: brouilon` ne doit pas basculer silencieusement une base en brouillon, ni faire échouer la lecture des règles (§ 1.4). |
+
+**Une base meta ne bénéficie d'aucun traitement de faveur dans le code.**
+`server.META_BASES` ne fait qu'une chose : décider si le nom est annoncé dans les
+`instructions`, et seulement quand la base est réellement déployée — annoncer un
+guide absent coûterait à chaque session un aller-retour pour un `UNKNOWN_BASE`.
+Aucun outil ne les traite différemment, et le hub fonctionne sans elles.
+
+**Les bases livrées ont leur source dans le dépôt, jamais leur instance.**
+`bundles/` porte la source ; `bases/` reste ignoré par git. Ce n'est pas une
+préférence esthétique : `gitops.commit_paths` exécute `git -C <racine du
+bundle>`, donc une base qui ne serait qu'un sous-répertoire du dépôt du hub ferait
+qu'un `kb_propose` **commite sur la branche `main` du hub**, sans erreur — c'est
+vérifié, pas supposé. Ignorée par git, elle casse dans l'autre sens : `git add`
+échoue et tout `kb_propose` rend `IO_ERROR`.
+
+**Une base qui a un dépôt canonique est clonée, jamais semée.**
+`bundles/upstreams.yaml` déclare ces dépôts. Semer produirait sur chaque machine
+une histoire git sans rapport avec la sienne : les propositions déposées dessus
+seraient irrécupérables, et l'invariant d'audit du § 6.2 — « exactement deux
+commits par proposition » — porterait sur une histoire parallèle. Un clone qui
+échoue **ne retombe jamais sur un semis** : la base reste absente, avec au journal
+la commande de rattrapage. Absente se voit tout de suite ; orpheline se découvre
+le jour où l'on veut remonter six mois de contributions.
+
+Le déploiement tourne au démarrage du processus (`__main__`), pas dans
+`HubServer.__init__` : les tests construisent des serveurs par dizaines, et la
+découverte doit rester sans effet de bord. Il est **idempotent** — il ne crée que
+ce qui manque — et **concurrent-safe** sans verrou de base, lequel serait
+impossible ici puisque son fichier vit dans le bundle qui n'existe pas encore :
+l'arbre est bâti dans un répertoire temporaire préfixé d'un point, au sein de
+`bases-dir`, puis publié par un `os.rename()` atomique. La découverte saute les
+répertoires cachés, donc un scan concurrent ne peut pas enregistrer un bundle à
+moitié copié.
+
+**La dérive d'un corpus meta est gardée par des tests, pas par des intentions.**
+`tests/test_bases_meta.py` lit les `SCHEMA` du code comme source de vérité et
+échoue si un corpus cite un outil qui n'existe plus, attribue à un outil un
+paramètre absent de son schéma, ou introduit un tableau de référence. C'est le
+seul mécanisme qui rendait acceptable d'écrire sur les outils ailleurs que dans
+leurs descriptions.
+
+Il lit `bundles/`, versionné, et non `bases/`, ignoré par git. La différence est
+tout sauf cosmétique : la CI part d'un checkout neuf, donc tant que la source
+vivait hors du dépôt, ces tests se contentaient de `skip` — le garde-fou ne
+tournait nulle part.
+
+**Aucun nouvel écart assumé.** Les sept points ci-dessus sont des précisions
+d'implémentation à l'intérieur de ce que la spec autorise, pas des déviations —
+la section 5 reste à deux écarts.
+
+---
+
 ## 7. Traçabilité — exigence de test → test
 
 La spec liste des tests obligatoires par jalon (§ 10.2). Table de correspondance,
@@ -313,6 +418,39 @@ pour vérifier la couverture sans relire la suite.
 | import = clone + rescan, rien d'autre | `test_import_a_chaud_et_rescan_silencieux` |
 | client MCP réel de bout en bout | `test_cycle_mcp_complet` (poignée de main stdio, SDK client officiel) |
 
+### rév. 4.1 — amendement du premier retour d'usage
+
+| Exigence de l'amendement | Test |
+|---|---|
+| B1 — filtres `id` / `submitted_by` / `status` / `limit` | `test_filtre_par_contributeur`, `test_filtre_par_statut`, `test_limit_borne_la_sortie_et_signale_le_reste`, `test_limit_hors_bornes_refuse` |
+| B1 — `id` ou `submitted_by` obligatoire | `test_sans_filtre_refuse` |
+| B1 — `NOT_FOUND` sur `id` introuvable | `test_id_introuvable_est_un_not_found` |
+| B1 — incohérence status/emplacement signalée sans échouer | `test_incoherence_status_emplacement_signalee_sans_echouer` |
+| B1 — frontmatter illisible ignoré et signalé | `test_frontmatter_illisible_ignore_et_signale` |
+| B1 — plafond de sortie | `test_plafond_de_sortie_respecte` |
+| B1 — confinement à `proposals/`, exception limitée à cet outil | `test_lien_symbolique_sortant_ignore`, `test_proposals_reste_exclu_des_autres_outils` |
+| B1 — le corps n'est pas retourné | `test_le_corps_de_la_proposition_n_est_pas_retourne` |
+| B2 — deuxième instance voit un bundle importé au premier `kb_list` | `test_kb_list_voit_une_base_importee_apres_le_demarrage` |
+| B2 — deux `kb_list` en < 5 s = un seul scan | `test_deux_kb_list_rapproches_ne_scannent_qu_une_fois` |
+| B2 — compteur de cooldown unique, partagé avec `UNKNOWN_BASE` | `test_le_cooldown_est_le_meme_que_celui_d_unknown_base` |
+| B2 — `tools/list_changed` et description régénérée | `test_la_liste_changee_emet_tools_list_changed`, `test_description_de_kb_list_regeneree_apres_import` |
+| B3 — heading de section par extrait, `(préambule)` inclus | `test_extrait_annote_du_heading_de_sa_section`, `test_extrait_avant_tout_heading_annote_preambule` |
+| B3 — ancre = ligne touchée, pas début de fenêtre | `test_le_heading_suit_la_ligne_touchee_pas_le_debut_de_fenetre` |
+| B3 — `kb_read` ciblé en un appel sur un document > seuil | `test_chainage_en_un_appel_sur_un_gros_document`, `test_le_libelle_se_rejoue_tel_quel_dans_kb_read` |
+| B5 — bandeau `draft`, défaut `stable`, valeur inconnue | `test_gouvernance_brouillon_prefixee_d_un_bandeau`, `test_absence_de_frontmatter_vaut_stable`, `test_status_inconnu_traite_comme_stable` |
+| B5 — signalement à la revue | `test_context_signale_une_gouvernance_en_brouillon` |
+| B6 — bundle de dogfooding conforme | `test_le_bundle_de_dogfooding_est_conforme` |
+| Bases meta — manifeste, gouvernance stable, conventions OKF | `tests/test_bases_meta.py` : `test_manifeste_valide_et_sans_avertissement`, `test_gouvernance_stable`, `test_sommaire_et_journal_presents`, `test_chaque_document_porte_type_et_version`, `test_le_sommaire_reference_tous_les_documents` |
+| Bases meta — **anti-dérive** vis-à-vis du code | `test_aucun_outil_inexistant_n_est_cite`, `test_aucun_parametre_inexistant_n_est_attribue_a_un_outil`, `test_le_guide_ne_recopie_pas_la_reference_d_api` |
+| Bases meta — découvrabilité par les `instructions` | `test_les_instructions_annoncent_les_bases_meta_deployees`, `test_une_base_meta_absente_n_est_pas_annoncee` |
+| Bases meta — le guide déployé ne diverge pas de sa source | `test_le_guide_deploye_est_conforme_a_sa_source` |
+| Bases livrées — dépôt git autonome, pas un sous-répertoire du hub | `test_la_base_deployee_est_un_depot_git_autonome` |
+| Bases livrées — **déploiements concurrents**, publication atomique | `test_deux_deploiements_concurrents_ne_produisent_qu_une_base`, `test_aucun_chantier_ne_survit`, `test_un_chantier_en_cours_n_est_pas_decouvert` |
+| Bases livrées — idempotence, non-écrasement, échec non bloquant | `test_deuxieme_appel_sans_effet`, `test_une_base_existante_n_est_jamais_ecrasee`, `test_echec_de_deploiement_non_bloquant` |
+| Bases livrées — installation au démarrage et interrupteur | `test_le_serveur_deploie_au_demarrage`, `test_bootstrap_bundles_false_desactive_le_deploiement` |
+| Bases livrées — **dépôt canonique cloné, jamais semé** | `test_une_base_avec_amont_est_clonee_pas_semee`, `test_un_clone_impossible_ne_seme_jamais`, `test_le_journal_dit_comment_rattraper` |
+| **D4 — critère d'acceptation** : contribution → revue → verdict, sans git côté contributeur | `test_boucle_complete_sans_acces_git_du_contributeur`, `test_le_rejet_est_lisible_avec_son_motif` |
+
 Exécution :
 
 ```sh
@@ -358,9 +496,29 @@ et les notifications sont pris en charge par `server.py`.
 
 Hors périmètre v0 par décision de la spec (§ 10.3), pas par oubli : extensions
 `tools`/`skills` d'un bundle ; `review: agent|auto` ; validation automatique de
-schéma ; `kb_proposal_status` ; authentification des contributeurs ; politique
-d'incrément de version ; index de recherche dérivé ; revue d'import outillée ;
-synchronisation remote ; multi-hub.
+schéma ; authentification des contributeurs ; politique d'incrément de version ;
+index de recherche dérivé ; revue d'import outillée ; synchronisation remote ;
+multi-hub.
+
+`kb_proposal_status` a quitté cette liste : livré par l'amendement rév. 4.1
+(§ 5.7 de la spec).
+
+**Reporté, avec sa spec pré-cadrée : `kb_search` multi-bases.** Demandé une fois,
+on attend la récurrence avant d'élargir la surface d'outils. Le jour venu :
+plafond de sortie **global unique réparti** entre les bases (et non un plafond
+par base, qui multiplierait la sortie), résultats **groupés par base**.
+
+**Refusé, et il faut savoir pourquoi avant de le re-proposer.** La validation du
+frontmatter d'une proposition contre `schema.yaml` est un contresens du modèle
+d'affirmation sémantique : le schéma décrit le corpus, la mise en forme est le
+travail du gestionnaire. Le rescan « partagé au niveau du hub » supposerait un
+état partagé ou un démon, contraires au § 4.4 ; le besoin est couvert par le
+re-scan implicite de `kb_list`.
+
+**Le volet template du § B5 n'est pas dans ce dépôt.** `okf-bundle-template` est
+un livrable distinct, publié sur GitHub et non monté dans le devcontainer ; la
+modification qui lui revenait a été livrée en patch, appliquée en amont, puis
+retirée d'ici. C'est la procédure à reprendre pour toute évolution du template.
 
 **L'index de recherche dérivé mérite un mot** : la spec dit de ne l'ajouter que
 si ripgrep devient *mesurablement* insuffisant. Mesure actuelle sur le corpus le

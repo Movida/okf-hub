@@ -32,6 +32,15 @@ PENDING_SUBDIR = f"{PROPOSALS_DIRNAME}/pending"
 ACCEPTED_SUBDIR = f"{PROPOSALS_DIRNAME}/accepted"
 REJECTED_SUBDIR = f"{PROPOSALS_DIRNAME}/rejected"
 
+#: Statut d'une proposition → sous-répertoire. **L'emplacement fait foi**
+#: (§ 6.2) : le champ `status` du frontmatter est redondant à dessein, et
+#: kb_proposal_status signale une divergence sans s'y fier.
+PROPOSAL_SUBDIRS: dict[str, str] = {
+    "pending": PENDING_SUBDIR,
+    "accepted": ACCEPTED_SUBDIR,
+    "rejected": REJECTED_SUBDIR,
+}
+
 
 @dataclass(frozen=True)
 class Base:
@@ -124,10 +133,35 @@ class Base:
     # --- propositions -------------------------------------------------------
 
     def pending_files(self) -> list[Path]:
-        d = self.pending_dir
-        if not d.is_dir():
+        return self.proposal_files("pending")
+
+    def proposal_files(self, status: str) -> list[Path]:
+        """Fichiers de proposition d'un statut donné, confinés à `proposals/`.
+
+        Le confinement reprend la mécanique du § 5.3 : chaque candidat est
+        résolu canoniquement (symlinks compris) puis vérifié comme strictement
+        inclus dans `proposals/<statut>/`. Un lien symbolique déposé dans
+        `pending/` et pointant hors du bundle ne peut donc pas faire lire un
+        fichier extérieur.
+        """
+        sub = PROPOSAL_SUBDIRS.get(status)
+        if sub is None:
+            raise ValueError(f"statut de proposition inconnu : {status}")
+        directory = self.root / sub
+        if not directory.is_dir():
             return []
-        return sorted(p for p in d.iterdir() if p.is_file() and p.suffix == ".md")
+        canonical = directory.resolve()
+        out: list[Path] = []
+        for path in sorted(directory.iterdir()):
+            if path.suffix != ".md":
+                continue
+            resolved = path.resolve()
+            if canonical not in resolved.parents:
+                continue
+            if not resolved.is_file():
+                continue
+            out.append(path)
+        return out
 
 
 @dataclass
@@ -176,6 +210,12 @@ class Registry:
             # collisions de name (§ 3.3).
             for entry in sorted(bases_dir.iterdir(), key=lambda p: p.name):
                 if not entry.is_dir():
+                    continue
+                # Répertoire caché : jamais une base. C'est ce qui permet au
+                # déploiement des bundles livrés (`bootstrap`) de construire son
+                # arbre dans `bases-dir` sans qu'un scan concurrent enregistre
+                # un bundle à moitié copié.
+                if entry.name.startswith("."):
                     continue
                 if not (entry / MANIFEST_FILENAME).is_file():
                     continue
