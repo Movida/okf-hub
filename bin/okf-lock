@@ -1,0 +1,77 @@
+#!/bin/sh
+# okf-lock — wrapper de verrouillage par base (§ 4.4.b.3).
+#
+#   okf-lock <base> -- <commande...>
+#
+# Acquiert le verrou flock() exclusif de la base, exécute la commande, libère le
+# verrou. Le verrou porte sur bases/<répertoire>/.okf-hub.lock, exactement le
+# même fichier et le même appel système que le serveur MCP (fcntl.flock) —
+# c'est ce qui rend l'exclusion mutuelle effective entre les deux (§ 11.3).
+#
+# GRANULARITÉ IMPOSÉE pour le gestionnaire : le verrou doit couvrir la séquence
+# de résolution COMPLÈTE (éditions du corpus + git add + git mv + git commit),
+# jamais commande par commande — sinon des entrelacements avec kb_propose
+# redeviennent possibles. D'où la forme :
+#
+#   okf-lock ma-base -- sh -c 'git add ... && git mv ... && git commit ...'
+#
+# Variables d'environnement :
+#   OKF_HUB_ROOT    racine du hub (défaut : le répertoire parent de ce script)
+#   OKF_HUB_PYTHON  interpréteur à utiliser (défaut : <hub>/.venv/bin/python,
+#                   sinon python3)
+#   OKF_LOCK_TIMEOUT  délai d'attente en secondes (défaut : 15, comme le serveur)
+
+set -eu
+
+usage() {
+    cat >&2 <<'EOF'
+usage: okf-lock <base> -- <commande...>
+
+  <base>  nom de la base (champ `name` du manifeste okf-bundle.yaml),
+          pas le nom du répertoire dans bases/.
+
+exemple:
+  root=$(okf-base-path ma-base root)
+  okf-lock ma-base -- sh -c "git -C '$root' add knowledge/ && \
+                             git -C '$root' commit -m 'integrate: …'"
+
+sortie:
+  75  base occupée : verrou non acquis dans le délai (équivalent de BASE_BUSY)
+EOF
+    exit 64
+}
+
+[ $# -ge 3 ] || usage
+
+BASE=$1
+shift
+[ "$1" = "--" ] || usage
+shift
+
+script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)
+HUB_ROOT=${OKF_HUB_ROOT:-$(dirname -- "$script_dir")}
+
+if [ -n "${OKF_HUB_PYTHON:-}" ]; then
+    PY=$OKF_HUB_PYTHON
+elif [ -x "$HUB_ROOT/.venv/bin/python" ]; then
+    PY="$HUB_ROOT/.venv/bin/python"
+else
+    PY=python3
+fi
+
+TIMEOUT=${OKF_LOCK_TIMEOUT:-15}
+
+# La résolution name → répertoire passe par le chargeur de manifeste du hub :
+# un grep sur okf-bundle.yaml serait faux dès que la valeur est quotée ou
+# multiligne. Cet appel crée aussi le fichier de verrou et son entrée dans
+# .git/info/exclude s'ils manquent.
+LOCKFILE=$(
+    OKF_HUB_ROOT="$HUB_ROOT" PYTHONPATH="$HUB_ROOT/src${PYTHONPATH:+:$PYTHONPATH}" \
+        "$PY" -m okf_hub.resolve "$BASE" --what lock --hub-root "$HUB_ROOT"
+) || exit $?
+
+# flock(1) libère le verrou à la fin de la commande, et de toute façon à la mort
+# du processus : pas de verrou orphelin, pas de procédure de bris.
+exec flock --exclusive --timeout "$TIMEOUT" \
+    --conflict-exit-code 75 \
+    "$LOCKFILE" "$@"

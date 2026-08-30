@@ -1,0 +1,29 @@
+#!/bin/sh
+# okf-base-path — imprime le chemin d'une base sur ce hub.
+#
+#   okf-base-path <base> [root|corpus|lock]
+#
+# Le paramètre <base> est le champ `name` du manifeste, pas le nom du
+# répertoire dans bases/ (§ 3.3). Utilitaire de confort pour la skill kb-review
+# et les scripts de résolution.
+
+set -eu
+
+[ $# -ge 1 ] || { echo "usage: okf-base-path <base> [root|corpus|lock]" >&2; exit 64; }
+
+BASE=$1
+WHAT=${2:-root}
+
+script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)
+HUB_ROOT=${OKF_HUB_ROOT:-$(dirname -- "$script_dir")}
+
+if [ -n "${OKF_HUB_PYTHON:-}" ]; then
+    PY=$OKF_HUB_PYTHON
+elif [ -x "$HUB_ROOT/.venv/bin/python" ]; then
+    PY="$HUB_ROOT/.venv/bin/python"
+else
+    PY=python3
+fi
+
+OKF_HUB_ROOT="$HUB_ROOT" PYTHONPATH="$HUB_ROOT/src${PYTHONPATH:+:$PYTHONPATH}" \
+    exec "$PY" -m okf_hub.resolve "$BASE" --what "$WHAT" --hub-root "$HUB_ROOT"

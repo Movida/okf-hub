@@ -1,0 +1,21 @@
+# Le hub n'embarque jamais les clones de bases : elles sont importées par
+# `git clone <url> bases/<nom>` (§ 4.2) et vivent leur propre vie git.
+/bases/*
+!/bases/.gitkeep
+
+# Journal du hub (§ 4.1)
+hub.log
+*.log
+
+# Verrous de base (§ 4.4.b.1) — ceinture et bretelles, ils vivent dans les
+# dépôts de bases, jamais ici.
+.okf-hub.lock
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+*.egg-info/
+dist/
+build/
