@@ -31,10 +31,14 @@ from .tools import (
 
 SERVER_NAME = "okf-hub"
 
-#: Cooldown du re-scan silencieux (§ 4.4.c). **Un seul compteur** pour les deux
-#: déclencheurs : `UNKNOWN_BASE` (§ 4.4.c) et l'appel de `kb_list` (amendement
-#: rév. 4.1, § B2). Ce n'est pas un second mécanisme — deux `kb_list` en moins de
-#: cinq secondes ne provoquent qu'un seul parcours de `bases-dir`.
+#: Cooldown du re-scan silencieux (§ 4.4.c, rév. 4.2) : **un mécanisme unique**
+#: (`_silent_rescan`), un cooldown unique, mais **un compteur par déclencheur** —
+#: `UNKNOWN_BASE` (§ 4.4.c, rév. 4) et l'appel de `kb_list` (rév. 4.1, § B2).
+#: Deux `kb_list` en moins de cinq secondes ne provoquent toujours qu'un seul
+#: parcours de `bases-dir` ; un `kb_list` ne consomme plus, en revanche, le
+#: re-scan compensatoire d'`UNKNOWN_BASE`, qui est une garantie de la rév. 4.
+#: La rév. 4.1 demandait un compteur commun ; post-mortem du bug que ça cause
+#: dans `docs/ARCHITECTURE.md` § 5 bis.
 SILENT_RESCAN_COOLDOWN_S = 5.0
 
 #: Outils dont l'appel déclenche la découverte avant exécution (§ B2). `kb_list`
@@ -78,19 +82,29 @@ class HubServer:
         self.config = config
         self.registry = Registry(config)
         self._lock = threading.Lock()
-        self._last_silent_rescan = 0.0
+        #: Dernier re-scan silencieux **par déclencheur** (§ 4.4.c). Les clés
+        #: sont bornées : les noms de `RESCAN_BEFORE`, plus `UNKNOWN_BASE`.
+        self._last_silent_rescan: dict[str, float] = {}
         self.registry.scan()
 
     # --- re-scan silencieux (§ 4.4.c) ---------------------------------------
 
     def _silent_rescan(self, trigger: str) -> tuple[bool, bool]:
-        """Rescan sous cooldown. Retourne (rescan effectué, liste changée)."""
+        """Rescan sous cooldown. Retourne (rescan effectué, liste changée).
+
+        Le cooldown est compté **par déclencheur**. Un compteur commun laissait
+        le re-scan proactif de `kb_list` étouffer le re-scan compensatoire
+        d'`UNKNOWN_BASE` : lister puis appeler une base importée dans la foulée
+        rendait l'erreur sans nouvelle tentative, alors que la rév. 4 garantit
+        l'inverse. Chaque déclencheur garde donc son propre garde-fou anti-spam.
+        """
         with self._lock:
             now = time.monotonic()
-            if now - self._last_silent_rescan < SILENT_RESCAN_COOLDOWN_S:
+            last = self._last_silent_rescan.get(trigger)
+            if last is not None and now - last < SILENT_RESCAN_COOLDOWN_S:
                 hublog.info(f"re-scan silencieux ignoré (cooldown) — {trigger}")
                 return False, False
-            self._last_silent_rescan = now
+            self._last_silent_rescan[trigger] = now
         hublog.info(f"re-scan silencieux déclenché par {trigger}")
         report = self.registry.scan()
         return True, report.changed
@@ -123,8 +137,8 @@ class HubServer:
         notify_changed = False
 
         # § B2 : un kb_list répond depuis l'état réel du disque, pas depuis un
-        # registre figé au démarrage de l'instance. Le cooldown est celui du
-        # § 4.4.c, partagé avec le re-scan sur UNKNOWN_BASE.
+        # registre figé au démarrage de l'instance. Même mécanisme et même
+        # cooldown que le re-scan sur UNKNOWN_BASE (§ 4.4.c), compteur distinct.
         if spec.name in RESCAN_BEFORE:
             _, changed = await anyio.to_thread.run_sync(
                 lambda: self._silent_rescan(spec.name)
