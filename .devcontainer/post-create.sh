@@ -4,11 +4,14 @@ set -euo pipefail
 
 echo "→ ripgrep (requis par kb_search)"
 if ! command -v rg >/dev/null 2>&1; then
-    # -o Dir::Etc::sourceparts=/dev/null : ignore sources.list.d, où l'image
-    # de base peut embarquer des dépôts tiers cassés (ex. yarn.list à clé GPG
-    # expirée) sans rapport avec le hub. On n'a besoin que des dépôts Debian
-    # officiels pour ripgrep.
-    sudo apt-get update -qq -o Dir::Etc::sourceparts=/dev/null
+    # apt-get update échoue sur un dépôt tiers cassé de l'image de base
+    # (yarn.list, clé GPG expirée, sans rapport avec le hub) : on tolère cet
+    # échec, car les dépôts Debian officiels sont mis à jour avant que
+    # l'erreur ne soit levée. Ne pas filtrer via
+    # -o Dir::Etc::sourceparts=/dev/null : sur cette image le dépôt Debian
+    # lui-même vit dans sources.list.d (format deb822), donc cette option le
+    # désactiverait aussi et ripgrep resterait introuvable (vécu).
+    sudo apt-get update -qq || true
     sudo apt-get install -y -qq ripgrep
 fi
 rg --version | head -1
