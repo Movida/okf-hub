@@ -5,15 +5,21 @@ description: >
   Ce qui a été décidé, reporté ou refusé sur les outils du hub, avec le motif de
   chaque décision et le retour d'usage qui l'a provoquée.
 tags: [kb_search, kb_propose, kb_proposal_status, kb_list, kb_hub_rescan, kb-review]
-applies-to: "rév. 4.1"
+applies-to: "rév. 4.2"
 generated:
   by: claude-code/opus-5
   at: 2026-08-30T00:00:00Z
+verified:
+  - by: claude-code/opus-5
+    at: 2026-08-31T00:00:00Z
+    note: "ajout de la section rév. 4.2 (correctif du cooldown de re-scan)"
 sources:
   - id: retour-j5
     resource: "premier retour d'usage réel d'une session consommatrice, post-J5"
   - id: amendement-41
     resource: "docs/SPEC-okf-bundle-hub-v0.md — amendement rév. 4.1"
+  - id: regression-42
+    resource: "docs/SPEC-okf-bundle-hub-v0.md — amendement rév. 4.2"
 ---
 
 # Roadmap des évolutions de l'outillage
@@ -51,14 +57,16 @@ signalée sans faire échouer l'appel.
 ouverte lui restait invisible jusqu'à un `kb_hub_rescan` explicite ou un
 redémarrage.[^retour-j5]
 
-**Décision.** Livré sous la forme d'un re-scan **avant** chaque `kb_list`,
-soumis au cooldown de 5 s déjà en place pour le re-scan sur `UNKNOWN_BASE`
-(§ 4.4.c) — même compteur, pas un second mécanisme. Toute session qui liste voit
-donc l'état réel du disque.
+**Décision.** Livré sous la forme d'un re-scan **avant** chaque `kb_list`, sous
+le cooldown de 5 s déjà en place pour le re-scan sur `UNKNOWN_BASE` (§ 4.4.c),
+mécanisme unique. Toute session qui liste voit donc l'état réel du disque.
 
 **Limitation résiduelle, cosmétique :** un client qui ignore la notification
 `tools/list_changed` continuera d'afficher une description de `kb_list` périmée
 jusqu'à sa prochaine énumération d'outils. Le contenu retourné, lui, est à jour.
+
+*(« même compteur » a été retiré de cette description après le correctif
+rév. 4.2 ci-dessous — voir « Livré — rév. 4.2 ».)*
 
 ### `kb_search` — heading de section dans les extraits
 
@@ -89,6 +97,23 @@ absent : `stable`). En brouillon, `kb_governance` préfixe sa sortie d'un
 bandeau, et la skill `kb-review` prévient l'humain que les règles appliquées ne
 sont pas validées. **Rien n'est bloqué** : les propositions restent acceptées et
 les revues possibles. C'est une convention documentée, pas une machine à états.
+
+## Livré — rév. 4.2
+
+### `kb_list` — cooldown compté par déclencheur
+
+**Retour à l'origine.** La rév. 4.1 avait fait de « le même compteur » entre
+`kb_list` et le re-scan sur `UNKNOWN_BASE` une exigence explicite. À l'usage,
+ce compteur unique laissait un `kb_list` consommer le cooldown, puis un import
+de base juste après retomber sur `UNKNOWN_BASE` **sans** le re-scan
+compensatoire garanti par la rév. 4 : l'erreur repartait telle quelle. Lister
+une base puis l'utiliser dans la foulée est un usage banal, pas un cas
+tordu.[^regression-42]
+
+**Décision.** Le cooldown de 5 s et le mécanisme restent uniques ; l'horodatage
+est désormais compté **séparément par déclencheur**. « Deux `kb_list` en moins
+de cinq secondes ne provoquent qu'un seul parcours » reste vrai ; un `kb_list`
+ne prive plus l'appel suivant du re-scan sur `UNKNOWN_BASE`.
 
 ## Reporté
 
@@ -130,3 +155,4 @@ mémoire ne fait autorité, la vérité est sur le disque**.
 d'intégration.
 
 [^retour-j5]: Premier retour d'usage réel d'une session consommatrice, post-J5, consolidé par l'amendement rév. 4.1 de la spécification.
+[^regression-42]: Détecté par `test_import_a_chaud_et_rescan_silencieux` (job bout-en-bout), corrigé par l'amendement rév. 4.2 de la spécification. Post-mortem complet : `docs/ARCHITECTURE.md` § 5 bis.

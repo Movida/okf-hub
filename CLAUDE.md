@@ -67,11 +67,14 @@ c'est la copie que personne ne teste qui égare une session. `server.META_BASES`
 ne fait que décider de leur annonce dans `instructions` ; aucun outil ne les
 traite différemment, le hub tourne sans elles.
 
-**Le re-scan a un seul compteur de cooldown.** `kb_list` et `UNKNOWN_BASE` le
-partagent (`HubServer._last_silent_rescan`). Un second déclencheur se branche
-dans `server.RESCAN_BEFORE`, jamais dans un module de `tools/` — qui n'a ni le
-cooldown ni la session à notifier. C'est explicitement ce que la rév. 4.1
-interdit de dupliquer.
+**Le re-scan a un seul mécanisme, et un compteur par déclencheur.**
+`HubServer._silent_rescan` est le seul point de re-scan silencieux ;
+`_last_silent_rescan` est un dict indexé par déclencheur (§ 4.4.c, rév. 4.2) —
+un compteur commun laissait un `kb_list` étouffer le re-scan compensatoire
+d'`UNKNOWN_BASE`, post-mortem en `ARCHITECTURE.md` § 5 bis. Un second
+déclencheur se branche dans `server.RESCAN_BEFORE`, jamais dans un module de
+`tools/` — qui n'a ni le cooldown ni la session à notifier. C'est le *mécanisme*
+que la rév. 4.1 interdit de dupliquer.
 
 **Le travail bloquant passe par `anyio.to_thread.run_sync`.** Un `subprocess` git
 ou ripgrep appelé directement dans un handler sérialiserait toutes les requêtes

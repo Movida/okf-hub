@@ -1,9 +1,13 @@
-"""Re-scan implicite de kb_list et cooldown partagé (amendement rév. 4.1, § B2).
+"""Re-scan implicite de kb_list et cooldown (amendement rév. 4.1, § B2).
 
 Le besoin : une session déjà connectée doit voir une base importée après son
 démarrage, sans rescan explicite ni redémarrage. La solution retenue reste
 strictement mono-instance (§ 4.4) — chaque instance découvre pour elle-même,
 il n'y a ni état partagé ni démon.
+
+Un mécanisme unique, un cooldown unique, mais **un compteur par déclencheur** :
+c'est l'écart de l'ARCHITECTURE § 5.3, sans lequel un `kb_list` étouffe le
+re-scan compensatoire d'`UNKNOWN_BASE` garanti par la rév. 4.
 """
 
 from __future__ import annotations
@@ -56,7 +60,7 @@ def test_kb_list_voit_une_base_importee_apres_le_demarrage(serveur, make_bundle)
     assert "seconde" not in texte(appel(serveur, ctx, "kb_list"))
 
     make_bundle("seconde", name="seconde")
-    serveur._last_silent_rescan = 0.0  # cooldown écoulé
+    serveur._last_silent_rescan.clear()  # cooldown écoulé
 
     sortie = texte(appel(serveur, ctx, "kb_list"))
     assert "seconde" in sortie
@@ -69,7 +73,7 @@ def test_la_liste_changee_emet_tools_list_changed(serveur, make_bundle):
     avant = ctx.session.list_changed
 
     make_bundle("seconde", name="seconde")
-    serveur._last_silent_rescan = 0.0
+    serveur._last_silent_rescan.clear()
     appel(serveur, ctx, "kb_list")
 
     assert ctx.session.list_changed == avant + 1
@@ -77,7 +81,7 @@ def test_la_liste_changee_emet_tools_list_changed(serveur, make_bundle):
 
 def test_liste_inchangee_n_emet_rien(serveur):
     ctx = _FakeContext()
-    serveur._last_silent_rescan = 0.0
+    serveur._last_silent_rescan.clear()
     appel(serveur, ctx, "kb_list")
     assert ctx.session.list_changed == 0
 
@@ -88,7 +92,7 @@ def test_description_de_kb_list_regeneree_apres_import(serveur, make_bundle):
     appel(serveur, ctx, "kb_list")
 
     make_bundle("seconde", name="seconde")
-    serveur._last_silent_rescan = 0.0
+    serveur._last_silent_rescan.clear()
     appel(serveur, ctx, "kb_list")
 
     outils = anyio.run(serveur.on_list_tools, ctx, None)
@@ -97,7 +101,7 @@ def test_description_de_kb_list_regeneree_apres_import(serveur, make_bundle):
 
 
 def test_deux_kb_list_rapproches_ne_scannent_qu_une_fois(serveur, make_bundle, monkeypatch):
-    """Cooldown de 5 s (§ 4.4.c) : le compteur est partagé, pas dupliqué."""
+    """Cooldown de 5 s (§ 4.4.c) : un seul parcours de bases-dir, pas trois."""
     scans = []
     original = serveur.registry.scan
     monkeypatch.setattr(
@@ -105,7 +109,7 @@ def test_deux_kb_list_rapproches_ne_scannent_qu_une_fois(serveur, make_bundle, m
     )
 
     ctx = _FakeContext()
-    serveur._last_silent_rescan = 0.0
+    serveur._last_silent_rescan.clear()
     appel(serveur, ctx, "kb_list")
     appel(serveur, ctx, "kb_list")
     appel(serveur, ctx, "kb_list")
@@ -113,8 +117,25 @@ def test_deux_kb_list_rapproches_ne_scannent_qu_une_fois(serveur, make_bundle, m
     assert len(scans) == 1
 
 
-def test_le_cooldown_est_le_meme_que_celui_d_unknown_base(serveur, make_bundle, monkeypatch):
-    """Un kb_list arme le cooldown du re-scan sur UNKNOWN_BASE, et l'inverse."""
+def test_un_kb_list_ne_consomme_pas_le_rescan_d_unknown_base(serveur, make_bundle):
+    """Garantie rév. 4 (§ 4.4.c) : une base importée à chaud reste joignable.
+
+    Régression de la rév. 4.1, reproduite par
+    `test_import_a_chaud_et_rescan_silencieux` : avec un compteur unique, le
+    re-scan proactif de `kb_list` armait le cooldown et le re-scan
+    compensatoire d'`UNKNOWN_BASE` était ignoré — l'erreur partait telle
+    quelle. Lister puis utiliser une base fraîche est un usage banal.
+    """
+    ctx = _FakeContext()
+    appel(serveur, ctx, "kb_list")           # arme le compteur de kb_list
+    make_bundle("tardive", name="tardive")   # import à chaud, dans la foulée
+
+    resultat = appel(serveur, ctx, "kb_search", base="tardive", query="exemple")
+    assert not resultat.is_error, texte(resultat)
+
+
+def test_deux_unknown_base_rapproches_ne_scannent_qu_une_fois(serveur, monkeypatch):
+    """Chaque déclencheur garde son garde-fou : UNKNOWN_BASE ne spamme pas."""
     scans = []
     original = serveur.registry.scan
     monkeypatch.setattr(
@@ -122,14 +143,10 @@ def test_le_cooldown_est_le_meme_que_celui_d_unknown_base(serveur, make_bundle, 
     )
 
     ctx = _FakeContext()
-    serveur._last_silent_rescan = 0.0
-    appel(serveur, ctx, "kb_list")
-    assert len(scans) == 1
+    serveur._last_silent_rescan.clear()
+    for _ in range(3):
+        assert appel(serveur, ctx, "kb_search", base="absente", query="x").is_error
 
-    # Ce kb_search échoue en UNKNOWN_BASE : sans compteur partagé, il
-    # déclencherait un second parcours de bases-dir dans la foulée.
-    resultat = appel(serveur, ctx, "kb_search", base="absente", query="x")
-    assert resultat.is_error
     assert len(scans) == 1
 
 
@@ -146,6 +163,6 @@ def test_le_rescan_implicite_ne_touche_que_kb_list(serveur, make_bundle, monkeyp
     )
 
     ctx = _FakeContext()
-    serveur._last_silent_rescan = 0.0
+    serveur._last_silent_rescan.clear()
     appel(serveur, ctx, "kb_search", base="premiere", query="exemple")
     assert scans == []

@@ -3,6 +3,35 @@
 Format inspiré de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/).
 Le projet suit la version de la spécification qu'il implémente : `bundle-spec 0.1`.
 
+## [0.2.1] — 2026-08-31
+
+### Corrigé
+
+- **Un `kb_list` ne consomme plus le re-scan silencieux d'`UNKNOWN_BASE`.**
+  Régression introduite en 0.2.0 : les deux déclencheurs partageaient un seul
+  compteur de cooldown, comme le demandait la lettre du § 4.4.c amendé. Un
+  `kb_list`, puis un import de base, puis un appel sur cette base dans les cinq
+  secondes — séquence banale — voyaient le re-scan compensatoire ignoré et
+  l'erreur `UNKNOWN_BASE` rendue telle quelle. La garantie de la rév. 4 « une
+  base importée pendant qu'une session tourne devient joignable sans rien
+  faire » tombait. Chaque déclencheur compte désormais son cooldown à part ;
+  le mécanisme, lui, reste unique, et deux `kb_list` rapprochés ne provoquent
+  toujours qu'un seul parcours de `bases-dir`.
+
+  Détecté par `test_import_a_chaud_et_rescan_silencieux` (job bout-en-bout).
+  Remonté au propriétaire du projet sous la clause de clôture « en cas de
+  conflit entre la rév. 4 et le présent amendement, la rév. 4 prévaut et le
+  conflit est remonté », et intégré dans la spec elle-même comme **rév. 4.2**
+  du § 4.4.c — ce n'est donc pas un écart de code. Post-mortem complet en
+  `docs/ARCHITECTURE.md` § 5 bis.
+
+### Tests
+
+232 tests. `test_le_cooldown_est_le_meme_que_celui_d_unknown_base` — qui gardait
+le comportement fautif — est remplacé par
+`test_un_kb_list_ne_consomme_pas_le_rescan_d_unknown_base` et
+`test_deux_unknown_base_rapproches_ne_scannent_qu_une_fois`.
+
 ## [0.2.0] — 2026-08-30
 
 Amendement **rév. 4.1** de la spécification, issu du premier retour d'usage réel
@@ -27,7 +56,8 @@ journal) : **aucun écart constaté**.
 - **Re-scan implicite de `kb_list`** (§ 4.4.c) — une base importée après le
   démarrage d'une session lui devient visible dès qu'elle liste, sans rescan
   explicite ni redémarrage. Sous le **cooldown de 5 s déjà existant**, compteur
-  partagé avec le re-scan sur `UNKNOWN_BASE`.
+  partagé avec le re-scan sur `UNKNOWN_BASE`. *(Le partage du compteur s'est
+  révélé fautif — corrigé en 0.2.1.)*
 - **Heading de section dans les résultats de `kb_search`** (§ 5.2) — chaque
   extrait porte, après `§`, le heading normalisé de la section contenant la
   ligne touchée, ou `(préambule)`. Se reporte tel quel dans
