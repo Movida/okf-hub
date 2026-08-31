@@ -393,13 +393,16 @@ Avertissements :
 comme toute découverte sur ce hub : chaque client MCP a son instance et son
 registre, il n'y a ni état partagé ni démon (§ 4.4).
 
-**Vous n'avez généralement pas besoin de l'appeler.** Deux mécanismes couvrent
-déjà le besoin, sous un **cooldown commun de 5 s par instance** :
+**Vous n'avez généralement pas besoin de l'appeler.** Deux déclencheurs couvrent
+déjà le besoin, chacun sous un **cooldown de 5 s par instance** :
 
 - une erreur `UNKNOWN_BASE` déclenche un re-scan silencieux puis retente l'appel ;
 - **tout `kb_list` déclenche la découverte** avant de répondre : une base
   importée après le démarrage d'une session lui devient donc visible dès qu'elle
   liste, sans rescan explicite ni redémarrage.
+
+Leurs cooldowns sont comptés séparément : un `kb_list` ne prive pas l'appel
+suivant du re-scan compensatoire sur `UNKNOWN_BASE`.
 
 Ce qui reste propre à `kb_hub_rescan` : le **rapport** ci-dessus — bundles
 rejetés avec leur motif, collisions de `name`, avertissements de compatibilité.

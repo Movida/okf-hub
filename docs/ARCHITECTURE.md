@@ -33,7 +33,8 @@ src/okf_hub/
 │                   instancie HubServer, lance anyio.
 ├── server.py       Câblage MCP. Dispatch des outils, conversion ToolError →
 │                   isError, re-scan silencieux (avant kb_list et sur
-│                   UNKNOWN_BASE, compteur de cooldown unique), émission de
+│                   UNKNOWN_BASE — un mécanisme, un cooldown, un compteur par
+│                   déclencheur, § 4.4.c rév. 4.2, cf. § 5 bis), émission de
 │                   tools/list_changed.
 │
 ├── config.py       hub-config.yaml → HubConfig (immuable).
@@ -224,7 +225,9 @@ ne perce pas le confinement.
 
 La spec impose (§ 11, clôture) de remonter toute déviation aux principes du § 1
 ou aux mécanismes du § 4.4.b. **Ces deux écarts ont été remontés au propriétaire
-du projet et acceptés.** Il n'y en a pas d'autres.
+du projet et acceptés.** Il n'y en a pas d'autres — le § 5 bis documente un cas
+distinct : un bug de l'amendement rév. 4.1, remonté puis corrigé **dans la spec
+elle-même** (rév. 4.2), pas laissé en écart de code.
 
 ### 5.1 Déclassement des noms réservés OKF dans `kb_search`
 
@@ -286,6 +289,58 @@ git tiers ne peut donc pas la tromper.
 
 ---
 
+## 5 bis. Post-mortem — cooldown de re-scan : bug de l'amendement rév. 4.1, corrigé par la rév. 4.2
+
+Contrairement au § 5, **ceci n'est pas un écart** : le code suit la spec à la
+lettre, à jour de la rév. 4.2. Ce post-mortem existe pour que la trace du
+raisonnement survive au correctif — pourquoi la lettre de la rév. 4.1 était
+intenable, pas seulement ce que dit la version corrigée.
+
+**Ce que demandait la rév. 4.1.** § 4.4.c amendé : tout `kb_list` déclenche la
+découverte, « sous le même cooldown de 5 s et **le même compteur** que le
+re-scan sur `UNKNOWN_BASE` — ce n'est pas un second mécanisme ». Or la rév. 4,
+au même paragraphe, garantit qu'`UNKNOWN_BASE` déclenche toujours son propre
+re-scan compensatoire avant de rendre l'erreur.
+
+**Pourquoi les deux phrases ne peuvent pas être vraies ensemble.** Avec un
+compteur unique, cette séquence — banale, pas un cas tordu — casse la garantie
+de la rév. 4 :
+
+1. un `kb_list` scanne et arme le compteur ;
+2. une base est importée dans la seconde qui suit ;
+3. un appel sur cette base lève `UNKNOWN_BASE` ;
+4. le re-scan compensatoire est ignoré — cooldown encore actif ;
+5. l'erreur part telle quelle, sans nouvelle tentative.
+
+Détecté par `test_import_a_chaud_et_rescan_silencieux` (job bout-en-bout).
+
+**Résolution.** Remonté au propriétaire du projet sous la clause de clôture
+« en cas de conflit non identifié entre la rév. 4 et le présent amendement, la
+rév. 4 prévaut et le conflit est remonté ». Intégré en **rév. 4.2** plutôt que
+laissé en écart de code : le § 4.4.c garde un cooldown unique et un mécanisme
+unique, mais un horodatage **par déclencheur** — `HubServer._last_silent_rescan`
+est un dictionnaire indexé par déclencheur (`kb_list`, `UNKNOWN_BASE`), pas un
+flottant.
+
+**Ce que la correction préserve.** L'intention de la rév. 4.1 tient tout entière
+dans sa deuxième moitié — « deux `kb_list` en moins de cinq secondes ne
+provoquent qu'un seul parcours » — et elle reste vraie
+(`test_deux_kb_list_rapproches_ne_scannent_qu_une_fois`). « Ce n'est pas un
+second mécanisme » reste vrai aussi : une fonction (`_silent_rescan`), un
+branchement (`RESCAN_BEFORE`, § 6 bis), un cooldown, une émission de
+`tools/list_changed`. Seul l'horodatage est dédoublé.
+
+**Coût.** Au pire deux parcours de `bases-dir` par fenêtre de 5 s au lieu d'un,
+et seulement si les deux déclencheurs se présentent dans la même fenêtre. Chacun
+garde son propre garde-fou : une boucle d'appels sur une base inexistante ne
+scanne toujours qu'une fois par fenêtre
+(`test_deux_unknown_base_rapproches_ne_scannent_qu_une_fois`).
+
+Tests : `test_un_kb_list_ne_consomme_pas_le_rescan_d_unknown_base`,
+`test_deux_unknown_base_rapproches_ne_scannent_qu_une_fois`.
+
+---
+
 ## 6. Questions ouvertes du § 11 — comment elles ont été tranchées
 
 | § | Question | Décision |
@@ -304,7 +359,7 @@ décidé, et pourquoi.
 
 | Point | Décision | Motif |
 |---|---|---|
-| Où brancher le re-scan de `kb_list` (§ B2) | Dans `server.on_call_tool`, via `RESCAN_BEFORE`, **pas** dans `list_tool.run` | Les modules de `tools/` reçoivent un `Registry`, pas le serveur : eux ne connaissent ni le cooldown ni la session à notifier. Le brancher là aurait dupliqué le compteur — exactement ce que l'amendement interdit (« même compteur partagé, pas un second mécanisme »). |
+| Où brancher le re-scan de `kb_list` (§ B2) | Dans `server.on_call_tool`, via `RESCAN_BEFORE`, **pas** dans `list_tool.run` | Les modules de `tools/` reçoivent un `Registry`, pas le serveur : eux ne connaissent ni le cooldown ni la session à notifier. Le brancher là aurait dupliqué le *mécanisme* — exactement ce que l'amendement interdit (« pas un second mécanisme »). Dédoubler le seul horodatage, en revanche, était nécessaire : § 5 bis, intégré en rév. 4.2. |
 | Ancre de section d'un extrait (§ B3) | La **ligne touchée**, pas le début de la fenêtre | La fenêtre de contexte déborde de deux lignes et peut mordre sur la section précédente ; annoter avec le heading de celle-ci enverrait `kb_read` au mauvais endroit. |
 | Forme du libellé de section (§ B3) | Texte **normalisé** (`Heading.normalized`) | L'amendement le dit explicitement (« le texte normalisé du heading, même normalisation que § 5.3/§ 11.4 »). Le texte brut aurait aussi fonctionné pour le chaînage — `normalize_heading` est idempotente sur lui — mais la spec fait autorité, et le normalisé garantit le round-trip sans hypothèse. |
 | Filtre `submitted_by` (§ B1) | Correspondance **exacte, casse ignorée** | Un champ déclaratif est saisi à la main : `Human:Alice` et `human:alice` sont la même intention. Une correspondance partielle, elle, ferait fuiter les propositions d'un homonyme. |
@@ -432,7 +487,7 @@ pour vérifier la couverture sans relire la suite.
 | B1 — le corps n'est pas retourné | `test_le_corps_de_la_proposition_n_est_pas_retourne` |
 | B2 — deuxième instance voit un bundle importé au premier `kb_list` | `test_kb_list_voit_une_base_importee_apres_le_demarrage` |
 | B2 — deux `kb_list` en < 5 s = un seul scan | `test_deux_kb_list_rapproches_ne_scannent_qu_une_fois` |
-| B2 — compteur de cooldown unique, partagé avec `UNKNOWN_BASE` | `test_le_cooldown_est_le_meme_que_celui_d_unknown_base` |
+| B2 — cooldown unique de 5 s, **un compteur par déclencheur** (rév. 4.2, § 5 bis) | `test_le_cooldown_est_bien_de_cinq_secondes`, `test_un_kb_list_ne_consomme_pas_le_rescan_d_unknown_base`, `test_deux_unknown_base_rapproches_ne_scannent_qu_une_fois` |
 | B2 — `tools/list_changed` et description régénérée | `test_la_liste_changee_emet_tools_list_changed`, `test_description_de_kb_list_regeneree_apres_import` |
 | B3 — heading de section par extrait, `(préambule)` inclus | `test_extrait_annote_du_heading_de_sa_section`, `test_extrait_avant_tout_heading_annote_preambule` |
 | B3 — ancre = ligne touchée, pas début de fenêtre | `test_le_heading_suit_la_ligne_touchee_pas_le_debut_de_fenetre` |

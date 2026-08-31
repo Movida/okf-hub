@@ -10,13 +10,16 @@
 > sont recensés dans [`ARCHITECTURE.md`](ARCHITECTURE.md), section « Écarts
 > assumés » — nulle part ailleurs.
 >
-> **Révision courante : 4.1.** L'amendement rév. 4.1 (premier retour d'usage
+> **Révision courante : 4.2.** L'amendement rév. 4.1 (premier retour d'usage
 > réel d'une session consommatrice, post-J5) a été intégré dans le corps du
 > texte, section par section, plutôt qu'annexé : les renvois « § x.y » du code
 > restent ainsi la seule adresse d'une exigence. Les passages issus de
 > l'amendement portent la mention **(rév. 4.1)**. La rév. 4 reste le document de
 > référence : en cas de conflit non identifié entre les deux textes, elle
-> prévaut et le conflit est remonté au propriétaire.
+> prévaut et le conflit est remonté au propriétaire — c'est ce mécanisme de
+> clôture qui a produit la **rév. 4.2** (§ 4.4.c), après qu'une implémentation
+> conforme à la lettre de la rév. 4.1 a fait échouer une garantie de la rév. 4.
+> Les passages qui en sont issus portent la mention **(rév. 4.2)**.
 
 Document d'implémentation, révision 4.1 — révision 4 (version finale pour
 implémentation, intégrant les retours des trois relectures croisées), amendée
@@ -405,13 +408,23 @@ rendre l'erreur, avec **cooldown de 5 s par instance**. Le re-scan silencieux
 émet aussi `tools/list_changed` si la liste a changé (sans garantie que le client
 l'honore, § 4.2).
 
-**Re-scan implicite de `kb_list` (rév. 4.1).** Tout appel de `kb_list` déclenche
-d'abord la découverte (§ 4.2), **sous le même cooldown de 5 s et le même
-compteur** que le re-scan sur `UNKNOWN_BASE` — ce n'est pas un second mécanisme,
-et deux `kb_list` en moins de cinq secondes ne provoquent qu'un seul parcours de
-`bases-dir`. Si la liste a changé : `tools/list_changed` est émise et la
-description de `kb_list` régénérée. Toute session qui liste voit donc l'état réel
-du disque.
+**Re-scan implicite de `kb_list` (rév. 4.1, cooldown corrigé en rév. 4.2).**
+Tout appel de `kb_list` déclenche d'abord la découverte (§ 4.2), sous **le même
+cooldown de 5 s** que le re-scan sur `UNKNOWN_BASE`, mécanisme unique — ce n'est
+pas un second mécanisme, et deux `kb_list` en moins de cinq secondes ne
+provoquent qu'un seul parcours de `bases-dir`. Si la liste a changé :
+`tools/list_changed` est émise et la description de `kb_list` régénérée. Toute
+session qui liste voit donc l'état réel du disque.
+
+**Le cooldown est compté séparément par déclencheur (rév. 4.2).** La rév. 4.1
+demandait « le même compteur » entre `kb_list` et `UNKNOWN_BASE` : constaté à
+l'usage (post-J5-bis), un compteur unique laisse un `kb_list` consommer le
+cooldown puis un import de base dans la foulée retomber sur `UNKNOWN_BASE` sans
+re-scan compensatoire, l'erreur étant rendue telle quelle — ce qui viole la
+garantie du paragraphe précédent. Chaque déclencheur tient donc son propre
+horodatage sous le même cooldown de 5 s ; seul le mécanisme reste unique, et
+l'intention de la rév. 4.1 — pas de second parcours pour deux `kb_list`
+rapprochés — est inchangée.
 
 Un rescan **partagé au niveau du hub** est explicitement **rejeté** : il
 supposerait un état partagé entre instances ou un démon, contraires au présent
@@ -1078,9 +1091,28 @@ Non retenu : `kb_search` multi-bases (reporté v1, spec pré-cadrée au § 10.3)
 validation de frontmatter avant dépôt (refusée), rescan partagé au niveau du hub
 (refusé, besoin couvert), authentification de `submitted_by` ([v1+] inchangé).
 
+### rév. 4.2 — correctif du cooldown de re-scan (post-J5-bis)
+
+Origine : implémentation de la rév. 4.1 conforme à sa lettre — un compteur de
+cooldown unique entre `kb_list` et `UNKNOWN_BASE` — mais qui fait échouer une
+garantie de la rév. 4 : un `kb_list`, suivi d'un import de base puis d'un appel
+sur cette base dans les cinq secondes (séquence banale : lister puis utiliser)
+laissait le re-scan compensatoire d'`UNKNOWN_BASE` ignoré, cooldown déjà
+consommé, et l'erreur rendue telle quelle. Conflit non identifié entre les deux
+textes au sens de la clôture ci-dessous ; tranché en faveur de la rév. 4, remonté
+et intégré ici plutôt que laissé en écart de code.
+
+| § amendé | Objet |
+|---|---|
+| § 4.4.c | Cooldown de 5 s toujours unique, mécanisme toujours unique, mais compté séparément par déclencheur (`kb_list`, `UNKNOWN_BASE`) |
+
+Non retenu : revenir à un compteur unique en échange d'un mécanisme de rattrapage
+supplémentaire — cela aurait réintroduit un second mécanisme, exactement ce que
+la rév. 4.1 exclut.
+
 ---
 
-*Fin de spécification (rév. 4.1).* **Toute déviation par rapport aux principes du
+*Fin de spécification (rév. 4.2).* **Toute déviation par rapport aux principes du
 § 1 ou aux mécanismes du § 4.4.b doit être remontée au propriétaire du projet
-avant implémentation.** En cas de conflit non identifié entre la rév. 4 et le
-présent amendement, **la rév. 4 prévaut** et le conflit est remonté.
+avant implémentation.** En cas de conflit non identifié entre deux révisions,
+**la plus ancienne prévaut** et le conflit est remonté.

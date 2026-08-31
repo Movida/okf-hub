@@ -191,13 +191,17 @@ git. Conséquences pratiques :
 ### Chaque instance découvre les bases pour elle-même
 
 Il n'y a ni état partagé ni démon : la vérité est sur le disque, chaque instance
-la relit. Deux mécanismes automatiques, sous un **cooldown commun de 5 s par
+la relit. Deux déclencheurs automatiques, chacun sous un **cooldown de 5 s par
 instance**, font qu'une base importée après le démarrage d'une session lui
 devient visible sans intervention :
 
 - **tout `kb_list` déclenche la découverte** avant de répondre ;
 - une erreur `UNKNOWN_BASE` déclenche un re-scan silencieux, puis retente
   l'appel.
+
+Les deux comptent leur cooldown séparément : lister puis appeler dans la foulée
+une base importée entre-temps fonctionne, le premier appel ne consomme pas le
+re-scan du second.
 
 `kb_hub_rescan` reste utile pour *voir le rapport* d'un import — bundles rejetés
 avec leur motif, collisions de `name` — pas pour rafraîchir.
