@@ -36,29 +36,61 @@ les manifestes : `bundle-spec: "0.1"`).
 ### Dans le devcontainer (recommandé)
 
 Ouvrir le dépôt dans VS Code → *Reopen in Container*. Le `post-create` installe
-ripgrep, `uv` et les dépendances, prépare la clé SSH du conteneur, puis lance les
-tests.
+ripgrep, `uv` et les dépendances, pose l'identité git, prépare les deploy keys,
+puis lance les tests.
+
+#### Identité git
+
+Un commit poussé sous une adresse qui n'existe pas n'est rattaché à aucun compte
+GitHub : ni auteur identifiable dans l'historique, ni contribution comptée. Le
+conteneur lit donc `.devcontainer/git-identity.env`, **non versionné** — chaque
+mainteneur a la sienne :
+
+```sh
+cat > .devcontainer/git-identity.env <<'EOF'
+OKF_GIT_NAME="Prénom NOM"
+OKF_GIT_EMAIL="<id>+<login>@users.noreply.github.com"
+EOF
+```
+
+L'adresse `noreply` de GitHub (*Settings > Emails*) garantit le rattachement au
+compte sans publier d'adresse personnelle. Sans ce fichier, `post-create.sh`
+retombe sur une identité locale **et le signale bruyamment** : c'est un défaut
+de repli, pas un réglage.
 
 #### Pousser depuis le devcontainer
 
-Les remotes en `https://` fonctionnent sans rien faire : VS Code transmet le
-helper de credentials de l'hôte. Un remote en `git@github.com:` n'a, lui, ni clé
-ni agent — `git push` échoue en « Permission denied (publickey) », et le commit
-reste sur place sans que rien ne le signale.
+Un remote en `git@github.com:` n'a dans un conteneur ni clé ni agent —
+`git push` échoue en « Permission denied (publickey) », et le commit reste sur
+place sans que rien ne le signale. Les remotes en `https://` semblent marcher
+sans rien faire, mais par le helper de credentials de VS Code : ils tombent dès
+qu'un processus git tourne hors de cette session — `bootstrap.py` au démarrage
+du serveur, un `docker exec`.
 
-`post-create.sh` génère donc une clé ed25519 dans un volume nommé monté sur
-`~/.ssh` (elle survit aux rebuilds, et n'est générée qu'une fois), et affiche sa
-partie publique en fin d'installation. À enregistrer une fois :
+`.devcontainer/deploy-keys.sh` règle les deux cas avec **une deploy key par
+dépôt**, dans un volume nommé monté sur `~/.ssh` (elles survivent aux rebuilds).
+Il inventorie les dépôts — `origin` du hub, amonts de `bundles/upstreams.yaml`,
+remotes des bases clonées —, génère la clé manquante de chacun, écrit le
+`~/.ssh/config` associant dépôt et clé, et affiche les clés publiques restant à
+enregistrer avec l'URL exacte où le faire (*Settings > Deploy keys > Add deploy
+key*, cocher *Allow write access* pour pouvoir pousser). Il est idempotent :
+relancez-le après chaque enregistrement.
 
-- **étroit, recommandé** — *Settings > Deploy keys* du dépôt à pousser, avec
-  *Allow write access*. Une clé par dépôt, révocable en un clic, aucun accès aux
-  autres dépôts du compte ;
-- **large** — *Settings > SSH and GPG keys* du compte. La clé ouvre alors tous
-  les dépôts, depuis un conteneur où tournent des instances du hub.
+Jamais de clé de compte (*Settings > SSH and GPG keys*) : elle ouvrirait **tous**
+les dépôts du compte, en écriture, depuis un conteneur où tournent des sessions
+Claude. Une deploy key ne vaut que son dépôt et se révoque seule.
+
+Les URL versionnées ne sont pas touchées : `bundles/upstreams.yaml` doit rester
+clonable depuis n'importe quelle machine. L'aiguillage vers la bonne clé passe
+par des `url.<alias>.insteadOf` dans la config git **globale du conteneur**,
+posés uniquement pour les deploy keys déjà acceptées par GitHub — tant qu'une
+clé n'est pas enregistrée, l'accès existant continue de fonctionner. La
+migration se fait donc dépôt par dépôt, sans coupure.
 
 **Sans aucun matériel de clé dans le conteneur** : faire tourner un `ssh-agent`
 sur l'hôte *avant* d'attacher VS Code, qui en transmet la socket. Le montage
-devient alors inutile et peut être retiré.
+devient alors inutile et peut être retiré — mais le hub ne peut plus rien
+pousser quand VS Code est détaché.
 
 Ce montage est un écart assumé à la lettre du § 4.3 de la spec (« montage : le
 répertoire du hub uniquement ») : motif, mesure de ce qu'il ouvre et manière de
