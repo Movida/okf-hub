@@ -36,7 +36,35 @@ les manifestes : `bundle-spec: "0.1"`).
 ### Dans le devcontainer (recommandé)
 
 Ouvrir le dépôt dans VS Code → *Reopen in Container*. Le `post-create` installe
-ripgrep, `uv` et les dépendances, puis lance les tests.
+ripgrep, `uv` et les dépendances, prépare la clé SSH du conteneur, puis lance les
+tests.
+
+#### Pousser depuis le devcontainer
+
+Les remotes en `https://` fonctionnent sans rien faire : VS Code transmet le
+helper de credentials de l'hôte. Un remote en `git@github.com:` n'a, lui, ni clé
+ni agent — `git push` échoue en « Permission denied (publickey) », et le commit
+reste sur place sans que rien ne le signale.
+
+`post-create.sh` génère donc une clé ed25519 dans un volume nommé monté sur
+`~/.ssh` (elle survit aux rebuilds, et n'est générée qu'une fois), et affiche sa
+partie publique en fin d'installation. À enregistrer une fois :
+
+- **étroit, recommandé** — *Settings > Deploy keys* du dépôt à pousser, avec
+  *Allow write access*. Une clé par dépôt, révocable en un clic, aucun accès aux
+  autres dépôts du compte ;
+- **large** — *Settings > SSH and GPG keys* du compte. La clé ouvre alors tous
+  les dépôts, depuis un conteneur où tournent des instances du hub.
+
+**Sans aucun matériel de clé dans le conteneur** : faire tourner un `ssh-agent`
+sur l'hôte *avant* d'attacher VS Code, qui en transmet la socket. Le montage
+devient alors inutile et peut être retiré.
+
+Ce montage est un écart assumé à la lettre du § 4.3 de la spec (« montage : le
+répertoire du hub uniquement ») : motif, mesure de ce qu'il ouvre et manière de
+l'annuler sont dans [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) § 5.3. C'est
+un **volume**, jamais un bind sur un répertoire de l'hôte — la distinction est
+gardée par un test.
 
 ### Sur une machine, sans conteneur
 
