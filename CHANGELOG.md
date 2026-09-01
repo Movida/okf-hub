@@ -3,6 +3,33 @@
 Format inspiré de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/).
 Le projet suit la version de la spécification qu'il implémente : `bundle-spec 0.1`.
 
+## [0.2.2] — 2026-09-01
+
+### Corrigé
+
+- **Le message d'`IO_ERROR` de ripgrep absent envoyait chercher au mauvais
+  endroit.** Il renvoyait à `.devcontainer/devcontainer.json`, où « ripgrep »
+  n'apparaît pas : l'installation vit dans `.devcontainer/post-create.sh`, et
+  celui-ci ne s'exécute qu'à la **création** du conteneur. Le message ne
+  couvrait donc aucun des trois autres modes de lancement documentés au README
+  — et c'est précisément l'un d'eux qui a échoué le 01/09/2026, un hub lancé
+  depuis un clone vu côté hôte (`hub_root=/home/…` dans la ligne de démarrage
+  du journal, contre `/workspaces/…` pour une instance intra-conteneur).
+
+  Le nouveau message nomme le **PATH du processus serveur** plutôt que « le
+  PATH », dit pourquoi il diffère de celui de l'opérateur — transport stdio,
+  donc environnement hérité du client (§ 4.3) — et donne le remède valable
+  quel que soit le mode de lancement. Aucun changement de comportement :
+  le code d'erreur, le moment où il est levé et l'absence de repli sont
+  inchangés (§ 5.2).
+
+### Tests
+
+235 tests. `test_message_ripgrep_absent_cite_des_fichiers_qui_existent` : tout
+fichier cité par le message doit exister **et** mentionner ripgrep. Le message
+fautif passait tous les contrôles précédents — rien ne gardait ce qu'un message
+d'erreur affirme, alors que la même règle vaut déjà pour les corpus meta.
+
 ## [0.2.1] — 2026-08-31
 
 ### Corrigé

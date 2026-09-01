@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+
 import pytest
 
 from okf_hub.errors import INVALID_INPUT, ToolError
@@ -81,6 +83,39 @@ def test_regex_invalide_remonte_invalid_input(hub, make_bundle, registry):
     assert exc.value.code == INVALID_INPUT
     # Le message de ripgrep est remonté tel quel (§ 5.2).
     assert "regex" in exc.value.message.lower() or "unclosed" in exc.value.message.lower()
+
+
+def test_message_ripgrep_absent_cite_des_fichiers_qui_existent(monkeypatch):
+    """Le remède annoncé par IO_ERROR doit être vérifiable — il l'a déjà été faux.
+
+    Le message renvoyait à `.devcontainer/devcontainer.json`, où « ripgrep »
+    n'apparaît pas : l'opérateur y cherchait une installation qui vit dans
+    `post-create.sh`. Un fichier cité comme l'endroit où ripgrep s'installe doit
+    donc exister *et* en parler, sinon le message envoie chercher au mauvais
+    endroit avec l'assurance d'une source. Même régime que les corpus meta
+    (`test_bases_meta.py`) : ce qui est écrit ailleurs que dans la description
+    d'un outil est gardé par un test.
+    """
+    from pathlib import Path
+
+    from okf_hub import search
+    from okf_hub.errors import IO_ERROR
+
+    monkeypatch.setattr(search.shutil, "which", lambda _: None)
+    with pytest.raises(ToolError) as exc:
+        search._rg_binary()
+    assert exc.value.code == IO_ERROR
+
+    racine = Path(__file__).resolve().parent.parent
+    cites = re.findall(r"[\w./-]+\.(?:json|sh|md|py|toml)", exc.value.message)
+    assert cites, "le message doit dire où ripgrep s'installe"
+    for rel in cites:
+        chemin = racine / rel
+        assert chemin.is_file(), f"le message cite {rel}, qui n'existe pas"
+        assert "ripgrep" in chemin.read_text(encoding="utf-8"), (
+            f"le message cite {rel} comme remède, mais ce fichier ne parle pas "
+            "de ripgrep"
+        )
 
 
 def test_mode_keyword_traite_les_termes_comme_litteraux(hub, make_bundle, registry):

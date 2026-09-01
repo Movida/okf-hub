@@ -61,12 +61,30 @@ class DocHits:
 
 
 def _rg_binary() -> str:
+    """Chemin de `rg`, ou `IO_ERROR` avec de quoi le réparer.
+
+    Le message nomme le **PATH du processus serveur**, et pas « le PATH » tout
+    court : le transport est stdio (§ 4.3), donc chaque client lance sa propre
+    instance et celle-ci hérite de l'environnement du client. Un hub installé
+    dans le devcontainer mais lancé depuis un clone vu côté hôte ne voit pas le
+    ripgrep posé par `post-create.sh`, qui ne s'exécute qu'à la création du
+    conteneur — c'est le cas réel du 01/09/2026, diagnostiqué par le `hub_root`
+    de la ligne de démarrage du journal. La version précédente de ce message
+    renvoyait à `.devcontainer/devcontainer.json`, qui ne mentionne pas ripgrep
+    et n'aide sur aucun des quatre modes de lancement du README.
+    """
     exe = shutil.which("rg")
     if exe is None:
         raise ToolError(
             IO_ERROR,
-            "ripgrep (rg) introuvable dans le PATH — il est requis par kb_search "
-            "(voir .devcontainer/devcontainer.json)",
+            "ripgrep (rg) introuvable dans le PATH du processus qui exécute le "
+            "serveur — il est requis par kb_search, qui n'a aucun repli. Le "
+            "transport étant stdio, ce PATH est celui du client qui a lancé le "
+            "serveur : installer ripgrep là où le serveur tourne réellement "
+            "(`apt-get install ripgrep`), ou lancer le serveur dans le "
+            "conteneur qui l'a déjà. Voir .devcontainer/post-create.sh, qui "
+            "l'installe à la création du devcontainer, et README.md, "
+            "« Connecter un client Claude ».",
         )
     return exe
 
