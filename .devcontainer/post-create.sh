@@ -29,11 +29,31 @@ uv sync
 echo "→ identité git du conteneur"
 # Le hub passe toujours son identité explicitement à chaque commit (§ 4.4.e) ;
 # cette valeur ne sert qu'aux commandes git lancées à la main dans le
-# conteneur, pour qu'elles n'échouent pas sur une identité manquante.
-git config --global --get user.email >/dev/null 2>&1 || \
-    git config --global user.email "operateur@local"
-git config --global --get user.name >/dev/null 2>&1 || \
+# conteneur — mais elle n'est pas cosmétique pour autant : un commit poussé
+# sous une adresse inexistante n'est rattaché à aucun compte GitHub, donc sans
+# auteur identifiable dans l'historique public. `operateur@local` était ce
+# défaut-là, et l'historique du hub en porte la trace.
+#
+# L'adresse vit dans git-identity.env, non versionné : elle est propre à
+# chaque mainteneur. Modèle (l'adresse noreply évite de publier une adresse
+# personnelle tout en garantissant le rattachement au compte) :
+#
+#   OKF_GIT_NAME="Prénom NOM"
+#   OKF_GIT_EMAIL="<id>+<login>@users.noreply.github.com"
+IDENTITE="$(dirname "$0")/git-identity.env"
+if [ -f "$IDENTITE" ]; then
+    # shellcheck disable=SC1090
+    . "$IDENTITE"
+    git config --global user.name "${OKF_GIT_NAME:?OKF_GIT_NAME manquant dans git-identity.env}"
+    git config --global user.email "${OKF_GIT_EMAIL:?OKF_GIT_EMAIL manquant dans git-identity.env}"
+    echo "   $(git config --global user.name) <$(git config --global user.email)>"
+elif ! git config --global --get user.email >/dev/null 2>&1; then
     git config --global user.name "opérateur du hub"
+    git config --global user.email "operateur@local"
+    echo "   !! aucune identité déclarée : commits non rattachables à un compte"
+    echo "      GitHub. Créer .devcontainer/git-identity.env (modèle dans ce"
+    echo "      script) et relancer, avant de pousser quoi que ce soit."
+fi
 
 # Les clones de bases sont des dépôts appartenant potentiellement à un autre
 # uid que celui du conteneur ; sans cela git refuse de les lire.
@@ -75,36 +95,35 @@ if ! ssh-keygen -F github.com >/dev/null 2>&1; then
     rm -f "$scan"
 fi
 
-CLE="$SSH_DIR/id_ed25519"
-if [ ! -f "$CLE" ]; then
-    ssh-keygen -t ed25519 -N "" -C "okf-hub-devcontainer" -f "$CLE" -q
-    echo "   clé générée : $CLE"
+# Aucune clé de compte n'est générée ici : ce serait une clé unique ouvrant
+# tous les dépôts du compte, ce que devcontainer.json interdit explicitement.
+# Les clés sont créées par dépôt, en deploy keys — voir deploy-keys.sh, qui
+# porte le raisonnement complet. Une clé de compte héritée d'une installation
+# antérieure est conservée telle quelle : deploy-keys.sh rappelle de la
+# révoquer une fois les deploy keys en place.
+ANCIENNE="$SSH_DIR/id_ed25519"
+if [ -f "$ANCIENNE" ]; then
+    chmod 600 "$ANCIENNE"
+    [ -f "$ANCIENNE.pub" ] && chmod 644 "$ANCIENNE.pub"
 fi
-chmod 600 "$CLE"
-chmod 644 "$CLE.pub"
+
+echo "→ deploy keys par dépôt"
+"$(dirname "$0")/deploy-keys.sh"
 
 echo "→ vérification"
 uv run pytest -q -m "not slow"
 
-cat <<EOF
+cat <<'EOF'
 
-Clé SSH du conteneur — à enregistrer une fois, si vous poussez en SSH :
-
-$(cat "$SSH_DIR/id_ed25519.pub")
-
-  Étroit (recommandé) : Settings > Deploy keys du dépôt à pousser,
-    « Allow write access ». Une clé par dépôt, révocable en un clic, sans
-    aucun accès aux autres dépôts du compte.
-  Large : Settings > SSH and GPG keys du compte — la clé ouvre alors tous
-    les dépôts, depuis un conteneur où tournent des instances du hub.
+Accès GitHub — les clés publiques à enregistrer, s'il en reste, ont été
+listées plus haut par deploy-keys.sh. Une clé par dépôt, révocable seule,
+sans aucun accès aux autres dépôts du compte.
 
   Sans clé du tout : faites tourner un ssh-agent sur l'hôte avant
     d'attacher VS Code, qui en transmet la socket (SSH_AUTH_SOCK). Aucun
-    matériel de clé n'entre alors dans le conteneur — et le montage de
+    matériel de clé n'entre alors dans le conteneur — mais le hub ne peut
+    plus rien pousser quand VS Code est détaché, et le montage de
     devcontainer.json devient inutile.
-
-  Les remotes en https:// n'ont besoin de rien : le helper de credentials
-  de VS Code les sert déjà.
 
 EOF
 cat <<'EOF'
