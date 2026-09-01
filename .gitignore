@@ -3,6 +3,11 @@
 /bases/*
 !/bases/.gitkeep
 
+# Identité git de l'opérateur du conteneur, lue par post-create.sh. Locale à
+# la machine et jamais versionnée : chaque mainteneur a la sienne, et une
+# adresse personnelle n'a rien à faire dans le dépôt.
+/.devcontainer/git-identity.env
+
 # Journal du hub (§ 4.1)
 hub.log
 *.log

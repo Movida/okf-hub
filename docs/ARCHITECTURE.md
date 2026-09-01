@@ -298,8 +298,9 @@ git tiers ne peut donc pas la tromper.
 Les outils ne doivent jamais accéder hors de `bases-dir` (voir § 8). »
 
 **Ce que fait le devcontainer.** Un second montage, `okf-hub-devcontainer-ssh`,
-**volume nommé** monté sur `/home/vscode/.ssh`. Il porte la clé SSH du conteneur,
-générée une fois par `post-create.sh`.
+**volume nommé** monté sur `/home/vscode/.ssh`. Il porte les clés SSH du
+conteneur — **une deploy key par dépôt**, générées par `deploy-keys.sh` — et le
+`~/.ssh/config` qui associe chaque dépôt à la sienne.
 
 **Motif.** Les remotes en `git@github.com:` sont injoignables depuis le
 conteneur : ni clé ni agent, `SSH_AUTH_SOCK` vide, `git push` échoue en
@@ -315,15 +316,34 @@ chemin de l'hôte : le confinement visé est intact, seule la lettre de la règl
 est pliée. Reste une exposition réelle et nouvelle : un matériel de clé est
 lisible dans le conteneur. Elle est bornée par trois faits — les outils `kb_*`
 sont confinés au corpus par `Base.resolve_document` (§ 5.3 de la spec), donc
-aucune session ne lit `~/.ssh` à travers eux ; la clé est sans phrase de passe
-mais **destinée à être enregistrée en deploy key d'un seul dépôt**, donc son pire
-usage est un push forcé sur ce dépôt, pas l'accès au compte ; et elle est
-révocable en un clic, sans toucher aux autres clés de l'opérateur.
+aucune session ne lit `~/.ssh` à travers eux ; les clés sont sans phrase de passe
+mais chacune est **une deploy key d'un seul dépôt**, donc son pire usage est un
+push forcé sur ce dépôt, pas l'accès au compte ; et chacune est révocable en un
+clic, sans toucher aux autres.
+
+**Ce que le mécanisme a coûté, et pourquoi il est là.** Cette borne était
+d'abord une intention écrite dans `devcontainer.json`, que rien ne faisait
+tenir : le 01/09/2026, la clé du conteneur était en fait enregistrée **sur le
+compte** (`ssh -T` répondait `Hi <login>!` et non `Hi Owner/Repo:`), donc en
+écriture sur tous les dépôts du compte, depuis un conteneur où tournent des
+sessions Claude. Une intention non outillée ne tient pas. `deploy-keys.sh`
+l'outille, et l'obstacle qu'il contourne mérite d'être connu : choisir la clé
+selon le dépôt n'est possible en SSH que par le nom d'hôte, et écrire un alias
+d'hôte dans les URL contaminerait `bundles/upstreams.yaml`, versionné et censé
+rester clonable depuis n'importe quelle machine. La réécriture vit donc dans la
+config git **globale du conteneur**, en `url.<alias>.insteadOf`, sur les deux
+formes d'URL (`git@github.com:` et `https://github.com/`) — locale à la machine,
+appliquée aussi à `git clone`, donc aux clones de `bootstrap.py`. Elle n'est
+posée qu'après vérification que la deploy key est acceptée : tant qu'elle ne
+l'est pas, l'URL canonique continue de fonctionner et la migration se fait dépôt
+par dépôt, sans coupure.
 
 **Pour l'annuler.** Retirer le bloc `mounts` de
-`.devcontainer/devcontainer.json` et le bloc « clé SSH du conteneur » de
-`.devcontainer/post-create.sh`, supprimer le volume
-(`docker volume rm okf-hub-devcontainer-ssh`), révoquer la clé sur GitHub. Pour
+`.devcontainer/devcontainer.json` et les blocs « clé SSH » et « deploy keys » de
+`.devcontainer/post-create.sh`, supprimer `.devcontainer/deploy-keys.sh`, purger
+les réécritures (`git config --global --remove-section url.<alias>` pour chacune),
+supprimer le volume (`docker volume rm okf-hub-devcontainer-ssh`), révoquer les
+deploy keys sur GitHub. Pour
 garder le push SSH sans aucun matériel de clé dans le conteneur : faire tourner
 un `ssh-agent` sur l'hôte avant d'attacher VS Code, qui transmet sa socket.
 Test concerné : `test_les_montages_du_devcontainer_restent_confines`.

@@ -59,3 +59,90 @@ def test_les_montages_du_devcontainer_restent_confines():
             f"montage non confiné : {montage!r}. La source d'un volume est un "
             "nom, pas un chemin."
         )
+
+
+# --- La clé du conteneur reste bornée à un dépôt ------------------------------
+#
+# `devcontainer.json` et ARCHITECTURE § 5.3 affirment tous deux que la clé du
+# conteneur est une deploy key d'un seul dépôt, « pas une clé personnelle, dont
+# la compromission ouvrirait tous les dépôts du compte ». Cette affirmation est
+# ce qui rend l'écart du § 5.3 tenable — et elle a déjà été fausse : le
+# 01/09/2026, la clé en place était enregistrée sur le compte, donc en écriture
+# sur tous ses dépôts, depuis un conteneur où tournent des sessions Claude.
+# Une intention écrite que rien ne garde dérive. Ces tests la gardent.
+
+POST_CREATE = RACINE / ".devcontainer" / "post-create.sh"
+DEPLOY_KEYS = RACINE / ".devcontainer" / "deploy-keys.sh"
+
+
+def test_le_script_de_deploy_keys_existe_et_est_executable():
+    assert DEPLOY_KEYS.is_file(), (
+        "deploy-keys.sh est le seul mécanisme qui donne corps à la promesse "
+        "« une deploy key par dépôt » de devcontainer.json et d'ARCHITECTURE "
+        "§ 5.3. Sans lui, cette promesse redevient une intention."
+    )
+    assert DEPLOY_KEYS.stat().st_mode & 0o111, "deploy-keys.sh doit être exécutable"
+
+
+def test_post_create_ne_genere_aucune_cle_de_compte():
+    """`post-create.sh` ne doit pas fabriquer de clé unique pour tout le compte.
+
+    Une seule `ssh-keygen` sur `id_ed25519` suffit à recréer la situation que le
+    § 5.3 borne : une clé que son opérateur enregistrera, par facilité, dans
+    « SSH and GPG keys » du compte plutôt qu'en deploy key de chaque dépôt.
+    """
+    source = POST_CREATE.read_text(encoding="utf-8")
+    assert "ssh-keygen -t" not in source, (
+        "post-create.sh génère une clé SSH. La génération appartient à "
+        "deploy-keys.sh, qui en produit une par dépôt ; une clé unique créée "
+        "ici finit enregistrée sur le compte, et ouvre tous ses dépôts depuis "
+        "un conteneur où tournent des sessions Claude (ARCHITECTURE § 5.3)."
+    )
+    assert "deploy-keys.sh" in source, (
+        "post-create.sh doit appeler deploy-keys.sh : sinon un conteneur neuf "
+        "n'a aucune clé, et l'opérateur en refabriquera une à la main — de "
+        "compte, comme la première fois."
+    )
+
+
+def test_deploy_keys_ne_reecrit_l_url_qu_apres_verification():
+    """La réécriture `insteadOf` n'est posée qu'une fois la clé acceptée.
+
+    Posée d'avance, elle dirigerait git vers un alias dont la clé n'est pas
+    enregistrée : tout accès au dépôt tomberait, alors que l'URL canonique
+    fonctionnait. La migration doit rester dépôt par dépôt, sans coupure.
+    """
+    source = DEPLOY_KEYS.read_text(encoding="utf-8")
+    pose = source.index('git config --global --add "url.$url_alias.insteadOf"')
+    verification = source.index("successfully authenticated")
+    assert verification < pose, (
+        "la réécriture d'URL est posée avant le test d'authentification : un "
+        "dépôt dont la deploy key n'est pas encore enregistrée deviendrait "
+        "inatteignable."
+    )
+
+
+def test_deploy_keys_ne_pipe_pas_directement_ssh_vers_grep():
+    """`ssh -T git@github.com` sort toujours en erreur (1) : GitHub ne donne pas
+    d'accès shell, authentification réussie ou non — seul le message diffère.
+    Sous `set -o pipefail` (posé en tête du script), `ssh ... | grep -q ...`
+    renvoie donc le code de sortie de `ssh`, jamais celui de `grep` : la
+    détection « clé acceptée » échouerait alors systématiquement, même quand
+    GitHub répond `Hi Owner/Repo: ... successfully authenticated`. Vécu : les
+    5 clés du 01/09/2026 étaient actives et le script les donnait toutes comme
+    manquantes. La sortie de `ssh` doit être capturée avant d'être testée.
+    """
+    source = DEPLOY_KEYS.read_text(encoding="utf-8")
+    assert "set -o pipefail" in source or "set -euo pipefail" in source, (
+        "ce test suppose pipefail actif — sinon son motif ne prouve rien"
+    )
+    # Les continuations de ligne (`\` en fin de ligne) sont jointes avant le
+    # test : c'est précisément la forme qui a caché le bug d'origine, le pipe
+    # se trouvant sur la ligne suivant le `ssh ... \`.
+    aplati = re.sub(r"\\\n\s*", " ", source)
+    for ligne in aplati.splitlines():
+        assert not re.search(r"\bssh\b[^|\n]*\|\s*grep\b", ligne), (
+            f"pipe direct ssh → grep détecté : {ligne!r}. Sous pipefail, ceci "
+            "renvoie le code de sortie de ssh (toujours 1) et non celui de "
+            "grep : capturer la sortie de ssh dans une variable d'abord."
+        )
