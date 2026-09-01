@@ -10,6 +10,21 @@
     "workspaceMount": "source=${localWorkspaceFolder},target=/workspaces/okf-hub,type=bind,consistency=cached",
     "workspaceFolder": "/workspaces/okf-hub",
 
+    // MONTAGE SSH : un **volume nommé**, jamais un répertoire de l'hôte. Écart
+    // assumé à la lettre du § 4.3 (« montage : le répertoire du hub
+    // uniquement »), recensé en ARCHITECTURE.md § 5.3 avec sa mesure et la
+    // manière de l'annuler. Le motif de la règle — « les outils ne doivent
+    // jamais accéder hors de bases-dir » — est préservé : un volume Docker
+    // n'expose aucun chemin de l'hôte, il ne fait que survivre aux rebuilds.
+    // Ce qu'il porte : la clé SSH du conteneur, générée par post-create.sh, à
+    // enregistrer sur GitHub en **deploy key d'un seul dépôt** — pas une clé
+    // personnelle, dont la compromission ouvrirait tous les dépôts du compte.
+    // Ne pas transformer ce montage en bind sur ~/.ssh de l'hôte : ce serait
+    // exactement ce que le § 4.3 interdit, et la clé personnelle avec.
+    "mounts": [
+        "source=okf-hub-devcontainer-ssh,target=/home/vscode/.ssh,type=volume"
+    ],
+
     "features": {
         "ghcr.io/devcontainers/features/git:1": {}
     },

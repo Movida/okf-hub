@@ -3,6 +3,43 @@
 Format inspiré de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/).
 Le projet suit la version de la spécification qu'il implémente : `bundle-spec 0.1`.
 
+## [0.2.3] — 2026-09-01
+
+### Ajouté
+
+- **Clé SSH du conteneur, dans un volume nommé.** Les remotes en
+  `git@github.com:` étaient injoignables depuis le devcontainer : ni clé ni
+  agent, `SSH_AUTH_SOCK` vide, `git push` en « Permission denied (publickey) ».
+  Constaté en découvrant qu'un commit du 31/08 dormait sur place depuis quatre
+  jours — le commit avait réussi, seul le push manquait, et rien ne le
+  signalait. `post-create.sh` génère désormais une clé ed25519 une fois pour
+  toutes dans un volume qui survit aux rebuilds, et affiche sa partie publique
+  avec les deux façons de l'enregistrer — deploy key d'un dépôt (recommandé) ou
+  clé de compte.
+
+  La host key de github.com n'est plus acceptée à la première rencontre : elle
+  est vérifiée contre l'empreinte publiée par GitHub, et en cas d'écart
+  `known_hosts` n'est pas modifié — un `ssh-keyscan` gobé tel quel fait
+  confiance à qui répond, ce qui est ce que `known_hosts` doit empêcher.
+
+  **Écart assumé au § 4.3** (« montage : le répertoire du hub uniquement »),
+  recensé en `docs/ARCHITECTURE.md` § 5.3 avec sa mesure : c'est un **volume
+  nommé**, qui n'expose aucun chemin de l'hôte, donc le confinement visé par la
+  règle est intact ; l'exposition nouvelle — un matériel de clé lisible dans le
+  conteneur — est bornée par le confinement des outils `kb_*` au corpus et par
+  le choix d'une deploy key révocable d'un seul dépôt. Alternative sans aucune
+  clé dans le conteneur, documentée au README : un `ssh-agent` sur l'hôte, dont
+  VS Code transmet la socket.
+
+### Tests
+
+237 tests. `tests/test_devcontainer.py` :
+`test_les_montages_du_devcontainer_restent_confines` échoue si un montage
+devient un `type=bind`, ou si la source d'un volume ressemble à un chemin.
+Remplacer le volume par un bind sur le `~/.ssh` de l'hôte — geste tentant et
+d'apparence équivalente, qui exposerait la clé personnelle de l'opérateur — ne
+se voyait dans aucun test.
+
 ## [0.2.2] — 2026-09-01
 
 ### Corrigé
