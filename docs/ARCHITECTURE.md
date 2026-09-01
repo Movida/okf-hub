@@ -224,10 +224,13 @@ ne perce pas le confinement.
 ## 5. Écarts assumés par rapport à la spécification
 
 La spec impose (§ 11, clôture) de remonter toute déviation aux principes du § 1
-ou aux mécanismes du § 4.4.b. **Ces deux écarts ont été remontés au propriétaire
-du projet et acceptés.** Il n'y en a pas d'autres — le § 5 bis documente un cas
-distinct : un bug de l'amendement rév. 4.1, remonté puis corrigé **dans la spec
-elle-même** (rév. 4.2), pas laissé en écart de code.
+ou aux mécanismes du § 4.4.b. **Les écarts 5.1 et 5.2 ont été remontés au
+propriétaire du projet et acceptés.** Le § 5.3 ne relève ni du § 1 ni du
+§ 4.4.b — c'est un écart au § 4.3 — mais il est demandé par le propriétaire et
+recensé ici au même titre : un écart qui ne figure pas dans cette liste est un
+bug. Le § 5 bis documente un cas distinct : un bug de l'amendement rév. 4.1,
+remonté puis corrigé **dans la spec elle-même** (rév. 4.2), pas laissé en écart
+de code.
 
 ### 5.1 Déclassement des noms réservés OKF dans `kb_search`
 
@@ -288,6 +291,42 @@ l'invariant d'audit ; un index partagé désynchronisé par n'importe quel outil
 git tiers ne peut donc pas la tromper.
 
 ---
+
+### 5.3 Un montage de plus que « le répertoire du hub uniquement »
+
+**Ce que dit la spec.** § 4.3 : « montage : **le répertoire du hub uniquement**.
+Les outils ne doivent jamais accéder hors de `bases-dir` (voir § 8). »
+
+**Ce que fait le devcontainer.** Un second montage, `okf-hub-devcontainer-ssh`,
+**volume nommé** monté sur `/home/vscode/.ssh`. Il porte la clé SSH du conteneur,
+générée une fois par `post-create.sh`.
+
+**Motif.** Les remotes en `git@github.com:` sont injoignables depuis le
+conteneur : ni clé ni agent, `SSH_AUTH_SOCK` vide, `git push` échoue en
+« Permission denied (publickey) ». Le 01/09/2026, on a découvert qu'un commit du
+31/08 dormait sur place depuis quatre jours pour cette raison — le commit avait
+réussi, seul le push manquait, et rien ne le signalait. Sans volume, la clé
+disparaîtrait à chaque rebuild et il faudrait la réenregistrer sur GitHub à
+chaque fois.
+
+**Mesure de ce que ça ouvre.** Le motif de la règle du § 4.3 est l'accès des
+outils au système de fichiers de l'hôte. Un volume Docker n'expose **aucun**
+chemin de l'hôte : le confinement visé est intact, seule la lettre de la règle
+est pliée. Reste une exposition réelle et nouvelle : un matériel de clé est
+lisible dans le conteneur. Elle est bornée par trois faits — les outils `kb_*`
+sont confinés au corpus par `Base.resolve_document` (§ 5.3 de la spec), donc
+aucune session ne lit `~/.ssh` à travers eux ; la clé est sans phrase de passe
+mais **destinée à être enregistrée en deploy key d'un seul dépôt**, donc son pire
+usage est un push forcé sur ce dépôt, pas l'accès au compte ; et elle est
+révocable en un clic, sans toucher aux autres clés de l'opérateur.
+
+**Pour l'annuler.** Retirer le bloc `mounts` de
+`.devcontainer/devcontainer.json` et le bloc « clé SSH du conteneur » de
+`.devcontainer/post-create.sh`, supprimer le volume
+(`docker volume rm okf-hub-devcontainer-ssh`), révoquer la clé sur GitHub. Pour
+garder le push SSH sans aucun matériel de clé dans le conteneur : faire tourner
+un `ssh-agent` sur l'hôte avant d'attacher VS Code, qui transmet sa socket.
+Test concerné : `test_les_montages_du_devcontainer_restent_confines`.
 
 ## 5 bis. Post-mortem — cooldown de re-scan : bug de l'amendement rév. 4.1, corrigé par la rév. 4.2
 
