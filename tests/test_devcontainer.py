@@ -146,3 +146,65 @@ def test_deploy_keys_ne_pipe_pas_directement_ssh_vers_grep():
             "renvoie le code de sortie de ssh (toujours 1) et non celui de "
             "grep : capturer la sortie de ssh dans une variable d'abord."
         )
+
+
+# --- Enregistrement automatique via GitHub App (piste 3, réouverte) -----------
+#
+# `OKF_HUB_GH_APP_TOKEN` est un jeton d'installation GitHub App : scopé aux
+# dépôts installés, de courte durée de vie, jamais un jeton de compte ni un
+# scope `repo` global (contrainte non négociable de la mission). Ces tests
+# gardent les deux propriétés qui rendent ce choix tenable : le jeton n'est
+# jamais persisté ni journalisé, et son absence ne change rien au
+# comportement existant (repli intégral sur l'enregistrement manuel).
+
+
+def test_enregistrement_api_precede_le_test_ssh():
+    """L'enregistrement auto doit précéder le test SSH de la passe 2 : c'est ce
+    qui permet à ce même passage de constater l'acceptation sans second essai.
+    """
+    source = DEPLOY_KEYS.read_text(encoding="utf-8")
+    appel_api = source.index('enregistrer_cle_via_api "$depot"')
+    test_ssh = source.index('reponse="$(ssh')
+    assert appel_api < test_ssh, (
+        "l'appel à enregistrer_cle_via_api doit précéder le test SSH — sinon "
+        "une clé fraîchement enregistrée par l'API ne serait constatée "
+        "acceptée qu'au prochain relancement du script."
+    )
+
+
+def test_enregistrement_api_reste_optionnel_sans_jeton():
+    """Absent, OKF_HUB_GH_APP_TOKEN ne doit rien changer au comportement
+    existant — c'est ce qui garantit qu'aucun opérateur n'est forcé vers la
+    GitHub App.
+    """
+    source = DEPLOY_KEYS.read_text(encoding="utf-8")
+    assert 'if [ -n "${OKF_HUB_GH_APP_TOKEN:-}" ]' in source, (
+        "l'appel à enregistrer_cle_via_api doit être gardé par la présence "
+        "du jeton, jamais inconditionnel."
+    )
+
+
+def test_le_jeton_gh_app_n_est_jamais_journalise():
+    """Le jeton ne doit apparaître dans aucun echo/printf — seulement dans les
+    en-têtes curl où il est consommé.
+    """
+    source = DEPLOY_KEYS.read_text(encoding="utf-8")
+    for ligne in source.splitlines():
+        if ligne.strip().startswith("#"):
+            continue
+        if "OKF_HUB_GH_APP_TOKEN" not in ligne:
+            continue
+        assert "Authorization: Bearer" in ligne or "-n " in ligne, (
+            f"ligne suspecte référençant le jeton hors d'un en-tête curl : "
+            f"{ligne!r} — le jeton ne doit jamais être journalisé."
+        )
+
+
+def test_le_jeton_gh_app_n_est_jamais_ecrit_sur_disque():
+    """Aucune redirection du jeton vers un fichier — il ne doit vivre que dans
+    la variable d'environnement, le temps de l'appel curl.
+    """
+    source = DEPLOY_KEYS.read_text(encoding="utf-8")
+    assert not re.search(r"OKF_HUB_GH_APP_TOKEN[^\n]*>\s*\S", source), (
+        "le jeton GitHub App ne doit jamais être redirigé vers un fichier."
+    )

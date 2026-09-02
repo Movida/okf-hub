@@ -356,6 +356,61 @@ garder le push SSH sans aucun matériel de clé dans le conteneur : faire tourne
 un `ssh-agent` sur l'hôte avant d'attacher VS Code, qui transmet sa socket.
 Test concerné : `test_les_montages_du_devcontainer_restent_confines`.
 
+### 5.3 bis Enregistrement automatique de la deploy key par GitHub App (optionnel)
+
+**Ce que dit la spec.** Rien : ceci ne touche à aucun mécanisme normatif de la
+spec. C'est une extension optionnelle du § 5.3 ci-dessus, sur le seul geste qui
+y restait manuel — coller la clé publique dans *Settings > Deploy keys*.
+
+**Ce que fait le mécanisme.** `deploy-keys.sh` tente, avant le test SSH de la
+passe 2, un `POST /repos/{owner}/{repo}/keys` pour chaque dépôt — mais
+seulement si `OKF_HUB_GH_APP_TOKEN` est exporté. Absent (cas par défaut), rien
+ne change : c'est le même script, la même procédure manuelle qu'au § 5.3.
+
+**Motif.** Coller une clé à la main est acceptable pour un dépôt, fastidieux
+dès qu'on en ajoute plusieurs (le hub, une base gérée en écriture, etc.). Deux
+options avaient déjà été écartées dans un cycle précédent — `gh auth login`
+générique (scope `repo` large, ouvre tous les dépôts du compte) et un appel
+REST avec un jeton de compte stocké dans le conteneur (même exposition,
+persistante) — toutes deux violaient la contrainte non négociable : jamais un
+secret à portée large et durable dans un conteneur qui fait tourner des
+sessions Claude exécutant du code.
+
+**Mesure de ce que ça ouvre.** Une **GitHub App**, installée une fois par
+l'opérateur sur les seuls dépôts concernés, délivre des jetons d'installation
+scopés à ces dépôts et de courte durée de vie (~1h) — jamais un jeton de
+compte, jamais un scope `repo` global. La permission GitHub App la plus
+étroite qui couvre `POST /repos/{owner}/{repo}/keys` est **Administration :
+Read & write** : GitHub n'expose pas de permission plus fine dédiée aux seules
+deploy keys. Ceci ouvre donc, sur le ou les dépôts où l'App est installée
+(et seulement ceux-là), d'autres actions d'administration que la gestion des
+deploy keys — renommer le dépôt, gérer la protection de branches, etc. C'est
+une surface plus large que celle d'une deploy key seule, bornée cependant aux
+dépôts explicitement installés, jamais au compte entier. Le jeton d'installation
+lui-même ne transite dans le conteneur que le temps d'un appel `curl`, dans une
+variable d'environnement, jamais écrit sur disque ni journalisé — gardé par
+les tests `test_le_jeton_gh_app_n_est_jamais_journalise` et
+`test_le_jeton_gh_app_n_est_jamais_ecrit_sur_disque`. La fabrication du jeton
+(signature JWT avec la clé privée de l'App) se fait **sur la machine de
+l'opérateur, jamais dans ce conteneur** — la clé privée de l'App n'y entre
+jamais, à aucun moment.
+
+**Ce que le mécanisme a coûté, et pourquoi il est là.** Sans lui,
+l'enregistrement d'une deploy key reste un geste manuel par dépôt — sûr, mais
+qui ne passe pas à l'échelle au-delà d'un ou deux dépôts. Avec lui, ce geste
+devient une exportation de variable et un relancement du script, sans rien
+retirer au repli manuel qui reste le comportement par défaut. C'est un ajout
+strictement additif : aucun chemin existant n'est modifié quand
+`OKF_HUB_GH_APP_TOKEN` est absent.
+
+**Pour l'annuler.** Retirer la fonction `enregistrer_cle_via_api` et son appel
+conditionnel de `deploy-keys.sh`, désinstaller la GitHub App sur GitHub, et
+retirer la section « Enregistrement automatique de la clé » du `README.md`.
+Tests concernés : `test_enregistrement_api_precede_le_test_ssh`,
+`test_enregistrement_api_reste_optionnel_sans_jeton`,
+`test_le_jeton_gh_app_n_est_jamais_journalise`,
+`test_le_jeton_gh_app_n_est_jamais_ecrit_sur_disque`.
+
 ## 5 bis. Post-mortem — cooldown de re-scan : bug de l'amendement rév. 4.1, corrigé par la rév. 4.2
 
 Contrairement au § 5, **ceci n'est pas un écart** : le code suit la spec à la

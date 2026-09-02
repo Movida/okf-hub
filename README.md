@@ -128,6 +128,66 @@ l'annuler sont dans [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) § 5.3. C'est
 un **volume**, jamais un bind sur un répertoire de l'hôte — la distinction est
 gardée par un test.
 
+#### Enregistrement automatique de la clé (GitHub App, optionnel)
+
+L'enregistrement d'une deploy key reste, par défaut, la procédure manuelle
+ci-dessus : coller la clé publique affichée dans *Settings > Deploy keys*.
+Pour l'automatiser — utile dès qu'on ajoute plusieurs bases — installer une
+**GitHub App** dédiée, une fois, **hors du conteneur** :
+
+1. **Créer la GitHub App** (github.com → *Settings > Developer settings > GitHub
+   Apps > New GitHub App*), avec la permission de dépôt **Administration :
+   Read & write**, et aucune autre. C'est la permission GitHub App la plus
+   étroite qui couvre la gestion des deploy keys par API — GitHub n'expose
+   pas de permission plus fine dédiée aux seules deploy keys ; `Administration`
+   permet aussi des actions plus larges sur le dépôt concerné (renommer,
+   gérer la protection de branches, etc.). Aucun webhook n'est nécessaire.
+2. **Installer l'App** sur le ou les dépôts concernés (le hub, et/ou les
+   bases dont on gère aussi le dépôt) — ce choix borne exactement les dépôts
+   couverts, comme pour une deploy key classique.
+3. **Sur votre machine, jamais dans le conteneur**, fabriquer un jeton
+   d'installation de courte durée (~1h, révocable en désinstallant l'App) à
+   partir de la clé privée de l'App téléchargée à l'étape 1 :
+
+   ```sh
+   APP_ID=<identifiant de la GitHub App>
+   INSTALLATION_ID=<identifiant de l'installation — visible dans l'URL après l'installation>
+   PEM=<chemin vers la clé privée .pem de l'App>
+
+   now=$(date +%s)
+   b64url() { openssl base64 -A | tr '+/' '-_' | tr -d '='; }
+   jwt_header=$(printf '{"alg":"RS256","typ":"JWT"}' | b64url)
+   jwt_payload=$(printf '{"iat":%d,"exp":%d,"iss":"%s"}' "$((now-60))" "$((now+300))" "$APP_ID" | b64url)
+   jwt_sig=$(printf '%s.%s' "$jwt_header" "$jwt_payload" | openssl dgst -sha256 -sign "$PEM" | b64url)
+   jwt="$jwt_header.$jwt_payload.$jwt_sig"
+
+   curl -sS -X POST -H "Authorization: Bearer $jwt" \
+     -H "Accept: application/vnd.github+json" \
+     "https://api.github.com/app/installations/$INSTALLATION_ID/access_tokens" \
+     | python3 -c 'import json,sys; print(json.load(sys.stdin)["token"])'
+   ```
+
+4. **Dans le conteneur**, exporter ce jeton pour la durée d'une seule
+   invocation, puis relancer l'enregistrement :
+
+   ```sh
+   export OKF_HUB_GH_APP_TOKEN=<jeton collé depuis l'étape 3>
+   .devcontainer/deploy-keys.sh
+   ```
+
+   Le jeton n'est jamais écrit sur disque ni journalisé — il ne vit que dans
+   cette variable, le temps de l'appel API, et expire de lui-même. Sans lui
+   (cas par défaut), le script se comporte exactement comme avant : rien
+   n'est cassé si vous ignorez cette section.
+
+**Ce que ce choix n'est pas** : jamais un jeton de compte GitHub, jamais un
+scope `repo` global, et surtout — la clé privée de la GitHub App elle-même
+**n'entre jamais dans ce conteneur**, où tournent des sessions Claude qui
+exécutent du code ; seul un jeton d'installation déjà limité et expirant y
+transite, une fois, à l'initiative de l'opérateur. Détail du raisonnement et
+de ce que la permission `Administration` ouvre au-delà des deploy keys :
+[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) § 5.3 bis.
+
 ### Sur une machine, sans conteneur
 
 Prérequis : Python ≥ 3.11, git, [ripgrep](https://github.com/BurntSushi/ripgrep).

@@ -3,6 +3,25 @@
 Format inspiré de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/).
 Le projet suit la version de la spécification qu'il implémente : `bundle-spec 0.1`.
 
+## [Non publié]
+
+### Ajouté
+
+- **Enregistrement automatique de la deploy key par GitHub App (optionnel).**
+  `.devcontainer/deploy-keys.sh` tente désormais, avant le test SSH de la
+  passe 2, d'enregistrer chaque clé publique par l'API GitHub
+  (`POST /repos/{owner}/{repo}/keys`) si `OKF_HUB_GH_APP_TOKEN` est exporté —
+  un jeton d'installation GitHub App, scopé aux dépôts installés et de courte
+  durée de vie, jamais un jeton de compte ni un scope `repo` global. Absent
+  (cas par défaut), rien ne change : la procédure manuelle du § 5.3 reste
+  intacte. Piste rouverte par décision explicite de l'utilisateur après deux
+  options écartées dans un cycle précédent (`gh auth login` générique,
+  jeton de compte stocké dans le conteneur) pour violation de la contrainte
+  non négociable de la mission. Détail du raisonnement, de ce que la
+  permission GitHub App `Administration` ouvre au-delà des deploy keys, et de
+  la procédure d'installation : [`README.md`](README.md) et
+  [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) § 5.3 bis.
+
 ## [0.2.8] — 2026-09-02
 
 ### Ajouté
