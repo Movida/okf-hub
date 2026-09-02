@@ -3,6 +3,32 @@
 Format inspiré de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/).
 Le projet suit la version de la spécification qu'il implémente : `bundle-spec 0.1`.
 
+## [0.2.5] — 2026-09-02
+
+### Ajouté
+
+- **Synchronisation remote au démarrage (§ 4.5).** Chaque instance de serveur
+  synchronise en **fast-forward-only** les bases installées disposant d'un
+  remote, avant sa première découverte — un point unique et explicite du
+  cycle de vie d'une instance, sans état partagé ni démon (§ 4.4). Une base
+  semée depuis `bundles/` (sans remote) n'est jamais concernée. Aucun push :
+  une base en avance sur son amont (propositions locales commitées par
+  `kb_propose` mais non poussées) n'est pas touchée. Une **divergence** (HEAD
+  et l'amont ont chacun des commits que l'autre n'a pas) est **signalée dans
+  `hub.log`, jamais écrasée** ; la séquence fetch + fast-forward passe par le
+  verrou de base existant, pour ne jamais s'entrelacer avec un `kb_propose` en
+  cours. Un remote absent, injoignable, une base sans branche amont, ou un
+  verrou occupé ne bloquent jamais le démarrage. Désactivable par
+  `sync-on-start: false`. Voir `docs/ARCHITECTURE.md` § 6 quater.
+
+### Tests
+
+14 nouveaux tests dans `tests/test_remote_sync.py` : fast-forward simple,
+base déjà à jour, base en avance (rien à tirer), divergence signalée et non
+écrasée, remote injoignable, absence de branche amont, verrou occupé,
+parcours de `sync_all`, validation de `sync-on-start`, intégration au
+démarrage réel du serveur (activé et désactivé).
+
 ## [0.2.4] — 2026-09-02
 
 ### Ajouté
