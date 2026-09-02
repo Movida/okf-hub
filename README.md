@@ -427,6 +427,24 @@ bin/okf-bootstrap            # installe ce qui manque, sans rien écraser
 Pour maîtriser entièrement le contenu de `bases/`, mettre
 `bootstrap-bundles: false` dans `hub-config.yaml`.
 
+### Elles se synchronisent avec leur remote au démarrage
+
+Une base clonée depuis un dépôt canonique (`bundles/upstreams.yaml`, ou
+importée manuellement avec son propre remote) est mise à jour en
+**fast-forward-only** à chaque démarrage d'une instance de serveur, avant sa
+première découverte. Jamais de push : le § 4.5 de la spec confie toute
+synchronisation à l'opérateur, ce mécanisme ne fait qu'automatiser le pull
+quand il est sûr.
+
+Une divergence — des propositions locales commitées par `kb_propose` mais
+jamais poussées, pendant que le dépôt canonique a lui aussi avancé — n'est
+**jamais écrasée** : elle est signalée dans `hub.log`, et la synchronisation de
+cette base attend une résolution manuelle. Un remote absent, injoignable, ou
+une base occupée par une écriture en cours ne bloque jamais le démarrage.
+
+Désactivable par `sync-on-start: false` dans `hub-config.yaml`, pour un
+opérateur qui gère ses pulls lui-même.
+
 **Pourquoi deux emplacements.** Une base doit être **son propre dépôt git**. Si
 elle n'était qu'un sous-répertoire du dépôt du hub, `gitops.commit_paths`
 exécuterait `git -C` dans le dépôt englobant, et un `kb_propose` de n'importe
@@ -479,6 +497,7 @@ src/okf_hub/
 ├── gitops.py       index git temporaire initialisé depuis HEAD, identité explicite
 ├── search.py       ripgrep, ET strict puis repli OU
 ├── bootstrap.py    installation des bases livrées (bundles/ → bases/)
+├── remote_sync.py  synchronisation fast-forward-only avec le remote, au démarrage
 ├── governance.py   statut draft/stable d'un GOVERNANCE.md
 ├── mdutil.py       frontmatter, headings, sections
 ├── textutil.py     plafonnement des sorties

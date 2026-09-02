@@ -3,6 +3,56 @@
 Format inspiré de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/).
 Le projet suit la version de la spécification qu'il implémente : `bundle-spec 0.1`.
 
+## [0.2.5] — 2026-09-02
+
+### Ajouté
+
+- **Synchronisation remote au démarrage (§ 4.5).** Chaque instance de serveur
+  synchronise en **fast-forward-only** les bases installées disposant d'un
+  remote, avant sa première découverte — un point unique et explicite du
+  cycle de vie d'une instance, sans état partagé ni démon (§ 4.4). Une base
+  semée depuis `bundles/` (sans remote) n'est jamais concernée. Aucun push :
+  une base en avance sur son amont (propositions locales commitées par
+  `kb_propose` mais non poussées) n'est pas touchée. Une **divergence** (HEAD
+  et l'amont ont chacun des commits que l'autre n'a pas) est **signalée dans
+  `hub.log`, jamais écrasée** ; la séquence fetch + fast-forward passe par le
+  verrou de base existant, pour ne jamais s'entrelacer avec un `kb_propose` en
+  cours. Un remote absent, injoignable, une base sans branche amont, ou un
+  verrou occupé ne bloquent jamais le démarrage. Désactivable par
+  `sync-on-start: false`. Voir `docs/ARCHITECTURE.md` § 6 quater.
+
+### Tests
+
+14 nouveaux tests dans `tests/test_remote_sync.py` : fast-forward simple,
+base déjà à jour, base en avance (rien à tirer), divergence signalée et non
+écrasée, remote injoignable, absence de branche amont, verrou occupé,
+parcours de `sync_all`, validation de `sync-on-start`, intégration au
+démarrage réel du serveur (activé et désactivé).
+
+## [0.2.4] — 2026-09-02
+
+### Ajouté
+
+- **`kb_search` multi-bases (§ 10.3).** `base` accepte désormais, en plus d'un
+  nom unique, une **liste de noms** ou `"*"` pour toutes les bases
+  enregistrées. Les deux contraintes pré-cadrées à la mise en réserve de cette
+  fonctionnalité sont respectées à la lettre : `max_results` reste un
+  **plafond de sortie global**, jamais multiplié par le nombre de bases
+  interrogées (réparti à parts égales, reliquat redistribué à la base qui peut
+  encore en profiter) ; les résultats sont **groupés par base**, chacune sous
+  son propre en-tête. Un nom unique (chaîne) garde une sortie strictement
+  identique à l'existant — non-régression explicite, voir
+  `docs/ARCHITECTURE.md` § 6 ter pour le détail des choix laissés ouverts par
+  la spec.
+
+### Tests
+
+16 nouveaux tests dans `tests/test_search_list.py` : répartition du plafond
+entre bases (parts égales, reliquat redistribué, borne jamais dépassée),
+groupage de la sortie, `base: "*"`, déduplication, nom de base inconnu dans
+une liste (`UNKNOWN_BASE` avant toute recherche), non-régression du format à
+un seul nom.
+
 ## [0.2.3] — 2026-09-01
 
 ### Ajouté

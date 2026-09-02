@@ -10,7 +10,7 @@ from pathlib import Path
 import anyio
 from mcp.server.stdio import stdio_server
 
-from . import bootstrap, hublog
+from . import bootstrap, hublog, remote_sync
 from .config import HubConfig
 from .server import HubServer
 
@@ -71,6 +71,14 @@ def main(argv: list[str] | None = None) -> int:
     if config.bootstrap_bundles:
         for nom in bootstrap.deploy_missing(config):
             hublog.info(f"première installation de la base livrée '{nom}'")
+
+    # Synchronisation fast-forward-only des bases ayant un remote, avant la
+    # première découverte (§ 4.5). Point unique et explicite du cycle de vie
+    # de cette instance : aucun état partagé, aucun démon (§ 4.4). Ne lève
+    # jamais — remote absent/injoignable ou divergence sont journalisés sans
+    # empêcher le démarrage, voir remote_sync.py.
+    if config.sync_on_start:
+        remote_sync.sync_all(config)
 
     hub = HubServer(config)
     try:
