@@ -56,6 +56,17 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Non interactif : ne demande pas l'identité git si elle est "
         "encore inconnue, saute l'étape plutôt que d'attendre une saisie.",
     )
+    catalog_parser = sous_commandes.add_parser(
+        "catalog",
+        help="Catalogue des bases connues : list, show, add, remove, import, "
+        "retire. Ajouter une base devient « en choisir une dans une liste » "
+        "plutôt que connaître et taper son URL git exacte ; retire son cycle "
+        "de retrait, jamais outillé jusqu'ici. Voir `okf-hub catalog -h` "
+        "(après ce premier mot) pour le détail de chaque sous-action. Les "
+        "options globales (--hub-root, --verbose) se placent avant "
+        "« catalog », comme pour « setup ».",
+    )
+    catalog_parser.add_argument("catalog_argv", nargs=argparse.REMAINDER)
     return parser.parse_args(argv)
 
 
@@ -72,6 +83,11 @@ def main(argv: list[str] | None = None) -> int:
         from .setup_cmd import run_setup
 
         return run_setup(hub_root, interactive=not args.yes)
+
+    if getattr(args, "command", None) == "catalog":
+        from .catalog_cmd import main as catalog_main
+
+        return catalog_main(hub_root, args.catalog_argv)
 
     try:
         config = HubConfig.load(hub_root)
