@@ -3,6 +3,34 @@
 Format inspiré de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/).
 Le projet suit la version de la spécification qu'il implémente : `bundle-spec 0.1`.
 
+## [0.2.6] — 2026-09-02
+
+### Corrigé
+
+- **La version annoncée au handshake MCP était une seconde chaîne en dur,
+  désynchronisée de celle du paquet.** `server.py` déclarait `version="0.1.0"`
+  indépendamment de `pyproject.toml`, resté lui-même figé à `0.1.0` alors que
+  ce journal en était déjà à 0.2.5 : rien ne distinguait donc une installation
+  à jour d'une installation périmée qui reproduit un bug déjà corrigé en
+  amont. Constaté en pratique (`prop-2026-09-01-9513` d'`okf-hub-feedback`,
+  un opérateur a rouvert un bug déjà corrigé sans moyen de le savoir) et
+  documenté dans `okf-hub-feedback/knowledge/limitations-connues.md`, section
+  « Pas de vérification de fraîcheur de l'installation ».
+
+  La version annoncée vient désormais des métadonnées du paquet installé
+  (`importlib.metadata.version("okf-hub")`, dérivées de `pyproject.toml` par
+  hatchling à la construction) — une **source unique de vérité**, correcte
+  aussi bien en `uv run` local qu'une fois packagé. `pyproject.toml` est
+  remonté à `0.2.6` pour refléter l'état réel du projet, qu'il avait cessé de
+  suivre depuis 0.1.0 : c'est ce même écart qui causait le bug.
+
+### Tests
+
+2 nouveaux tests dans `tests/test_server_version.py` : la constante
+`SERVER_VERSION` et la version annoncée par `HubServer(...).build()` valent
+toutes deux `importlib.metadata.version("okf-hub")` — l'invariant qu'un
+retour à une chaîne en dur romprait.
+
 ## [0.2.5] — 2026-09-02
 
 ### Ajouté
