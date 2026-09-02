@@ -51,7 +51,12 @@ def texte(result) -> str:
 def serveur(hub, make_bundle):
     hub_root, _ = hub
     make_bundle("premiere", name="premiere")
-    return HubServer(HubConfig.load(hub_root))
+    srv = HubServer(HubConfig.load(hub_root))
+    # Arrête le watcher pour ces tests : on veut tester le re-scan *de kb_list*
+    # spécifiquement, pas le re-scan automatique du watcher (qui a ses propres
+    # tests dans test_filesystem_watcher.py).
+    srv.stop()
+    return srv
 
 
 def test_kb_list_voit_une_base_importee_apres_le_demarrage(serveur, make_bundle):

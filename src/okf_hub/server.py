@@ -15,6 +15,8 @@ import anyio
 import mcp_types as types
 from mcp.server.lowlevel import Server
 from mcp.server.context import ServerRequestContext
+from watchdog.events import FileSystemEventHandler, DirCreatedEvent, DirDeletedEvent
+from watchdog.observers import Observer
 
 from . import hublog
 from .config import HubConfig
@@ -86,15 +88,59 @@ TOOLS: list[ToolSpec] = [
 _BY_NAME = {spec.name: spec for spec in TOOLS}
 
 
+class _BasesWatcher(FileSystemEventHandler):
+    """Observateur filesystem sur bases-dir, déclenchant le re-scan par instance.
+
+    Implémente le re-scan automatique lors de l'apparition/disparition d'une base
+    dans bases-dir, sans introduire d'état partagé entre instances (§ 4.4.a) :
+    chaque instance du serveur porte son propre observateur, qui déclenche le
+    re-scan de cette même instance uniquement.
+    """
+
+    def __init__(self, hub_server: HubServer) -> None:
+        super().__init__()
+        self._hub_server = hub_server
+
+    def on_created(self, event) -> None:
+        """Répertoire créé dans bases-dir : possiblement une nouvelle base."""
+        if isinstance(event, DirCreatedEvent):
+            # Ignore les répertoires cachés (cohérent avec Registry.scan § 4.2)
+            if event.src_path.split("/")[-1].startswith("."):
+                return
+            hublog.info(
+                f"watcher: répertoire créé dans bases-dir — {event.src_path}"
+            )
+            self._hub_server._silent_rescan("filesystem_watcher")
+
+    def on_deleted(self, event) -> None:
+        """Répertoire supprimé de bases-dir : base retirée."""
+        if isinstance(event, DirDeletedEvent):
+            hublog.info(
+                f"watcher: répertoire supprimé de bases-dir — {event.src_path}"
+            )
+            self._hub_server._silent_rescan("filesystem_watcher")
+
+
 class HubServer:
     def __init__(self, config: HubConfig) -> None:
         self.config = config
         self.registry = Registry(config)
         self._lock = threading.Lock()
         #: Dernier re-scan silencieux **par déclencheur** (§ 4.4.c). Les clés
-        #: sont bornées : les noms de `RESCAN_BEFORE`, plus `UNKNOWN_BASE`.
+        #: sont bornées : les noms de `RESCAN_BEFORE`, plus `UNKNOWN_BASE`, plus
+        #: `filesystem_watcher` (re-scan automatique par instance, sans état
+        #: partagé).
         self._last_silent_rescan: dict[str, float] = {}
         self.registry.scan()
+
+        # Observateur filesystem sur bases-dir : re-scan automatique par instance
+        # lors de l'apparition/disparition d'une base, sans état partagé (§ 4.4.a).
+        self._observer = Observer()
+        self._observer.schedule(
+            _BasesWatcher(self), str(config.bases_dir), recursive=False
+        )
+        self._observer.start()
+        hublog.info(f"watcher démarré sur {config.bases_dir}")
 
     # --- re-scan silencieux (§ 4.4.c) ---------------------------------------
 
@@ -189,6 +235,13 @@ class HubServer:
             notify_changed = True
         await _maybe_notify(ctx, notify_changed)
         return _ok(text)
+
+    def stop(self) -> None:
+        """Arrête proprement l'observateur filesystem."""
+        if self._observer.is_alive():
+            self._observer.stop()
+            self._observer.join(timeout=2.0)
+            hublog.info("watcher arrêté")
 
     def build(self) -> Server:
         return Server(
