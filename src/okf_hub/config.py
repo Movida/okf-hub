@@ -23,6 +23,37 @@ DEFAULT_BOOTSTRAP_BUNDLES = True
 #: `sync-on-start: false`.
 DEFAULT_SYNC_ON_START = True
 
+#: Profils de configuration prédéfinis. Chaque profil définit des valeurs par
+#: défaut pour les cinq paramètres configurables. Un opérateur peut soit
+#: choisir un profil via le champ `profile` de hub-config.yaml, soit laisser
+#: le profil `solo` par défaut (comportement actuel), soit surcharger
+#: individuellement les valeurs d'un profil.
+PROFILES = {
+    "solo": {
+        "bases-dir": DEFAULT_BASES_DIR,
+        "read-toc-threshold": DEFAULT_READ_TOC_THRESHOLD,
+        "log-file": DEFAULT_LOG_FILE,
+        "bootstrap-bundles": DEFAULT_BOOTSTRAP_BUNDLES,
+        "sync-on-start": DEFAULT_SYNC_ON_START,
+    },
+    "dev": {
+        "bases-dir": DEFAULT_BASES_DIR,
+        "read-toc-threshold": DEFAULT_READ_TOC_THRESHOLD,
+        "log-file": DEFAULT_LOG_FILE,
+        "bootstrap-bundles": False,  # dev : pas de bootstrap auto
+        "sync-on-start": False,      # dev : pas de sync auto
+    },
+    "ci": {
+        "bases-dir": DEFAULT_BASES_DIR,
+        "read-toc-threshold": 16384,  # CI : seuil plus élevé
+        "log-file": None,             # CI : pas de log fichier
+        "bootstrap-bundles": DEFAULT_BOOTSTRAP_BUNDLES,
+        "sync-on-start": DEFAULT_SYNC_ON_START,
+    },
+}
+
+DEFAULT_PROFILE = "solo"
+
 
 @dataclass(frozen=True)
 class HubConfig:
@@ -46,20 +77,30 @@ class HubConfig:
                 raise ValueError(f"{path} : la racine doit être une correspondance YAML")
             raw = loaded
 
-        bases_dir = _resolve(hub_root, raw.get("bases-dir", DEFAULT_BASES_DIR))
+        # Charger les valeurs par défaut du profil spécifié (ou "solo" par défaut).
+        profile_name = raw.get("profile", DEFAULT_PROFILE)
+        if profile_name not in PROFILES:
+            raise ValueError(
+                f"{path} : profil inconnu '{profile_name}'. "
+                f"Profils disponibles : {', '.join(sorted(PROFILES.keys()))}"
+            )
+        profile_defaults = PROFILES[profile_name]
 
-        threshold = raw.get("read-toc-threshold", DEFAULT_READ_TOC_THRESHOLD)
+        # Les valeurs explicites de hub-config.yaml surchargent le profil.
+        bases_dir = _resolve(hub_root, raw.get("bases-dir", profile_defaults["bases-dir"]))
+
+        threshold = raw.get("read-toc-threshold", profile_defaults["read-toc-threshold"])
         if not isinstance(threshold, int) or isinstance(threshold, bool) or threshold <= 0:
             raise ValueError(f"{path} : read-toc-threshold doit être un entier positif")
 
-        log_raw = raw.get("log-file", DEFAULT_LOG_FILE)
+        log_raw = raw.get("log-file", profile_defaults["log-file"])
         log_file = None if log_raw in (None, False, "") else _resolve(hub_root, log_raw)
 
-        bootstrap = raw.get("bootstrap-bundles", DEFAULT_BOOTSTRAP_BUNDLES)
+        bootstrap = raw.get("bootstrap-bundles", profile_defaults["bootstrap-bundles"])
         if not isinstance(bootstrap, bool):
             raise ValueError(f"{path} : bootstrap-bundles doit être un booléen")
 
-        sync_on_start = raw.get("sync-on-start", DEFAULT_SYNC_ON_START)
+        sync_on_start = raw.get("sync-on-start", profile_defaults["sync-on-start"])
         if not isinstance(sync_on_start, bool):
             raise ValueError(f"{path} : sync-on-start doit être un booléen")
 
