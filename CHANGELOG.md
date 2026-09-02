@@ -7,6 +7,31 @@ Le projet suit la version de la spécification qu'il implémente : `bundle-spec 
 
 ### Ajouté
 
+- **Profils de configuration pour `hub-config.yaml`.** Plutôt que de configurer
+  chaque paramètre individuellement (`bases-dir`, `read-toc-threshold`,
+  `log-file`, `bootstrap-bundles`, `sync-on-start`), on peut désormais choisir
+  un profil prédéfini via le champ `profile`. Trois profils disponibles :
+  `solo` (par défaut, comportement actuel), `dev` (développement local, pas de
+  bootstrap ni sync auto), `ci` (CI/tests, seuil plus élevé, pas de log
+  fichier). Chaque paramètre explicite dans `hub-config.yaml` surcharge la
+  valeur du profil. Un opérateur qui ne configure rien bénéficie du profil
+  `solo`, garantissant le comportement actuel inchangé. Inspiré du mécanisme de
+  presets du framework HOLON, adapté au contexte okf-hub. Voir `README.md`
+  § « Profils de configuration » et `src/okf_hub/config.py`.
+
+- **Watcher filesystem par instance pour re-scan automatique.** Chaque instance
+  du serveur observe maintenant son propre `bases-dir` via watchdog et déclenche
+  un re-scan automatique dès qu'une base apparaît (répertoire créé) ou disparaît
+  (répertoire supprimé), sans attendre le prochain `kb_list` explicite ni le
+  cooldown implicite de 5 s. Respecte strictement le principe § 4.4.a (aucun
+  état partagé entre instances) : chaque instance porte son propre observateur
+  qui ne touche que son propre registre. Le mécanisme de re-scan reste unique
+  (`HubServer._silent_rescan`), le cooldown reste de 5 s par déclencheur (le
+  watcher utilise le trigger `"filesystem_watcher"`), et les répertoires cachés
+  (`.cache`, `.tmp`) sont ignorés comme dans `Registry.scan`. L'observateur est
+  arrêté proprement lors de l'arrêt du serveur. 7 tests dans
+  `tests/test_filesystem_watcher.py`.
+
 - **Enregistrement automatique de la deploy key par GitHub App (optionnel).**
   `.devcontainer/deploy-keys.sh` tente désormais, avant le test SSH de la
   passe 2, d'enregistrer chaque clé publique par l'API GitHub

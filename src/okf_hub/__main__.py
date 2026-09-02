@@ -123,6 +123,7 @@ def main(argv: list[str] | None = None) -> int:
     except (KeyboardInterrupt, EOFError):
         pass
     finally:
+        hub.stop()
         hublog.info("arrêt")
         hublog.close()
     return 0
