@@ -3,6 +3,38 @@
 Format inspiré de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/).
 Le projet suit la version de la spécification qu'il implémente : `bundle-spec 0.1`.
 
+## [0.2.7] — 2026-09-02
+
+### Ajouté
+
+- **`okf-hub setup` — point d'entrée d'installation unique.** Le README
+  documentait séparément quatre étapes pour passer d'un clone du dépôt à un
+  hub opérationnel : identité git, clé SSH de dépôt, configuration du client
+  MCP (quatre variantes selon le client), bootstrap des bases livrées.
+  `okf-hub setup` les enchaîne en une commande, sans en remplacer aucune :
+  chaque étape reste idempotente, et une étape sans objet dans
+  l'environnement courant (pas de devcontainer, aucun client MCP détecté,
+  Claude Desktop absent, `bootstrap-bundles: false`) est signalée comme telle
+  dans le rapport final plutôt que passée sous silence, avec un renvoi vers
+  la procédure manuelle correspondante. La clé SSH réutilise
+  `.devcontainer/deploy-keys.sh` déjà existant plutôt que de dupliquer sa
+  logique. `--yes` rend l'étape d'identité git non interactive (utile en CI
+  ou en script). Voir `README.md` § « Tout en une commande ».
+
+### Tests
+
+18 nouveaux tests dans `tests/test_setup_cmd.py` : identité git (déjà
+configurée, lue depuis `git-identity.env`, saisie interactive, saisie vide,
+non interactif sans identité connue), délégation à `deploy-keys.sh` (absent,
+succès, échec), détection client MCP (aucun détecté, Claude Code enregistré,
+déjà enregistré, Claude Desktop présent avec fusion non destructive de sa
+config existante, Claude Desktop absent, config Desktop invalide), bootstrap
+des bases livrées (installées, désactivé par la config), et orchestration
+(code de sortie non nul sur échec, étapes sautées non comptées comme échec).
+Aucun test n'exécute de commande réseau ou git réelle : `subprocess.run` et
+`shutil.which` sont injectés, le répertoire « home » est toujours un
+`tmp_path`.
+
 ## [0.2.6] — 2026-09-02
 
 ### Corrigé
