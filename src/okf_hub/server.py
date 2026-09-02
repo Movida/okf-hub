@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import threading
 import time
+from importlib import metadata
 from typing import Awaitable, Callable
 
 import anyio
@@ -30,6 +31,14 @@ from .tools import (
 )
 
 SERVER_NAME = "okf-hub"
+
+#: Source unique de vérité pour la version annoncée au handshake MCP : les
+#: métadonnées du paquet installé (dérivées de `pyproject.toml` par hatchling à
+#: la construction), correctes aussi bien en `uv run` local qu'une fois
+#: packagé — plutôt qu'une seconde chaîne en dur, désynchronisable de la
+#: première (constaté : `pyproject.toml` à 0.1.0 alors que `CHANGELOG.md` en
+#: était à 0.2.5 — voir prop-2026-09-01-9513 d'`okf-hub-feedback`).
+SERVER_VERSION = metadata.version(SERVER_NAME)
 
 #: Cooldown du re-scan silencieux (§ 4.4.c, rév. 4.2) : **un mécanisme unique**
 #: (`_silent_rescan`), un cooldown unique, mais **un compteur par déclencheur** —
@@ -184,7 +193,7 @@ class HubServer:
     def build(self) -> Server:
         return Server(
             SERVER_NAME,
-            version="0.1.0",
+            version=SERVER_VERSION,
             instructions=_instructions(self.registry),
             on_list_tools=self.on_list_tools,
             on_call_tool=self.on_call_tool,
