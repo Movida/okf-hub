@@ -46,9 +46,7 @@ import subprocess
 import tempfile
 from pathlib import Path
 
-import yaml
-
-from . import hublog
+from . import catalog, hublog
 from .config import HubConfig
 from .manifest import MANIFEST_FILENAME
 
@@ -89,22 +87,12 @@ def upstreams(hub_root: Path) -> dict[str, str]:
     Une base qui en a un est **clonée**, jamais semée : semer produirait une
     histoire git sans rapport avec la sienne, et toute proposition déposée sur
     cette base orpheline serait irrécupérable.
+
+    Délègue à `catalog.load`, qui tolère désormais aussi des entrées enrichies
+    (title/description/tags) : seule l'URL importe ici, le reste du catalogue
+    ne concerne que la découverte outillée par `okf-hub catalog`.
     """
-    chemin = sources_dir(hub_root) / UPSTREAMS_FILENAME
-    if not chemin.is_file():
-        return {}
-    try:
-        charge = yaml.safe_load(chemin.read_text(encoding="utf-8"))
-    except (OSError, yaml.YAMLError) as exc:
-        hublog.warning(f"{chemin} illisible, amonts ignorés : {exc}")
-        return {}
-    if not isinstance(charge, dict):
-        return {}
-    return {
-        str(nom): str(url)
-        for nom, url in charge.items()
-        if isinstance(url, str) and url.strip()
-    }
+    return {nom: entree.url for nom, entree in catalog.load(hub_root).items()}
 
 
 def _git(repo: Path, args: list[str]) -> None:

@@ -24,10 +24,10 @@ celles qui n'ont aucun mandat pour l'exercer.
 | Étape | Rôle | Moyen |
 |---|---|---|
 | Créer | opérateur, ou session avec shell | template + questionnaire d'instanciation |
-| Déployer | opérateur | `git clone` dans `bases/`, puis découverte |
+| Déployer | opérateur | `git clone` dans `bases/` (ou `okf-hub catalog import`), puis découverte |
 | Alimenter | toute session | `kb_propose` |
 | Réviser | gestionnaire | `okf-review`, en ligne de commande |
-| Retirer | opérateur | suppression du répertoire, puis découverte |
+| Retirer | opérateur | `okf-hub catalog retire` (garde-fous), puis découverte |
 
 ## 1. Créer
 
@@ -66,6 +66,12 @@ Cloner le bundle dans le répertoire des bases du hub, sous le nom que tu veux �
 le nom du répertoire n'a pas d'importance, c'est le champ `name` du manifeste qui
 sert partout de paramètre `base`. Les deux diffèrent dès qu'un clone est renommé.
 
+Si la base figure déjà dans `bundles/upstreams.yaml` (le catalogue de bases
+connues, nommées/tagué/décrites), `okf-hub catalog import <nom>` exécute
+exactement ce même `git clone` — rien d'autre, seulement l'URL exacte à ne plus
+connaître ou taper. `okf-hub catalog list` montre ce qui est connu et déjà
+déployé.
+
 La découverte est ensuite automatique : toute session qui liste les bases relit
 le disque avant de répondre. L'outil de rescan reste utile pour une autre raison
 — il rend le **rapport** d'import : bundles rejetés avec leur motif, collisions
@@ -99,13 +105,15 @@ abouti. Sans elle, l'historique d'audit de la base est incomplet.
 
 ## 5. Retirer
 
-Supprimer le répertoire du bundle sous `bases/`, puis laisser la découverte
-suivante constater le retrait. Rien n'est perdu tant que le dépôt existe
-ailleurs : un bundle est un dépôt git autonome, et **une base se lit sans le
-hub** — c'est un répertoire de markdown.
-
-Avant de retirer : vérifier qu'aucune proposition en attente n'y dort, et que le
-dépôt a bien été poussé si son contenu compte.
+`okf-hub catalog retire <nom>` : vérifie qu'aucune proposition n'est en attente
+dans `proposals/pending/`, et — si la base a un remote — que sa branche amont
+suivie n'est pas en retard sur `HEAD` (vérification locale, sans nouvel accès
+réseau), puis supprime le répertoire du bundle sous `bases/`. `--force` passe
+outre ces garde-fous ; `--forget` oublie en plus l'entrée du catalogue. Rien
+d'autre que la suppression manuelle qu'il automatise : rien n'est perdu tant
+que le dépôt existe ailleurs, et **une base se lit sans le hub** — c'est un
+répertoire de markdown. La découverte suivante (`kb_list` ou
+`kb_hub_rescan`) constate le retrait.
 
 ## Pourquoi l'invariant d'audit tient
 

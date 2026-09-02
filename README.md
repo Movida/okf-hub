@@ -252,6 +252,25 @@ Pour créer une base : partir du template
 [`okf-bundle-template`](https://github.com/Movida/okf-bundle-template) et dérouler son
 `INSTANTIATE.md`.
 
+### Choisir dans un catalogue plutôt que taper une URL
+
+`bundles/upstreams.yaml` peut porter, en plus de l'URL, un titre, une
+description et des tags par base connue :
+
+```sh
+uv run okf-hub catalog list                    # ce qui est connu, déployé ou non
+uv run okf-hub catalog list --tag rh           # filtré par tag
+uv run okf-hub catalog show <nom>              # détail d'une entrée
+uv run okf-hub catalog add <nom> <url> --title "…" --description "…" --tag rh
+uv run okf-hub catalog import <nom>            # git clone <url> bases/<nom> — rien d'autre
+```
+
+`catalog import` exécute exactement la commande ci-dessus : c'est le même
+invariant, seulement l'URL exacte à ne plus connaître ou taper. `catalog
+add`/`remove` ne font qu'éditer `bundles/upstreams.yaml` ; une entrée sans
+titre ni description ni tag reste une simple URL, comme avant ce catalogue
+(compatibilité intégrale avec le format historique).
+
 ### ⚠ Avant d'importer un bundle tiers
 
 Importer un bundle en v0 est sans risque d'**exécution** — `tools/` et
@@ -271,6 +290,27 @@ l'éliminer.
 **Consigne v0 : n'importer que des bundles de confiance, et relire le
 manifeste, `GOVERNANCE.md` et `CLAUDE.md` avant le premier usage de tout
 bundle tiers.**
+
+## Retirer une base
+
+Avant ce cycle, retirer une base n'était qu'une suppression manuelle de
+répertoire, documentée en prose (`okf-hub-guide`, cycle de vie § 5), jamais
+outillée :
+
+```sh
+uv run okf-hub catalog retire <nom>            # garde-fous, puis suppression
+uv run okf-hub catalog retire <nom> --forget   # + oublie l'entrée du catalogue
+```
+
+Deux garde-fous, jamais bloquants avec `--force` : aucune proposition ne doit
+dormir dans `proposals/pending/` de la base, et — si elle a un remote — sa
+branche amont suivie ne doit pas être en retard sur `HEAD` (vérification
+**locale uniquement**, sans nouvel accès réseau ; un dépôt purement local n'est
+jamais concerné). La suppression elle-même reste ce qu'elle a toujours été : le
+répertoire du bundle sous `bases/`, jamais l'entrée du catalogue (séparée,
+`--forget` pour l'oublier aussi) ni le dépôt distant. Rien n'est perdu tant que
+le dépôt existe ailleurs — un bundle est un dépôt git autonome. Le retrait est
+visible dès le prochain `kb_list` ou `kb_hub_rescan`.
 
 ## Modèle multi-instances — à lire avant d'exploiter
 
