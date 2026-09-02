@@ -18,6 +18,11 @@ DEFAULT_LOG_FILE = "./hub.log"
 #: `bases-dir` met `bootstrap-bundles: false`.
 DEFAULT_BOOTSTRAP_BUNDLES = True
 
+#: Synchronisation fast-forward-only avec le remote de chaque base installée,
+#: au démarrage (§ 4.5). Un opérateur qui gère ses pulls lui-même met
+#: `sync-on-start: false`.
+DEFAULT_SYNC_ON_START = True
+
 
 @dataclass(frozen=True)
 class HubConfig:
@@ -26,6 +31,7 @@ class HubConfig:
     read_toc_threshold: int
     log_file: Path | None
     bootstrap_bundles: bool = DEFAULT_BOOTSTRAP_BUNDLES
+    sync_on_start: bool = DEFAULT_SYNC_ON_START
 
     @staticmethod
     def load(hub_root: Path) -> "HubConfig":
@@ -53,12 +59,17 @@ class HubConfig:
         if not isinstance(bootstrap, bool):
             raise ValueError(f"{path} : bootstrap-bundles doit être un booléen")
 
+        sync_on_start = raw.get("sync-on-start", DEFAULT_SYNC_ON_START)
+        if not isinstance(sync_on_start, bool):
+            raise ValueError(f"{path} : sync-on-start doit être un booléen")
+
         return HubConfig(
             hub_root=hub_root,
             bases_dir=bases_dir,
             read_toc_threshold=threshold,
             log_file=log_file,
             bootstrap_bundles=bootstrap,
+            sync_on_start=sync_on_start,
         )
 
 
