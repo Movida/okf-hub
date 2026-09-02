@@ -113,9 +113,54 @@ reste="$(awk -v d="$DEBUT" -v f="$FIN" '
 printf '%s\n%s\n' "$bloc" "$reste" > "$config"
 chmod 600 "$config"
 
+# --- Passe 1.5 : enregistrement automatique via GitHub App (optionnel) ------
+#
+# Si OKF_HUB_GH_APP_TOKEN est exporté (jeton d'installation GitHub App —
+# scopé aux dépôts où l'App est installée, de courte durée de vie, jamais un
+# jeton de compte ni un scope `repo` global), on tente d'enregistrer chaque
+# clé publique par l'API REST avant le test SSH de la passe 2 : en cas de
+# succès, ce même passage constate l'acceptation plus bas, sans aller coller
+# la clé à la main sur GitHub. Absent (cas par défaut), rien ne change.
+#
+# Le jeton ne quitte jamais cette variable d'environnement : ni écrit sur
+# disque, ni journalisé. Sa fabrication (JWT signé avec la clé privée de la
+# GitHub App, échangée contre un jeton d'installation) se fait sur la machine
+# de l'opérateur — JAMAIS dans ce conteneur, où tournent des sessions Claude
+# qui exécutent du code (voir README.md pour la procédure et ARCHITECTURE.md
+# § 5.3 bis pour ce que ce choix ouvre et pourquoi c'est borné).
+json_echapper() {
+    local s="$1"
+    s="${s//\\/\\\\}"
+    s="${s//\"/\\\"}"
+    printf '%s' "$s"
+}
+
+enregistrer_cle_via_api() {
+    local depot="$1" titre="$2" cle_pub="$3" corps code
+    corps=$(printf '{"title":"%s","key":"%s","read_only":false}' \
+        "$(json_echapper "$titre")" "$(json_echapper "$cle_pub")")
+    code="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 15 \
+        -X POST \
+        -H "Authorization: Bearer $OKF_HUB_GH_APP_TOKEN" \
+        -H "Accept: application/vnd.github+json" \
+        -H "X-GitHub-Api-Version: 2022-11-28" \
+        "https://api.github.com/repos/$depot/keys" \
+        -d "$corps" 2>/dev/null || echo "000")"
+    case "$code" in
+        201) echo "   → $depot — clé enregistrée automatiquement (GitHub App)" ;;
+        422) echo "   → $depot — déjà enregistrée ou refusée par GitHub (422)" ;;
+        000) echo "   → $depot — API GitHub injoignable, repli sur l'enregistrement manuel" ;;
+        *)   echo "   → $depot — enregistrement automatique refusé (HTTP $code), repli sur l'enregistrement manuel" ;;
+    esac
+}
+
 # --- Passe 2 : la réécriture d'URL, si et seulement si la clé est acceptée ----
 for entree in "${alias_de[@]}"; do
     IFS='|' read -r depot alias_ssh cle <<< "$entree"
+
+    if [ -n "${OKF_HUB_GH_APP_TOKEN:-}" ]; then
+        enregistrer_cle_via_api "$depot" "okf-hub-devcontainer deploy key — $depot" "$(cat "$cle.pub")"
+    fi
 
     # Une réécriture vers un alias dont la clé n'est pas enregistrée casserait
     # tout accès au dépôt, alors que sans elle l'URL canonique continue de
