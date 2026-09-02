@@ -40,6 +40,22 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         action="store_true",
         help="Duplique le journal sur la sortie d'erreur (stdout est réservé au protocole).",
     )
+    sous_commandes = parser.add_subparsers(dest="command")
+    setup_parser = sous_commandes.add_parser(
+        "setup",
+        help="Point d'entrée d'installation unique : identité git, clé(s) SSH, "
+        "détection/configuration du client MCP installé, bootstrap des bases "
+        "livrées. N'écrase aucune procédure documentée au README, ne fait que "
+        "les enchaîner quand elles sont détectables sans deviner de secret. "
+        "Les options globales (--hub-root, --verbose) se placent avant "
+        "« setup » : `okf-hub --hub-root <chemin> setup`.",
+    )
+    setup_parser.add_argument(
+        "-y", "--yes",
+        action="store_true",
+        help="Non interactif : ne demande pas l'identité git si elle est "
+        "encore inconnue, saute l'étape plutôt que d'attendre une saisie.",
+    )
     return parser.parse_args(argv)
 
 
@@ -51,6 +67,11 @@ async def _serve(server) -> None:
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
     hub_root = (args.hub_root or _default_hub_root()).resolve()
+
+    if getattr(args, "command", None) == "setup":
+        from .setup_cmd import run_setup
+
+        return run_setup(hub_root, interactive=not args.yes)
 
     try:
         config = HubConfig.load(hub_root)
