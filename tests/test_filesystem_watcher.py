@@ -33,8 +33,9 @@ def test_watcher_detecte_nouvelle_base(serveur, make_bundle):
     assert "nouvelle" not in serveur.registry.bases
 
     make_bundle("nouvelle", name="nouvelle")
-    # Le watcher observe en arrière-plan : attendre qu'il traite l'événement
-    time.sleep(0.2)
+    # Le watcher observe en arrière-plan : attendre le settle (création) puis
+    # le traitement de l'événement.
+    time.sleep(0.5)
 
     # Le re-scan a été déclenché automatiquement par le watcher
     assert "nouvelle" in serveur.registry.bases
@@ -43,7 +44,7 @@ def test_watcher_detecte_nouvelle_base(serveur, make_bundle):
 def test_watcher_detecte_base_retiree(serveur, make_bundle):
     """Une base supprimée de bases-dir disparaît du registre."""
     make_bundle("ephemere", name="ephemere")
-    time.sleep(0.2)
+    time.sleep(0.5)
     assert "ephemere" in serveur.registry.bases
 
     # Clear le cooldown pour permettre un nouveau scan immédiat
@@ -83,7 +84,7 @@ def test_watcher_respecte_le_cooldown(serveur, make_bundle, monkeypatch):
     # Deux créations rapprochées
     make_bundle("premiere", name="premiere")
     make_bundle("seconde", name="seconde")
-    time.sleep(0.2)
+    time.sleep(0.5)
 
     # Le cooldown de 5s doit empêcher le deuxième scan immédiat
     assert len(scans) == 1
