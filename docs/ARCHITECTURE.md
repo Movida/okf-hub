@@ -49,6 +49,11 @@ src/okf_hub/
 ├── remote_sync.py  Synchronisation fast-forward-only avec le remote de chaque
 │                   base installée, au démarrage (§ 4.5). Jamais de push,
 │                   divergence signalée jamais écrasée, sous le verrou de base.
+├── setup_cmd.py    `okf-hub setup` : enchaîne identité git, clé(s) SSH
+│                   (délègue à .devcontainer/deploy-keys.sh), détection et
+│                   écriture de la config du client MCP installé, bootstrap
+│                   des bases livrées. N'écrase aucune procédure documentée
+│                   au README ; une étape sans objet est signalée, pas muette.
 │
 ├── manifest.py     Validation de okf-bundle.yaml (§ 3.3).
 ├── registry.py     Découverte, énumération du corpus, exclusions transverses,

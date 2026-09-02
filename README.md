@@ -33,6 +33,36 @@ les manifestes : `bundle-spec: "0.1"`).
 
 ## Démarrage
 
+### Tout en une commande
+
+Une fois les dépendances installées (`uv sync`, déjà fait par le
+`post-create` du devcontainer), `okf-hub setup` enchaîne les quatre étapes
+détaillées plus bas — sans en remplacer aucune : c'est le même résultat,
+automatisé pour les cas qu'il peut détecter sans deviner un identifiant ou un
+secret externe.
+
+```sh
+uv run okf-hub setup
+```
+
+1. **Identité git** — configurée si elle manque encore (interactif ; `--yes`
+   pour sauter la saisie plutôt qu'attendre une réponse).
+2. **Clé(s) SSH** — dans un devcontainer, délègue à
+   `.devcontainer/deploy-keys.sh` (idempotent : relancer `okf-hub setup`
+   après avoir enregistré une clé sur GitHub la valide).
+3. **Client MCP** — enregistre `okf-hub` auprès de Claude Code (`claude mcp
+   add`) si la commande `claude` est dans le PATH, et met à jour la config de
+   Claude Desktop si elle est détectée sur la machine.
+4. **Bases livrées** — installe ce qui manque dans `bases/` (déjà fait
+   automatiquement au premier démarrage du serveur ; utile ici pour une
+   confirmation immédiate, sans attendre une connexion cliente).
+
+Chaque étape sans objet dans l'environnement courant (pas de devcontainer,
+aucun client MCP détecté, Claude Desktop absent, `bootstrap-bundles: false`)
+est signalée comme telle dans le rapport final — jamais silencieuse — et
+renvoie vers la procédure manuelle correspondante ci-dessous : hub hors
+devcontainer, client MCP configuré à la main, hub derrière `docker exec`.
+
 ### Dans le devcontainer (recommandé)
 
 Ouvrir le dépôt dans VS Code → *Reopen in Container*. Le `post-create` installe

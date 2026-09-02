@@ -1,6 +1,6 @@
 [project]
 name = "okf-hub"
-version = "0.2.6"
+version = "0.2.7"
 description = "OKF Bundle Hub — serveur MCP de lecture et de proposition sur des bases de connaissance markdown versionnées en git"
 readme = "README.md"
 requires-python = ">=3.11"
