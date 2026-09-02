@@ -3,6 +3,30 @@
 Format inspiré de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/).
 Le projet suit la version de la spécification qu'il implémente : `bundle-spec 0.1`.
 
+## [0.2.4] — 2026-09-02
+
+### Ajouté
+
+- **`kb_search` multi-bases (§ 10.3).** `base` accepte désormais, en plus d'un
+  nom unique, une **liste de noms** ou `"*"` pour toutes les bases
+  enregistrées. Les deux contraintes pré-cadrées à la mise en réserve de cette
+  fonctionnalité sont respectées à la lettre : `max_results` reste un
+  **plafond de sortie global**, jamais multiplié par le nombre de bases
+  interrogées (réparti à parts égales, reliquat redistribué à la base qui peut
+  encore en profiter) ; les résultats sont **groupés par base**, chacune sous
+  son propre en-tête. Un nom unique (chaîne) garde une sortie strictement
+  identique à l'existant — non-régression explicite, voir
+  `docs/ARCHITECTURE.md` § 6 ter pour le détail des choix laissés ouverts par
+  la spec.
+
+### Tests
+
+16 nouveaux tests dans `tests/test_search_list.py` : répartition du plafond
+entre bases (parts égales, reliquat redistribué, borne jamais dépassée),
+groupage de la sortie, `base: "*"`, déduplication, nom de base inconnu dans
+une liste (`UNKNOWN_BASE` avant toute recherche), non-régression du format à
+un seul nom.
+
 ## [0.2.3] — 2026-09-01
 
 ### Ajouté

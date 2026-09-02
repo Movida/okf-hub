@@ -100,14 +100,14 @@ gestionnaire, pas le vôtre.
 
 ## kb_search
 
-Recherche plein texte dans le corpus d'une base, via ripgrep.
+Recherche plein texte dans le corpus d'une ou plusieurs bases, via ripgrep.
 
 | Paramètre | Type | Défaut | Rôle |
 |---|---|---|---|
-| `base` | `string` | **requis** | Nom de la base. |
+| `base` | `string` \| `string[]` | **requis** | Nom de la base, liste de noms, ou `"*"` pour toutes les bases enregistrées. Voir « Multi-bases » ci-dessous. |
 | `query` | `string` | **requis** | Termes, ou expression régulière en mode `regex`. |
 | `mode` | `"keyword"` \| `"regex"` | `"keyword"` | Voir ci-dessous. |
-| `max_results` | `integer` 1–25 | `8` | Hors bornes → `INVALID_INPUT`. |
+| `max_results` | `integer` 1–25 | `8` | Hors bornes → `INVALID_INPUT`. Plafond **global** : voir « Multi-bases ». |
 
 **Mode `keyword`** — les termes sont séparés par des espaces et traités comme
 des **littéraux** (pas de regex : `3.2(beta)` cherche bien `3.2(beta)`).
@@ -161,6 +161,43 @@ ressortent quand rien d'autre ne correspond. *Écart assumé au § 5.2, voir
 **Ce que kb_search n'est pas** — un ripgrep est un motif sur le texte brut. Il
 sert à **trouver**, jamais à **compter** : un champ de frontmatter ou une section
 cités entre backticks dans un document de conventions seront comptés à tort.
+
+**Multi-bases (§ 10.3).** `base` accepte, en plus d'un nom unique :
+
+- une **liste de noms** — `base: ["solution-editeur-x", "okf-hub-guide"]` —
+  chacun doit exister, sinon `UNKNOWN_BASE` (comme pour un nom unique) ; aucune
+  recherche n'est lancée si l'un d'eux est invalide. Les doublons sont
+  silencieusement dédoublonnés.
+- `base: "*"` — toutes les bases actuellement enregistrées. Sans aucune base
+  enregistrée, la sortie l'indique au lieu d'échouer.
+
+`max_results` reste un **plafond de sortie global**, jamais un plafond par
+base : avec deux bases interrogées et `max_results: 8`, le total des résultats
+rendus est au plus 8, pas 16. Le budget est **réparti à parts égales** entre
+les bases interrogées ; une base qui a moins de résultats que sa part cède son
+reliquat aux autres plutôt que de le perdre — la répartition finale peut donc
+être inégale si les bases n'ont pas toutes assez de matches.
+
+Avec plus d'une base, la sortie est **groupée par base**, chacune sous son
+propre en-tête (même format qu'à une seule base) :
+
+```
+2 résultat(s) dans 2 base(s) pour : réauthentifier
+
+## Base : solution-editeur-x
+1 résultat(s) dans 'solution-editeur-x' pour : réauthentifier
+### procedures/sso.md — Procédure de reconnexion SSO
+  L12-16 § reconnexion
+           | ...
+
+## Base : okf-hub-guide
+1 résultat(s) dans 'okf-hub-guide' pour : réauthentifier
+### ...
+```
+
+Une base sans aucun résultat n'apparaît pas dans la sortie groupée. Avec un
+nom unique (chaîne, pas liste ni `"*"` à plusieurs bases), la sortie reste
+strictement celle d'aujourd'hui — sans en-tête de groupe.
 
 ---
 
