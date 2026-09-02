@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from ..errors import INVALID_INPUT, ToolError
 from ..mdutil import heading_at_line, parse_document, parse_headings
 from ..registry import Base, Registry
 from ..search import DocHits, run_search
@@ -17,10 +18,23 @@ MAX_EXCERPTS_PER_DOC = 3
 PREAMBLE_LABEL = "(préambule)"
 SECTION_LABEL_MAX = 120
 
+#: Valeur spéciale de `base` désignant toutes les bases enregistrées (§ 10.3).
+ALL_BASES = "*"
+
 SCHEMA = {
     "type": "object",
     "properties": {
-        "base": {"type": "string", "description": "Nom de la base (champ `name` du manifeste)."},
+        "base": {
+            "description": (
+                "Nom de la base (champ `name` du manifeste), une liste de noms "
+                'pour interroger plusieurs bases, ou "*" pour toutes les bases '
+                "enregistrées."
+            ),
+            "anyOf": [
+                {"type": "string"},
+                {"type": "array", "items": {"type": "string"}, "minItems": 1},
+            ],
+        },
         "query": {
             "type": "string",
             "description": (
@@ -53,11 +67,14 @@ SCHEMA = {
 def description(registry: Registry) -> str:
     bases = registry.ordered()
     head = (
-        "Recherche plein texte dans le corpus d'une base. Retourne les chemins, "
-        "titres et extraits pertinents — jamais les documents entiers. "
-        "Chaque extrait est annoté du heading de sa section, après « § » : "
-        "reportez-le tel quel dans kb_read(path, section) pour lire la section "
-        "entière sans rapatrier tout le document."
+        "Recherche plein texte dans le corpus d'une ou plusieurs bases (`base` "
+        'accepte un nom, une liste de noms, ou "*" pour toutes les bases — '
+        "résultats groupés par base, sous un plafond de sortie global réparti "
+        "entre elles). Retourne les chemins, titres et extraits pertinents — "
+        "jamais les documents entiers. Chaque extrait est annoté du heading de "
+        "sa section, après « § » : reportez-le tel quel dans "
+        "kb_read(path, section) pour lire la section entière sans rapatrier tout "
+        "le document."
     )
     if not bases:
         return head + " Aucune base n'est actuellement enregistrée."
@@ -123,37 +140,110 @@ def _render(base: Base, doc: DocHits) -> str:
     return "\n".join(parts)
 
 
+def _resolve_base_names(registry: Registry, arguments: dict) -> list[str]:
+    """Normalise `base` : nom unique, liste de noms, ou `"*"` (§ 10.3).
+
+    Valide l'existence de chaque nom explicite *avant* toute recherche — un nom
+    inconnu dans une liste échoue tout l'appel, comme le ferait déjà un nom
+    unique inconnu ; pas de repli silencieux qui ignorerait une faute de frappe.
+    """
+    value = arguments.get("base")
+    if isinstance(value, str):
+        value = value.strip()
+        if not value:
+            raise ToolError(INVALID_INPUT, "paramètre 'base' requis (nom, liste, ou \"*\")")
+        names = registry.names() if value == ALL_BASES else [value]
+    elif isinstance(value, list):
+        if not value or not all(isinstance(v, str) and v.strip() for v in value):
+            raise ToolError(
+                INVALID_INPUT, "paramètre 'base' : liste de noms non vides attendue"
+            )
+        seen: dict[str, None] = {}
+        for v in value:
+            seen.setdefault(v.strip(), None)
+        names = list(seen)
+    else:
+        raise ToolError(INVALID_INPUT, "paramètre 'base' requis (nom, liste, ou \"*\")")
+
+    for name in names:
+        registry.get(name)  # lève UNKNOWN_BASE si absent — validé avant toute recherche.
+    return names
+
+
+def _allocate_quota(available: list[int], total: int) -> list[int]:
+    """Répartit `total` entre positions selon leur disponibilité (§ 10.3) :
+    parts égales entre bases encore actives, sans jamais allouer à une base plus
+    qu'elle n'a de résultats — le reliquat profite aux autres bases plutôt que
+    d'être perdu. C'est un plafond global unique, pas un plafond par base.
+    """
+    alloc = [0] * len(available)
+    active = [i for i, n in enumerate(available) if n > 0]
+    remaining = total
+    while remaining > 0 and active:
+        share, extra = divmod(remaining, len(active))
+        still_active = []
+        for idx, pos in enumerate(active):
+            want = share + (1 if idx < extra else 0)
+            take = min(want, available[pos] - alloc[pos])
+            alloc[pos] += take
+            remaining -= take
+            if alloc[pos] < available[pos]:
+                still_active.append(pos)
+        active = still_active
+    return alloc
+
+
 def run(registry: Registry, arguments: dict) -> str:
-    base = registry.get(require_str(arguments, "base"))
+    base_names = _resolve_base_names(registry, arguments)
     query = require_str(arguments, "query")
     mode = arguments.get("mode") or "keyword"
     if mode not in ("keyword", "regex"):
-        from ..errors import INVALID_INPUT, ToolError
-
         raise ToolError(INVALID_INPUT, f"mode inconnu : '{mode}' (attendu keyword ou regex)")
     max_results = optional_int(
         arguments, "max_results", DEFAULT_MAX_RESULTS, 1, HARD_MAX_RESULTS
     )
 
-    outcome = run_search(base, query, mode, max_results)
-    if not outcome.docs:
-        return f"Aucun résultat dans la base '{base.name}' pour : {query}"
+    if not base_names:
+        return "Aucune base n'est actuellement enregistrée."
+
+    outcomes = {
+        name: run_search(registry.get(name), query, mode, max_results) for name in base_names
+    }
+    alloc = _allocate_quota([len(outcomes[n].docs) for n in base_names], max_results)
+
+    if not any(alloc):
+        if len(base_names) == 1:
+            return f"Aucun résultat dans la base '{base_names[0]}' pour : {query}"
+        bases_txt = ", ".join(f"'{n}'" for n in base_names)
+        return f"Aucun résultat dans les bases {bases_txt} pour : {query}"
 
     writer = BudgetedWriter()
-    header = f"{len(outcome.docs)} résultat(s) dans '{base.name}' pour : {query}"
-    if outcome.partial:
-        header += "\n[aucun document ne contient tous les termes — résultats partiels]"
-    if outcome.reserved_count:
-        header += (
-            f"\n[{outcome.reserved_count} sommaire(s) index.md/log.md en fin de liste — "
-            f"déclassés car ce sont des tables de matières, pas de la connaissance]"
-        )
-    writer.add_forced(header)
+    grouped = len(base_names) > 1
+    if grouped:
+        writer.add_forced(f"{sum(alloc)} résultat(s) dans {len(base_names)} base(s) pour : {query}")
 
-    for doc in outcome.docs:
-        try:
-            writer.add(_render(base, doc))
-        except OSError:
+    for name, quota in zip(base_names, alloc):
+        if quota == 0:
             continue
+        base = registry.get(name)
+        docs = outcomes[name].docs[:quota]
+        header = f"{len(docs)} résultat(s) dans '{base.name}' pour : {query}"
+        if outcomes[name].partial:
+            header += "\n[aucun document ne contient tous les termes — résultats partiels]"
+        reserved_shown = sum(1 for d in docs if d.reserved)
+        if reserved_shown:
+            header += (
+                f"\n[{reserved_shown} sommaire(s) index.md/log.md en fin de liste — "
+                f"déclassés car ce sont des tables de matières, pas de la connaissance]"
+            )
+        if grouped:
+            writer.add_forced(f"\n## Base : {base.name}")
+        writer.add_forced(header)
+
+        for doc in docs:
+            try:
+                writer.add(_render(base, doc))
+            except OSError:
+                continue
 
     return writer.render()

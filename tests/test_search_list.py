@@ -6,7 +6,7 @@ import re
 
 import pytest
 
-from okf_hub.errors import INVALID_INPUT, ToolError
+from okf_hub.errors import INVALID_INPUT, UNKNOWN_BASE, ToolError
 from okf_hub.governance import DRAFT_BANNER
 from okf_hub.textutil import CHAR_CAP, BudgetedWriter
 from okf_hub.tools import governance_tool, list_tool, read_tool, search_tool
@@ -188,6 +188,158 @@ def test_aucun_resultat(hub, make_bundle, registry):
     build(make_bundle, registry, {"a.md": "# A\n\ntexte\n"})
     out = search_tool.run(registry, {"base": "ma-base", "query": "introuvable-xyz"})
     assert "Aucun résultat" in out
+
+
+# --- kb_search multi-bases (§ 10.3) -------------------------------------------
+
+
+def build_multi(make_bundle, registry, bases: dict[str, dict[str, str]]):
+    for name, docs in bases.items():
+        b = make_bundle(name, name=name, git_init=False)
+        for rel, text in docs.items():
+            b.doc(rel, text)
+        b.init_git()
+    registry.scan()
+
+
+def test_base_chaine_unique_reste_sans_entete_de_groupe(hub, make_bundle, registry):
+    """Non-régression : un `base` chaîne simple garde exactement le format
+    d'aujourd'hui, sans entête de groupe ajouté."""
+    build(make_bundle, registry, {"a.md": "# A\n\ncible-solo\n"})
+    out = search_tool.run(registry, {"base": "ma-base", "query": "cible-solo"})
+    assert "## Base :" not in out
+    assert "a.md" in out
+
+
+def test_base_liste_groupe_les_resultats_par_base(hub, make_bundle, registry):
+    build_multi(
+        make_bundle, registry,
+        {
+            "base-a": {"a.md": "# A\n\ncible-multi ici\n"},
+            "base-b": {"b.md": "# B\n\ncible-multi aussi\n"},
+        },
+    )
+    out = search_tool.run(registry, {"base": ["base-a", "base-b"], "query": "cible-multi"})
+    assert "## Base : base-a" in out and "## Base : base-b" in out
+    assert out.index("## Base : base-a") < out.index("## Base : base-b")
+    assert "a.md" in out and "b.md" in out
+    assert "2 résultat(s) dans 2 base(s) pour : cible-multi" in out
+
+
+def test_base_etoile_interroge_toutes_les_bases_enregistrees(hub, make_bundle, registry):
+    build_multi(
+        make_bundle, registry,
+        {
+            "base-a": {"a.md": "# A\n\ncible-etoile\n"},
+            "base-b": {"b.md": "# B\n\ncible-etoile\n"},
+        },
+    )
+    out = search_tool.run(registry, {"base": "*", "query": "cible-etoile"})
+    assert "## Base : base-a" in out and "## Base : base-b" in out
+
+
+def test_base_etoile_sans_base_enregistree(hub, registry):
+    out = search_tool.run(registry, {"base": "*", "query": "cible"})
+    assert "Aucune base" in out
+
+
+def test_base_liste_deduplique_les_noms(hub, make_bundle, registry):
+    build(make_bundle, registry, {"a.md": "# A\n\ncible-dup\n"})
+    out = search_tool.run(registry, {"base": ["ma-base", "ma-base"], "query": "cible-dup"})
+    # Un seul nom effectif après déduplication : pas d'entête de groupe.
+    assert "## Base :" not in out
+    assert "a.md" in out
+
+
+def test_base_liste_nom_inconnu_leve_unknown_base(hub, make_bundle, registry):
+    build(make_bundle, registry, {"a.md": "# A\n\ntexte\n"})
+    with pytest.raises(ToolError) as exc:
+        search_tool.run(registry, {"base": ["ma-base", "absente"], "query": "texte"})
+    assert exc.value.code == UNKNOWN_BASE
+
+
+def test_base_liste_vide_leve_invalid_input(hub, make_bundle, registry):
+    build(make_bundle, registry, {"a.md": "# A\n\ntexte\n"})
+    with pytest.raises(ToolError) as exc:
+        search_tool.run(registry, {"base": [], "query": "texte"})
+    assert exc.value.code == INVALID_INPUT
+
+
+def test_base_liste_aucun_resultat_dans_aucune_base(hub, make_bundle, registry):
+    build_multi(
+        make_bundle, registry,
+        {"base-a": {"a.md": "# A\n\ntexte\n"}, "base-b": {"b.md": "# B\n\ntexte\n"}},
+    )
+    out = search_tool.run(registry, {"base": ["base-a", "base-b"], "query": "introuvable-xyz"})
+    assert "Aucun résultat" in out
+
+
+def test_base_liste_plafond_global_reparti_a_egalite(hub, make_bundle, registry):
+    docs_a = {f"a{i}.md": f"# A{i}\n\nrepartition-cap\n" for i in range(5)}
+    docs_b = {f"b{i}.md": f"# B{i}\n\nrepartition-cap\n" for i in range(5)}
+    build_multi(make_bundle, registry, {"base-a": docs_a, "base-b": docs_b})
+    out = search_tool.run(
+        registry, {"base": ["base-a", "base-b"], "query": "repartition-cap", "max_results": 4}
+    )
+    # Plafond global unique : 4 résultats au total, pas 4 par base (§ 10.3).
+    assert out.count("### ") == 4
+    section_a = out.split("## Base : base-b")[0]
+    assert section_a.count("### ") == 2
+
+
+def test_base_liste_reliquat_redistribue_a_l_autre_base(hub, make_bundle, registry):
+    docs_a = {"a0.md": "# A0\n\nreliquat-cap\n"}
+    docs_b = {f"b{i}.md": f"# B{i}\n\nreliquat-cap\n" for i in range(5)}
+    build_multi(make_bundle, registry, {"base-a": docs_a, "base-b": docs_b})
+    out = search_tool.run(
+        registry, {"base": ["base-a", "base-b"], "query": "reliquat-cap", "max_results": 4}
+    )
+    assert out.count("### ") == 4
+    section_a = out.split("## Base : base-b")[0]
+    # base-a n'a qu'un document : le reliquat profite à base-b plutôt que d'être perdu.
+    assert section_a.count("### ") == 1
+
+
+def test_base_liste_repli_or_signale_par_base(hub, make_bundle, registry):
+    """Le repli OU est propre à chaque base : base-a trouve les deux termes
+    dans un même document (ET strict, pas de repli), base-b non (repli OU) —
+    la mention ne doit apparaître que dans le groupe de base-b."""
+    build_multi(
+        make_bundle, registry,
+        {
+            "base-a": {"a.md": "# A\n\ndelta-flag epsilon-flag ensemble\n"},
+            "base-b": {
+                "b.md": "# B\n\ndelta-flag seulement\n",
+                "c.md": "# C\n\nepsilon-flag seulement\n",
+            },
+        },
+    )
+    out = search_tool.run(
+        registry, {"base": ["base-a", "base-b"], "query": "delta-flag epsilon-flag"}
+    )
+    section_a, section_b = out.split("## Base : base-b", 1)
+    assert "résultats partiels" not in section_a
+    assert "résultats partiels" in section_b
+
+
+def test_allocate_quota_repartition_egale():
+    assert search_tool._allocate_quota([10, 10], 8) == [4, 4]
+
+
+def test_allocate_quota_reliquat_vers_l_autre_base():
+    assert search_tool._allocate_quota([1, 10], 8) == [1, 7]
+
+
+def test_allocate_quota_ne_depasse_jamais_la_disponibilite():
+    assert search_tool._allocate_quota([0, 5], 8) == [0, 5]
+
+
+def test_allocate_quota_total_nul():
+    assert search_tool._allocate_quota([5, 5], 0) == [0, 0]
+
+
+def test_allocate_quota_trois_bases_inegales():
+    assert search_tool._allocate_quota([1, 1, 10], 6) == [1, 1, 4]
 
 
 # --- kb_list -----------------------------------------------------------------

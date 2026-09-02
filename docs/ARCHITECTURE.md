@@ -46,6 +46,9 @@ src/okf_hub/
 ├── governance.py   Statut draft/stable d'un GOVERNANCE.md et son bandeau.
 ├── bootstrap.py    Installation des bases livrées (bundles/ → bases/), au
 │                   démarrage et en ligne de commande. Publication atomique.
+├── remote_sync.py  Synchronisation fast-forward-only avec le remote de chaque
+│                   base installée, au démarrage (§ 4.5). Jamais de push,
+│                   divergence signalée jamais écrasée, sous le verrou de base.
 │
 ├── manifest.py     Validation de okf-bundle.yaml (§ 3.3).
 ├── registry.py     Découverte, énumération du corpus, exclusions transverses,
@@ -477,6 +480,48 @@ la section 5 reste à deux écarts.
 
 ---
 
+## 6 ter. Décisions d'implémentation de `kb_search` multi-bases (§ 10.3)
+
+La spec pré-cadrait deux contraintes non négociables (plafond global unique
+réparti, résultats groupés par base) et laissait le reste à l'implémenteur.
+
+| Point | Décision | Motif |
+|---|---|---|
+| Algorithme de répartition du plafond | Parts égales entre bases **encore actives** (qui n'ont pas épuisé leurs résultats), reliquat redistribué en boucle | Un partage figé (`max_results // n`) gâcherait du budget dès qu'une base a moins de résultats que sa part — la spec dit « réparti », pas « divisé à parts fixes ». `search_tool._allocate_quota`, testée isolément. |
+| Coût du calcul de disponibilité par base | Un seul appel `run_search(base, ..., max_results)` par base, jamais deux | `run_search` scanne tout le corpus via ripgrep quel que soit `max_results` — celui-ci ne fait que trancher la liste triée en sortie. Demander `max_results` (le plafond global, forcément ≥ toute part finale) donne donc un pool de candidats suffisant pour la répartition, sans second passage ripgrep. |
+| Nom unique (chaîne) vs. liste à un élément | Sortie **strictement identique** à l'existant (pas d'en-tête `## Base :`) | Non-régression explicite : `base: "nom"` reste l'appel majoritaire, sa sortie ne doit ni changer de forme ni casser un appelant qui la parse. Le groupage n'apparaît qu'à partir de deux bases interrogées. |
+| Nom inconnu dans une liste | `UNKNOWN_BASE` immédiat, **avant** toute recherche — jamais un repli silencieux qui ignore le nom fautif | Cohérent avec le comportement déjà existant à un seul nom (§ 5, `unknown_base`) ; un repli silencieux masquerait une faute de frappe au lieu de la signaler. |
+| `base: "*"` sans base enregistrée | Message informatif, pas `INVALID_INPUT` | `"*"` est une intention méta (« tout ce qui existe »), pas la désignation d'un nom précis : zéro base est un état du hub, pas une erreur d'appel. |
+| Base sans résultat, en sortie groupée | Absente de la sortie (pas de groupe vide) | Une base vide n'ajoute aucune information ; la même logique s'applique déjà à un nom unique (« Aucun résultat », pas un bloc vide). |
+
+**Aucun écart assumé.** Les deux contraintes pré-cadrées sont respectées à la
+lettre ; les points ci-dessus sont des précisions d'implémentation à
+l'intérieur de ce qu'elles laissaient ouvert — la section 5 reste à deux
+écarts.
+
+---
+
+## 6 quater. Décisions d'implémentation de la synchronisation remote au démarrage (§ 4.5)
+
+Le § 4.5 laissait tout ouvert (« [v1+] : politique de synchronisation
+outillée »), sous la seule contrainte non négociable du § 4.4 : pas d'état
+partagé entre instances, pas de démon.
+
+| Point | Décision | Motif |
+|---|---|---|
+| Déclenchement | Au démarrage de **chaque instance** de serveur (`__main__.main`, avant `HubServer(config)`, donc avant la première découverte), désactivable par `sync-on-start: false` | Un rescan ou une synchronisation « partagée au niveau du hub » a déjà été rejeté pour ce motif exact (§ 4.4.c) ; un point unique et explicite du cycle de vie d'une instance, comme `bootstrap.deploy_missing`, ne suppose ni état partagé ni processus séparé. |
+| Portée | Seules les bases avec un remote configuré (`git remote` non vide) ; une base semée depuis `bundles/` n'en a pas | § 4.5 ne parle que du « cas de l'import par clone » ; forcer un remote sur une base semée n'a pas de sens. |
+| Mécanique git | `fetch` puis comparaison par `merge-base --is-ancestor` dans les deux sens, plutôt qu'un `git pull --ff-only` direct | Distingue explicitement quatre cas (déjà à jour, fast-forward possible, local en avance, divergence) au lieu de devoir *parser* le message d'erreur de `pull` pour les séparer — la divergence doit être **signalée**, pas seulement échouer silencieusement dans un statut de sortie. |
+| Local en avance sur l'amont | Aucune action (pas de push) | Des propositions locales commitées par `kb_propose` mais jamais poussées sont le cas normal en v0 ; le § 4.5 est explicite : aucun push automatique. |
+| Divergence (HEAD et l'amont ont chacun des commits que l'autre n'a pas) | Signalée dans `hub.log`, jamais fusionnée ni écrasée | Contrainte du § 4.5 (« un pull qui écrase des propositions locales non poussées est de la responsabilité de l'opérateur ») : la responsabilité reste manuelle, le hub ne force jamais. |
+| Concurrence avec `kb_propose` | Séquence fetch+merge exécutée sous `locking.base_lock`, comme le commit de proposition | Un `merge --ff-only` avance HEAD et modifie le working tree via l'index partagé (`.git/index`) — contrairement au commit de proposition qui passe par un index temporaire. Sans le verrou, une synchronisation et un `kb_propose` concurrents pourraient s'entrelacer sur l'index partagé. |
+| Remote injoignable, base sans branche amont, ou verrou non acquis (`BASE_BUSY`) | Jamais bloquant : journalisé, la base reste dans son état courant jusqu'au prochain démarrage | Même principe que `bootstrap.deploy_missing` (§ 2) : un hub qui ne peut pas se synchroniser démarre quand même. |
+
+**Aucun écart assumé** vis-à-vis du § 4.4 ou du § 4.5 : le mécanisme est un
+point unique par instance, sans état partagé, et ne pousse jamais.
+
+---
+
 ## 7. Traçabilité — exigence de test → test
 
 La spec liste des tests obligatoires par jalon (§ 10.2). Table de correspondance,
@@ -495,6 +540,7 @@ pour vérifier la couverture sans relire la suite.
 | confinement de chemins | `test_traversee_de_chemin_rejetee`, `test_symlink_sortant_du_corpus_rejete` |
 | troncature de recherche et de `kb_list` | `test_troncature_de_recherche_signalee`, `test_budgeted_writer_signale_la_troncature`, `test_kb_list_pending_concerns` |
 | repli ET→OU | `test_and_strict_prioritaire`, `test_repli_or_signale_explicitement`, `test_repli_or_classe_par_nombre_de_termes_touches` |
+| `kb_search` multi-bases, plafond global réparti, résultats groupés (§ 10.3) | `test_base_liste_groupe_les_resultats_par_base`, `test_base_etoile_interroge_toutes_les_bases_enregistrees`, `test_base_liste_plafond_global_reparti_a_egalite`, `test_base_liste_reliquat_redistribue_a_l_autre_base`, `test_base_liste_nom_inconnu_leve_unknown_base`, `test_base_chaine_unique_reste_sans_entete_de_groupe`, `test_allocate_quota_*` |
 | headings dupliqués et formatés | `test_headings_dupliques_premiere_occurrence_et_mention`, `test_section_correspond_malgre_le_formatage_inline`, `test_normalisation_des_headings` |
 | gros document sans section | `test_gros_document_sans_section_retourne_la_table_des_headings` |
 | `force: true` | `test_force_true_contourne_la_table_des_headings` |
@@ -611,16 +657,20 @@ et les notifications sont pris en charge par `server.py`.
 Hors périmètre v0 par décision de la spec (§ 10.3), pas par oubli : extensions
 `tools`/`skills` d'un bundle ; `review: agent|auto` ; validation automatique de
 schéma ; authentification des contributeurs ; politique d'incrément de version ;
-index de recherche dérivé ; revue d'import outillée ; synchronisation remote ;
-multi-hub.
+index de recherche dérivé ; revue d'import outillée ; multi-hub.
 
 `kb_proposal_status` a quitté cette liste : livré par l'amendement rév. 4.1
 (§ 5.7 de la spec).
 
-**Reporté, avec sa spec pré-cadrée : `kb_search` multi-bases.** Demandé une fois,
-on attend la récurrence avant d'élargir la surface d'outils. Le jour venu :
-plafond de sortie **global unique réparti** entre les bases (et non un plafond
-par base, qui multiplierait la sortie), résultats **groupés par base**.
+`kb_search` multi-bases a quitté cette liste : livré (§ 6 ter), spec pré-cadrée
+au § 10.3 appliquée à la lettre.
+
+**Synchronisation remote** a quitté cette liste : la lettre du § 4.5 restait
+« [v1+] : politique de synchronisation outillée » — livrée en version minimale
+(§ 6 quater) : fast-forward-only, au démarrage de chaque instance, jamais de
+push, divergence toujours signalée plutôt qu'écrasée. Ce que le § 4.5 laisse
+explicitement à l'opérateur — une divergence, un remote durablement
+injoignable — reste manuel.
 
 **Refusé, et il faut savoir pourquoi avant de le re-proposer.** La validation du
 frontmatter d'une proposition contre `schema.yaml` est un contresens du modèle
