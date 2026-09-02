@@ -28,8 +28,13 @@ Le projet suit la version de la spécification qu'il implémente : `bundle-spec 
   qui ne touche que son propre registre. Le mécanisme de re-scan reste unique
   (`HubServer._silent_rescan`), le cooldown reste de 5 s par déclencheur (le
   watcher utilise le trigger `"filesystem_watcher"`), et les répertoires cachés
-  (`.cache`, `.tmp`) sont ignorés comme dans `Registry.scan`. L'observateur est
-  arrêté proprement lors de l'arrêt du serveur. 7 tests dans
+  (`.cache`, `.tmp`) sont ignorés comme dans `Registry.scan`. Sur création, le
+  re-scan attend `WATCHER_CREATE_SETTLE_S` (0,3 s) avant de scanner : comme
+  l'observateur n'est pas récursif, l'événement de création porte sur le
+  dossier de base lui-même, avant que son contenu (`knowledge/`, manifest) ne
+  soit écrit — sans ce délai, un re-scan trop précoce voit un bundle
+  incomplet, le marque invalide, et rien ne le re-scanne ensuite. L'observateur
+  est arrêté proprement lors de l'arrêt du serveur. 7 tests dans
   `tests/test_filesystem_watcher.py`.
 
 - **Enregistrement automatique de la deploy key par GitHub App (optionnel).**

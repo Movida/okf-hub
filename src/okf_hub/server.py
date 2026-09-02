@@ -52,6 +52,18 @@ SERVER_VERSION = metadata.version(SERVER_NAME)
 #: dans `docs/ARCHITECTURE.md` § 5 bis.
 SILENT_RESCAN_COOLDOWN_S = 5.0
 
+#: Délai avant re-scan sur *création* de dossier (§ 4.4.a, watcher filesystem).
+#: `on_created` se déclenche dès la création du dossier de base lui-même —
+#: avant que son contenu (`knowledge/`, manifest) ne soit écrit, puisque
+#: `recursive=False` ne fait pas remonter les événements internes au dossier.
+#: Sans ce délai, un re-scan trop précoce voit un bundle incomplet, le marque
+#: invalide, et — faute d'un autre événement filesystem par la suite — la base
+#: reste invalide indéfiniment (constaté : CI intermittente sur Python 3.11,
+#: `test_watcher_detecte_base_retiree`). La suppression n'a pas besoin de ce
+#: délai : `shutil.rmtree` retire les enfants avant le dossier, l'événement de
+#: suppression n'arrive donc qu'une fois le dossier déjà vide.
+WATCHER_CREATE_SETTLE_S = 0.3
+
 #: Outils dont l'appel déclenche la découverte avant exécution (§ B2). `kb_list`
 #: est le point où une session demande « qu'y a-t-il sur ce hub ? » : y répondre
 #: depuis un registre périmé était la lacune signalée par le retour d'usage.
@@ -110,6 +122,9 @@ class _BasesWatcher(FileSystemEventHandler):
             hublog.info(
                 f"watcher: répertoire créé dans bases-dir — {event.src_path}"
             )
+            # Laisse le contenu du dossier (manifest, knowledge/) s'écrire avant
+            # de scanner — voir WATCHER_CREATE_SETTLE_S.
+            time.sleep(WATCHER_CREATE_SETTLE_S)
             self._hub_server._silent_rescan("filesystem_watcher")
 
     def on_deleted(self, event) -> None:
