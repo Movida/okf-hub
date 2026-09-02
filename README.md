@@ -599,6 +599,43 @@ seraient irrécupérables. Les dépôts canoniques sont déclarés dans
 n'est pas installée et le journal dit comment rattraper — absente vaut mieux
 qu'orpheline.
 
+## Configuration
+
+Le hub lit `hub-config.yaml` à sa racine (§ 4.1 de la spec). Cinq paramètres
+configurables : `bases-dir` (emplacement des bundles), `read-toc-threshold`
+(seuil pour retourner la table des matières au lieu du contenu complet),
+`log-file` (journal partagé par toutes les instances), `bootstrap-bundles` et
+`sync-on-start` (mentionnés plus haut).
+
+### Profils de configuration
+
+Plutôt que de configurer chaque paramètre individuellement, on peut choisir un
+**profil** prédéfini via le champ `profile` de `hub-config.yaml` :
+
+```yaml
+profile: dev
+```
+
+Profils disponibles :
+
+- **`solo`** (par défaut) : comportement actuel — bases dans `./bases`,
+  seuil 8 Ko, journal activé, bootstrap et sync automatiques au démarrage.
+- **`dev`** : développement local — `bootstrap-bundles: false`,
+  `sync-on-start: false` ; reste identique à `solo`.
+- **`ci`** : CI/tests — seuil 16 Ko, `log-file` désactivé ; reste identique
+  à `solo`.
+
+Chaque paramètre explicite dans `hub-config.yaml` surcharge la valeur du profil.
+Un opérateur qui ne configure rien (fichier absent ou vide) bénéficie du profil
+`solo`, garantissant le comportement actuel.
+
+Exemple combinant profil et surcharge :
+
+```yaml
+profile: dev
+read-toc-threshold: 4096  # surcharge du profil dev
+```
+
 ## Invariants d'audit
 
 Toute proposition apparaît dans **exactement deux commits** : un de soumission,
