@@ -3,6 +3,56 @@
 Format inspiré de [Keep a Changelog](https://keepachangelog.com/fr/1.1.0/).
 Le projet suit la version de la spécification qu'il implémente : `bundle-spec 0.1`.
 
+## [0.2.8] — 2026-09-02
+
+### Ajouté
+
+- **`okf-hub catalog` — catalogue de bases nommé/tagué/décrit, et cycle de
+  retrait outillé.** `bundles/upstreams.yaml` ne portait qu'une entrée tapée à
+  la main, sans nom lisible ni description : rien n'aidait à *découvrir* une
+  base au-delà de celles dont on connaît déjà l'URL git exacte, et retirer une
+  base n'était qu'une suppression manuelle de répertoire, documentée en prose
+  (`okf-hub-guide`, cycle de vie § 5), jamais outillée.
+
+  Le même fichier est étendu, pas remplacé : une valeur reste soit une
+  chaîne nue (URL, format historique — `okf-hub-feedback` inchangée), soit un
+  objet `{url, title?, description?, tags?}`. `bootstrap.upstreams()` délègue
+  à `catalog.load()` et ne garde que `{nom: url}` — comportement et tests
+  existants de `bootstrap.py` inchangés.
+
+  ```sh
+  okf-hub catalog list [--tag T]              # ce qui est connu, déployé ou non
+  okf-hub catalog show <nom>
+  okf-hub catalog add <nom> <url> [--title …] [--description …] [--tag …] [--overwrite]
+  okf-hub catalog remove <nom>                 # oublie l'entrée, jamais bases/
+  okf-hub catalog import <nom>                 # git clone <url> bases/<nom> — rien d'autre
+  okf-hub catalog retire <nom> [--force] [--forget]
+  ```
+
+  `catalog import` exécute exactement l'invariant du produit (`git clone` +
+  découverte, spec § 4.2.3) : choisir un nom dans le catalogue remplace
+  seulement le besoin de connaître ou taper l'URL exacte. `catalog retire`
+  ajoute deux garde-fous avant la suppression du répertoire — aucune
+  proposition en attente dans `proposals/pending/`, et si un remote est
+  configuré, confirmation **locale uniquement** (aucun `git fetch`) que la
+  branche amont suivie n'est pas en retard sur `HEAD` — `--force` passe
+  outre, `--forget` oublie en plus l'entrée du catalogue. Aucun état partagé
+  introduit : fichier de config et opérations git locales invoquées par
+  l'opérateur, comme `okf-bootstrap` existant. Voir `README.md` § « Choisir
+  dans un catalogue plutôt que taper une URL » et § « Retirer une base ».
+
+### Tests
+
+47 nouveaux tests dans `tests/test_catalog.py` : lecture tolérante du
+catalogue (format historique, entrées enrichies, entrées invalides ignorées,
+fichier illisible), délégation exacte de `bootstrap.upstreams()`, `add`/
+`remove` (validation, doublons, `--overwrite`, préservation des entrées
+existantes), `import_entry` (clone réel vers un dépôt local jetable, nom
+inconnu, cible déjà existante, échec de clone), `retire` (sans remote, avec
+proposition en attente, remote sans suivi, remote en avance, remote à jour,
+`--force`), et la CLI `okf-hub catalog` de bout en bout pour chaque
+sous-commande.
+
 ## [0.2.7] — 2026-09-02
 
 ### Ajouté
