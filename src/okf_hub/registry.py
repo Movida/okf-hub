@@ -127,8 +127,33 @@ class Base:
         if self.is_excluded(resolved, is_dir=False):
             raise ToolError(NOT_FOUND, f"chemin '{rel}' exclu du corpus")
         if not resolved.is_file():
-            raise ToolError(NOT_FOUND, f"document '{rel}' introuvable dans la base '{self.name}'")
+            raise self._not_found_document(rel, candidate)
         return resolved
+
+    def _not_found_document(self, rel: str, candidate: Path) -> ToolError:
+        """NOT_FOUND pour un document absent de corpus-dir.
+
+        Enrichit le message si le même chemin, pris relatif à la **racine du
+        bundle** cette fois, désigne un fichier réel : cas vécu d'un champ de
+        frontmatter comme `source_xml`, relatif au bundle et pas à corpus-dir,
+        recopié tel quel dans `path` par une session. Sans cela, l'erreur est
+        indiscernable d'un chemin simplement fautif. La vérification est
+        indépendante et confinée à `self.root` (même mécanique qu'au § 5.3) :
+        un chemin qui s'évade de corpus-dir *sans* rester dans le bundle
+        (`..`, symlink sortant) ne passe jamais par ici et garde son message
+        opaque d'aujourd'hui.
+        """
+        sibling = (self.root / candidate).resolve()
+        if self.root in sibling.parents and sibling.is_file():
+            corpus_rel = self.corpus_dir.relative_to(self.root).as_posix()
+            return ToolError(
+                NOT_FOUND,
+                f"document '{rel}' introuvable dans le corpus de la base '{self.name}' "
+                f"(corpus-dir='{corpus_rel}'), mais un fichier existe à ce chemin relatif "
+                f"à la racine du dépôt de la base : probablement un fichier source ou de "
+                f"travail, hors du corpus consultable via kb_read."
+            )
+        return ToolError(NOT_FOUND, f"document '{rel}' introuvable dans la base '{self.name}'")
 
     # --- propositions -------------------------------------------------------
 

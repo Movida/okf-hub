@@ -52,6 +52,24 @@ Le projet suit la version de la spécification qu'il implémente : `bundle-spec 
   la procédure d'installation : [`README.md`](README.md) et
   [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) § 5.3 bis.
 
+- **`kb_read` résout les liens interbases et distingue un chemin hors corpus
+  d'un chemin vraiment introuvable.** Deux correctifs issus d'un diagnostic
+  externe vérifié contre le contenu réel des bases déployées (el2d-referentiel,
+  el2d-blueway, phoenix-blueway). (1) `path` accepte désormais la forme
+  littérale `<base>:/<chemin>` déjà utilisée dans le corps des documents pour
+  citer une autre base (`[…](phoenix-blueway:/…)`) : le préfixe, s'il
+  correspond à une base enregistrée, sélectionne la base à lire, `base` étant
+  alors ignoré pour l'appel ; un préfixe inconnu reste un chemin littéral, pas
+  d'`UNKNOWN_BASE` surprenant. (2) Un chemin absent de `corpus-dir` mais qui
+  désigne un fichier réel relatif à la racine du bundle (cas vécu :
+  `source_xml` en frontmatter, relatif au bundle et pas à `corpus-dir`, recopié
+  tel quel) reçoit un `NOT_FOUND` qui le dit explicitement, au lieu d'un
+  générique indiscernable d'un chemin fautif. Les deux restent strictement
+  additifs : aucune tentative d'évasion (`..`, symlink sortant) ne bénéficie du
+  second diagnostic, son message reste inchangé (§ 5.3). Voir
+  [`docs/API.md`](docs/API.md) § kb_read et
+  [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) § 6 quinquies.
+
 ## [0.2.8] — 2026-09-02
 
 ### Ajouté

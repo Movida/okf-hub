@@ -2,10 +2,17 @@
 
 from __future__ import annotations
 
+import re
+
 from ..errors import NOT_FOUND, ToolError
 from ..mdutil import extract_section, headings_table, parse_document
 from ..registry import Registry
 from .common import optional_bool, read_text, require_str
+
+#: Lien interbase littéral, tel qu'il apparaît dans le corps des documents
+#: (ex. `phoenix-blueway:/supervision/api/engine-informations.md`). Le motif
+#: du nom reprend celui du `name` de manifeste (§ 3.3 : `[a-z0-9-]+`).
+_INTERBASE_LINK = re.compile(r"^([a-z0-9-]+):/(.+)$")
 
 SCHEMA = {
     "type": "object",
@@ -13,7 +20,13 @@ SCHEMA = {
         "base": {"type": "string", "description": "Nom de la base (champ `name` du manifeste)."},
         "path": {
             "type": "string",
-            "description": "Chemin du document, relatif au corpus, séparateur `/`.",
+            "description": (
+                "Chemin du document, relatif au corpus, séparateur `/`. Accepte "
+                "aussi un lien interbase littéral `<base>:/<chemin>`, la forme "
+                "utilisée dans le corps des documents pour citer une autre base : "
+                "la base cible est alors résolue depuis ce préfixe, `base` étant "
+                "ignoré pour cet appel."
+            ),
         },
         "section": {
             "type": "string",
@@ -42,7 +55,9 @@ def description(registry: Registry) -> str:
         "section si `section` est fourni. Au-delà d'un certain volume, un "
         "document lu sans `section` retourne sa table des headings plutôt que "
         "son contenu — rappelez alors kb_read avec la section voulue, ou "
-        "`force: true` pour tout obtenir. "
+        "`force: true` pour tout obtenir. `path` accepte aussi un lien "
+        "interbase littéral `<base>:/<chemin>` tel qu'il apparaît dans le corps "
+        "des documents, pour le suivre en un seul appel. "
         "Bases disponibles : " + (", ".join(registry.names()) or "aucune") + "."
     )
 
@@ -59,8 +74,14 @@ def _headings_listing(text: str) -> list[str]:
 
 
 def run(registry: Registry, arguments: dict) -> str:
-    base = registry.get(require_str(arguments, "base"))
+    base_name = require_str(arguments, "base")
     rel = require_str(arguments, "path")
+
+    link = _INTERBASE_LINK.match(rel)
+    if link is not None and link.group(1) in registry.names():
+        base_name, rel = link.group(1), link.group(2)
+
+    base = registry.get(base_name)
     section = arguments.get("section")
     if section is not None and (not isinstance(section, str) or not section.strip()):
         section = None

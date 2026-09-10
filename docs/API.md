@@ -208,9 +208,23 @@ Lit un document, ou une seule de ses sections.
 | Paramètre | Type | Défaut | Rôle |
 |---|---|---|---|
 | `base` | `string` | **requis** | Nom de la base. |
-| `path` | `string` | **requis** | Chemin relatif au corpus. |
+| `path` | `string` | **requis** | Chemin relatif au corpus, ou lien interbase `<base>:/<chemin>` (voir ci-dessous). |
 | `section` | `string` | — | Titre du heading à extraire. |
 | `force` | `boolean` | `false` | Retourne le document entier même s'il est volumineux. |
+
+**Lien interbase dans `path`.** Le corps des documents cite parfois une autre
+base par un lien littéral `[libellé](phoenix-blueway:/chemin.md)`. `kb_read`
+reconnaît cette forme quand elle est recopiée telle quelle dans `path` : si le
+préfixe avant `:/` correspond au nom d'une base enregistrée, c'est **cette
+base qui est lue**, `base` étant alors ignoré pour l'appel. Un préfixe qui ne
+correspond à aucune base connue est traité comme un chemin littéral (donc,
+normalement, `NOT_FOUND`) — pas d'erreur `UNKNOWN_BASE` surprenante sur un
+faux positif.
+
+```
+kb_read base=el2d-referentiel path="el2d-blueway:/environnement/bdd-ext.md"
+→ lit environnement/bdd-ext.md dans la base el2d-blueway, pas el2d-referentiel
+```
 
 **Trois comportements, dans cet ordre :**
 
@@ -239,6 +253,16 @@ du document** : un second appel suffit à corriger le tir.
 **Sécurité** — résolution canonique du chemin puis vérification d'inclusion
 stricte dans `corpus-dir`. `..`, chemins absolus et liens symboliques sortants
 sont refusés.
+
+**Chemin hors corpus mais réel dans le bundle.** Si le chemin demandé n'existe
+pas sous `corpus-dir`, mais qu'un fichier existe au même chemin relatif à la
+**racine du bundle** (typiquement un champ de frontmatter comme `source_xml`,
+relatif au bundle et pas à `corpus-dir`, recopié tel quel dans `path`), le
+`NOT_FOUND` le signale explicitement au lieu d'un générique « introuvable » —
+pour couper court à une tentative de lecture qui ne peut pas aboutir. Ce
+diagnostic supplémentaire ne s'applique **jamais** aux tentatives d'évasion
+(`..`, symlink sortant) : leur message reste inchangé, opaque — un chemin qui
+sort de `corpus-dir` par ce biais garde exactement le refus d'aujourd'hui.
 
 ---
 

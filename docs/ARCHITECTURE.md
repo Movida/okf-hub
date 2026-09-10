@@ -582,6 +582,37 @@ point unique par instance, sans état partagé, et ne pousse jamais.
 
 ---
 
+## 6 quinquies. Décisions d'implémentation de la navigation dans `kb_read`
+
+Origine : un diagnostic architectural externe (propriétaire du projet, retour
+d'usage réel), vérifié avant tout code contre le contenu effectif des trois
+bases déployées — pas contre une hypothèse. Deux points confirmés comme des
+lacunes réelles : les liens interbases (`[…](phoenix-blueway:/…)`) sont une
+convention déjà massivement utilisée dans le corpus mais que `kb_read` ne
+résolvait pas ; et un chemin `source_xml` de frontmatter, relatif à la racine
+du bundle et pas à `corpus-dir`, avait déjà produit un `NOT_FOUND` muet en
+usage réel (`el2d-referentiel/AGENTS.md` : « c'est arrivé »).
+
+| Point | Décision | Motif |
+|---|---|---|
+| Où reconnaître le lien interbase | Dans `path` de `kb_read` uniquement, pas dans `kb_search` | La convention sert à *suivre* un lien déjà trouvé dans un contenu lu, pas à cadrer une recherche ; `kb_search` documente déjà la base de chaque résultat. |
+| Portée du préfixe reconnu | Motif `^[a-z0-9-]+:/` — le même que `name` de manifeste (§ 3.3) | Aucun chemin de corpus documenté n'utilise `:` ; le motif ne peut pas confondre un vrai chemin avec un lien. |
+| Préfixe qui ressemble à un lien mais ne correspond à aucune base enregistrée | Traité comme un chemin littéral (résolution normale, donc en général `NOT_FOUND`) | Un `UNKNOWN_BASE` sur un faux positif serait plus surprenant qu'utile — la spec § 5 réserve déjà ce code à un `base` explicitement fautif, pas à une coïncidence de syntaxe. |
+| `base` en désaccord avec le préfixe du lien | Le préfixe du lien gagne, `base` est ignoré pour cet appel | C'est exactement le scénario d'usage : une session qui lit une base rencontre un lien vers une autre et le recopie tel quel, sans recomposer l'appel à la main. |
+| Où enrichir le message `NOT_FOUND` | Seulement quand le chemin, résolu sous `corpus-dir`, n'y existe pas — jamais quand la résolution sort de `corpus-dir` (`..`, symlink) | Ces deux échecs empruntent des branches distinctes du code existant. Enrichir uniquement la première laisse le mécanisme de confinement du § 5.3 — celui que gardent `test_traversee_de_chemin_rejetee` et `test_symlink_sortant_du_corpus_rejete` — byte pour byte inchangé : aucune information sur le système de fichiers hôte ne peut fuiter par ce biais. |
+| Portée de la vérification « fichier réel ailleurs » | Confinée à `self.root` (racine du bundle), par une résolution canonique et une vérification d'inclusion indépendantes — même mécanique que le confinement à `corpus-dir` | Un chemin qui, une fois recalculé depuis la racine du bundle, s'évaderait lui aussi (via `..` ou un symlink) ne déclenche pas le message enrichi : il retombe silencieusement sur le message générique. |
+
+**Aucun écart assumé.** Les deux ajouts sont strictement additifs à ce que la
+spec encadre : `kb_read` reste un outil de lecture confiné à `corpus-dir`
+(§ 5.3), au même plafond d'erreurs (§ 5) ; rien n'élargit ce qu'une session
+peut lire, seulement ce qu'elle peut comprendre d'un échec ou enchaîner sans
+recomposer un appel à la main.
+
+Tests : `tests/test_read.py`, sections « liens interbases » et « diagnostic
+hors-corpus ».
+
+---
+
 ## 7. Traçabilité — exigence de test → test
 
 La spec liste des tests obligatoires par jalon (§ 10.2). Table de correspondance,

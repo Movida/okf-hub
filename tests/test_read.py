@@ -184,3 +184,74 @@ def test_base_inconnue(hub, make_bundle, registry):
     assert exc.value.code == "UNKNOWN_BASE"
     # Le message inclut la liste des bases valides (§ 5).
     assert "ma-base" in exc.value.message
+
+
+# --- liens interbases (path=<base>:/<chemin>) --------------------------------
+
+
+def test_lien_interbase_resout_vers_l_autre_base(hub, make_bundle, registry):
+    make_bundle("base-a", name="base-a", git_init=False).doc(
+        "source.md", "# Source\n\nVoir [cible](base-b:/cible.md).\n"
+    ).init_git()
+    make_bundle("base-b", name="base-b", git_init=False).doc(
+        "cible.md", "# Cible\n\ncontenu de l'autre base\n"
+    ).init_git()
+    registry.scan()
+
+    out = read_tool.run(registry, {"base": "base-a", "path": "base-b:/cible.md"})
+    assert "contenu de l'autre base" in out
+
+
+def test_lien_interbase_avec_section(hub, make_bundle, registry):
+    make_bundle("base-a", name="base-a", git_init=False).init_git()
+    make_bundle("base-b", name="base-b", git_init=False).doc(
+        "cible.md", "# Cible\n\nintro\n\n## Detail\n\ncontenu detaille\n"
+    ).init_git()
+    registry.scan()
+
+    out = read_tool.run(
+        registry, {"base": "base-a", "path": "base-b:/cible.md", "section": "Detail"}
+    )
+    assert "contenu detaille" in out
+    assert "intro" not in out
+
+
+def test_prefixe_ressemblant_a_un_lien_mais_base_inconnue_reste_litteral(hub, make_bundle, registry):
+    # « base-inexistante » n'etant enregistree nulle part, le prefixe n'est
+    # pas reconnu comme un lien interbase : resolution litterale, dans la
+    # base passee en parametre -- pas d'UNKNOWN_BASE surprenant.
+    _base_with(make_bundle, registry, {"note.md": "# note\n"})
+    with pytest.raises(ToolError) as exc:
+        read_tool.run(registry, {"base": "ma-base", "path": "base-inexistante:/x.md"})
+    assert exc.value.code == NOT_FOUND
+
+
+# --- diagnostic hors-corpus (fichier reel, mais hors corpus-dir) -------------
+
+
+def test_chemin_hors_corpus_mais_present_dans_le_bundle_est_signale(hub, make_bundle, registry):
+    # Incident vecu (el2d-referentiel/AGENTS.md) : un champ de frontmatter
+    # comme source_xml est relatif a la racine du bundle, pas a corpus-dir.
+    # Recopie tel quel dans path, il doit produire un diagnostic exploitable.
+    b = _base_with(make_bundle, registry, {"note.md": "# note\n"})
+    source = b.root / "source" / "library" / "objet.xml"
+    source.parent.mkdir(parents=True, exist_ok=True)
+    source.write_text("<xml/>", encoding="utf-8")
+
+    with pytest.raises(ToolError) as exc:
+        read_tool.run(registry, {"base": "ma-base", "path": "source/library/objet.xml"})
+    assert exc.value.code == NOT_FOUND
+    assert "hors du corpus consultable via kb_read" in exc.value.message
+
+
+def test_traversee_de_chemin_ne_beneficie_pas_du_message_enrichi(hub, make_bundle, registry):
+    # Le diagnostic enrichi est reserve au cas absent de corpus-dir, aucune
+    # evasion (cf. ci-dessus). Une evasion par ".." garde son message opaque
+    # d'aujourd'hui, meme quand la cible existe reellement (GOVERNANCE.md,
+    # cree par make_bundle) -- le confinement du § 5.3 n'est pas affaibli.
+    _base_with(make_bundle, registry, {"note.md": "# note\n"})
+    with pytest.raises(ToolError) as exc:
+        read_tool.run(registry, {"base": "ma-base", "path": "../GOVERNANCE.md"})
+    assert exc.value.code == NOT_FOUND
+    assert "hors du corpus consultable via kb_read" not in exc.value.message
+    assert "hors du corpus de la base" in exc.value.message
