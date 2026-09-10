@@ -178,6 +178,19 @@ les bases interrogées ; une base qui a moins de résultats que sa part cède so
 reliquat aux autres plutôt que de le perdre — la répartition finale peut donc
 être inégale si les bases n'ont pas toutes assez de matches.
 
+**Relever `max_results` ne fait jamais réapparaître un résultat masqué par le
+plafond de caractères (~4000 tokens, § « Plafond de sortie » ci-dessus).** Les
+résultats sont ajoutés à la sortie dans l'ordre du classement, et l'arrêt au
+premier résultat qui dépasse le budget restant est définitif — tout résultat
+suivant est omis, quelle que soit sa taille. Les résultats affichés sont donc
+toujours les mieux classés (un **préfixe** du classement), jamais un mélange
+qui aurait sauté un gros résultat pertinent pour faire de la place à un petit
+moins pertinent. `max_results` ne change que la longueur de la liste de
+candidats *derrière* ce plafond — ni le monter ni le descendre ne change les
+résultats réellement montrés une fois la troncature atteinte. Le message
+`[résultats tronqués, N élément(s) omis — …]` le rappelle. **Seule une requête
+reformulée** change le classement, donc ce qui arrive en tête.
+
 Avec plus d'une base, la sortie est **groupée par base**, chacune sous son
 propre en-tête (même format qu'à une seule base) :
 

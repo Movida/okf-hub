@@ -70,6 +70,20 @@ Le projet suit la version de la spécification qu'il implémente : `bundle-spec 
   [`docs/API.md`](docs/API.md) § kb_read et
   [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) § 6 quinquies.
 
+- **`kb_search` ne conseille plus de réduire `max_results` en cas de
+  troncature.** Constat 4 du même diagnostic externe, confirmé par un test
+  contrôlé avant correctif : une fois le plafond de sortie (~4000 tokens)
+  atteint sur un résultat, l'arrêt est définitif — aucun résultat suivant
+  n'est tenté, quelle que soit sa taille. Relever `max_results` ne fait donc
+  jamais réapparaître un résultat masqué (il ajoute des candidats *derrière*
+  un plafond déjà atteint), et le réduire ne le peut pas non plus (les
+  résultats réellement montrés ne dépendent pas de `max_results`, une fois la
+  troncature atteinte). Seul le message change ici : le mécanisme d'arrêt,
+  lui, est conservé délibérément — il garantit que les résultats affichés
+  restent toujours un **préfixe du classement**, propriété qu'un remplissage
+  « au mieux » aurait cassée. Voir [`docs/API.md`](docs/API.md) § kb_search et
+  [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) § 6 sexies.
+
 ## [0.2.8] — 2026-09-02
 
 ### Ajouté
