@@ -613,6 +613,40 @@ hors-corpus ».
 
 ---
 
+## 6 sexies. Message de troncature de `kb_search` — ce que relever `max_results` ne fait pas
+
+Origine : constat 4 du banc d'essai externe du 2026-09-09
+(`docs/bancs-d-essai/2026-09-09-navigation-et-assemblage.md`) — « pas encore à ériger en
+conclusion », noté à confirmer par un test contrôlé avant d'agir. C'est fait :
+`tests/test_search_list.py::test_budgeted_writer_ne_retente_pas_un_bloc_plus_petit_apres_troncature`
+et `::test_max_results_plus_eleve_ne_fait_pas_remonter_un_resultat_masque_par_le_budget`
+isolent puis reproduisent le mécanisme.
+
+**Le mécanisme confirmé.** `textutil.BudgetedWriter.add()` ajoute les blocs
+dans l'ordre où ils lui sont donnés — pour `kb_search`, l'ordre de pertinence
+du classement (`search.run_search`, indépendant de `max_results`, qui ne fait
+que trancher la liste triée). Dès qu'un bloc dépasse le budget restant,
+`truncated` passe à `True` **définitivement** : tout bloc suivant est rejeté
+sans être essayé, quelle que soit sa taille. Relever `max_results` allonge
+donc seulement la liste de candidats *derrière* un plafond déjà atteint par
+les mieux classés — ça n'a jamais pu faire réapparaître un résultat masqué,
+et le réduire ne le peut pas non plus (les N premiers réellement montrés ne
+dépendent pas de `max_results`, seule leur *disponibilité comme candidats* en
+dépend). Seule une requête reformulée change le classement, donc ce qui
+arrive en tête.
+
+| Point | Décision | Motif |
+|---|---|---|
+| Corriger le message qui suggérait « réduisez max_results » | Chaque appelant de `BudgetedWriter.render()` fournit sa propre note ; celle de `kb_search` nomme la reformulation comme seul levier et dit explicitement que `max_results` n'en est pas un | L'ancien message par défaut était un conseil qui ne pouvait pas marcher pour le scénario qu'il visait — `kb_list` et `kb_proposal_status` avaient déjà leur propre note, correcte pour leur paramètre (`limit`) ; seul `kb_search` héritait du défaut fautif. |
+| Corriger le mécanisme d'arrêt (remplissage « meilleur effort ») | **Non retenu**, pour `kb_search` comme pour les deux autres outils | Un remplissage au mieux ferait de la taille d'un résultat un second critère de sélection, sans rapport avec sa pertinence : les résultats affichés cesseraient d'être un **préfixe du classement** — un petit résultat moins pertinent pourrait apparaître alors qu'un gros résultat mieux classé a été sauté. Décision du propriétaire : préserver cette propriété plutôt que mieux remplir le budget. Piste écartée pour l'instant (extraits bornés par résultat, indépendamment du budget global) : voir § 9, « Extraits bornés par résultat dans `kb_search` n'est pas fait » — à reprendre après lecture de la spec § 1.5 et § 5, pas tranchée ici. |
+| Portée du correctif de message | `kb_search` seul ; `BudgetedWriter` (donc `kb_list`, `kb_proposal_status`) inchangé | Rien dans le diagnostic ne montre un problème pour ces deux outils ; leurs notes de troncature existantes nomment déjà le bon paramètre (`limit`), pas `max_results`. |
+
+**Aucun écart assumé.** § 1.5 encadre le plafond (~4000 tokens, troncature
+signalée) sans prescrire l'algorithme d'arrêt ; l'arrêt définitif reste celui
+d'avant, seul le message change pour ne plus recommander un remède inopérant.
+
+---
+
 ## 7. Traçabilité — exigence de test → test
 
 La spec liste des tests obligatoires par jalon (§ 10.2). Table de correspondance,
@@ -779,3 +813,11 @@ retirée d'ici. C'est la procédure à reprendre pour toute évolution du templa
 si ripgrep devient *mesurablement* insuffisant. Mesure actuelle sur le corpus le
 plus gros disponible (856 documents) : découverte + recherche en **0,15 s**. Rien
 ne le justifie aujourd'hui.
+
+**Extraits bornés par résultat dans `kb_search` n'est pas fait.** Piste
+retenue par le propriétaire (2026-09-10, cf. § 6 sexies) pour traiter à la
+racine ce que le correctif de message ne fait que documenter : borner la
+taille de chaque extrait indépendamment de `max_results`, plutôt que de
+laisser un seul résultat consommer l'essentiel du plafond de sortie. Pas
+implémenté ici — à reprendre après relecture de la spec § 1.5 et § 5 et du
+format de sortie existant, pas avant.

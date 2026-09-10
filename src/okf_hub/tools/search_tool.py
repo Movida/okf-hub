@@ -246,4 +246,11 @@ def run(registry: Registry, arguments: dict) -> str:
             except OSError:
                 continue
 
-    return writer.render()
+    # § 6 sexies (ARCHITECTURE.md) : `render()` n'utilise cette note que si le
+    # plafond a réellement été atteint — inutile de conditionner l'appel.
+    return writer.render(
+        f"[résultats tronqués, {writer.dropped} élément(s) omis — ce sont "
+        f"toujours les mieux classés qui s'affichent : relever max_results ne "
+        f"fait apparaître aucun résultat de plus derrière ce plafond ; "
+        f"reformulez la requête, qui seule change le classement]"
+    )

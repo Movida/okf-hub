@@ -37,6 +37,18 @@ class BudgetedWriter:
     Le plafond est vérifié *avant* d'ajouter un bloc : la sortie n'est jamais
     coupée au milieu d'un résultat, elle s'arrête sur un résultat entier et
     signale explicitement ce qui manque.
+
+    L'arrêt est **définitif** : dès qu'un bloc dépasse le budget restant,
+    `truncated` passe à `True` et tout bloc suivant est rejeté sans être
+    essayé, quelle que soit sa taille — y compris un bloc plus petit qui
+    tiendrait dans ce qu'il reste de budget. Ce n'est pas un remplissage au
+    mieux (« best-effort »). C'est délibéré pour un appelant qui ajoute ses
+    blocs dans l'ordre de pertinence (`kb_search`) : ce qui est montré reste
+    toujours un **préfixe du classement**, jamais un mélange de gros résultats
+    pertinents sautés et de petits résultats moins pertinents remontés à leur
+    place. Voir `docs/ARCHITECTURE.md` § 6 sexies pour la décision et son
+    alternative écartée. Caractérisé par
+    `tests/test_search_list.py::test_budgeted_writer_ne_retente_pas_un_bloc_plus_petit_apres_troncature`.
     """
 
     def __init__(self, char_cap: int = CHAR_CAP) -> None:
@@ -72,12 +84,20 @@ class BudgetedWriter:
         self._size += len(block) + 1
 
     def render(self, truncation_note: str | None = None) -> str:
+        """Rend les blocs accumulés, avec une note de troncature si besoin.
+
+        `truncation_note`, quand fourni, devrait nommer le levier qui change
+        réellement ce qui est affiché. Relever le nombre de résultats demandé
+        n'en fait *jamais* partie : les blocs sont essayés dans l'ordre où ils
+        ont été ajoutés (typiquement un ordre de pertinence), et l'arrêt au
+        premier dépassement (cf. `add`) fait que la troncature ne dépend que
+        de leur taille cumulée, pas de combien en ont été demandés — un
+        appelant qui en redemande davantage ne fait qu'allonger la liste
+        derrière un plafond déjà atteint.
+        """
         out = list(self._blocks)
         if self.truncated:
-            note = truncation_note or (
-                f"[résultats tronqués, {self.dropped} élément(s) omis — "
-                f"affinez la requête ou réduisez max_results]"
-            )
+            note = truncation_note or f"[résultats tronqués, {self.dropped} élément(s) omis]"
             out.append(note)
         return "\n".join(out)
 

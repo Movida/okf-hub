@@ -581,3 +581,70 @@ def test_status_insensible_a_la_casse(hub, make_bundle, registry):
 def test_les_regles_restent_lisibles_en_brouillon(hub, make_bundle, registry):
     gouvernance(make_bundle, registry, "---\nstatus: draft\n---\n\n# G\n\nRègle unique.\n")
     assert "Règle unique." in governance_tool.run(registry, {"base": "ma-base"})
+
+
+def test_budgeted_writer_ne_retente_pas_un_bloc_plus_petit_apres_troncature():
+    """Mécanisme derrière le constat 4 du banc d'essai (2026-09-09) : une fois
+    `add()` en échec sur un bloc trop gros, `truncated` passe à `True` et tout
+    bloc suivant est rejeté sans même être essayé — y compris un bloc minuscule
+    qui tiendrait largement dans ce qu'il reste du budget. Ce n'est pas un
+    meilleur-effort de remplissage, c'est un arrêt définitif au premier échec.
+    """
+    w = BudgetedWriter(char_cap=100)
+    assert w.add("a" * 60)  # tient : reste ~39
+    assert not w.add("b" * 60)  # dépasse : troncature définitive
+    assert not w.add("c")  # tiendrait pourtant (1 <= 39) : rejeté quand même
+    rendu = w.render()
+    assert "c" not in rendu.split("\n")[0]  # absent du seul bloc émis
+
+
+def test_max_results_plus_eleve_ne_fait_pas_remonter_un_resultat_masque_par_le_budget(
+    hub, make_bundle, registry
+):
+    """Constat 4 du banc d'essai (2026-09-09) : un agent relance kb_search avec
+    un max_results plus élevé, espérant faire apparaître un résultat masqué par
+    le plafond de sortie (~4000 tokens) — sans effet, seule une requête
+    reformulée avait marché. Confirmé ici : `zzz.md`, minuscule, tiendrait
+    largement dans le budget restant après le premier document, mais reste
+    absent que max_results vaille 2 ou 8. C'est le budget de caractères qui
+    gouverne l'arrêt, pas le nombre de candidats demandés (cf. test isolant le
+    mécanisme ci-dessus) — augmenter max_results ne fait qu'allonger la liste
+    de candidats derrière un plafond déjà atteint.
+    """
+    gros = "cible " + ("remplissage " * 1000)  # ~12 000 caractères : à lui seul,
+    # un deuxième bloc de cette taille dépasse déjà CHAR_CAP (16 000).
+    docs = {
+        "aaa.md": f"# Aaa\n\n{gros}\n",
+        "bbb.md": f"# Bbb\n\n{gros}\n",
+        "zzz.md": "# Zzz\n\ncible, minuscule.\n",
+    }
+    build(make_bundle, registry, docs)
+
+    out_2 = search_tool.run(registry, {"base": "ma-base", "query": "cible", "max_results": 2})
+    assert "aaa.md" in out_2
+    assert "bbb.md" not in out_2  # candidat, mais dépasse le budget
+    assert "zzz.md" not in out_2  # hors de la liste de candidats à ce plafond
+    assert "[résultats tronqués" in out_2
+
+    out_8 = search_tool.run(registry, {"base": "ma-base", "query": "cible", "max_results": 8})
+    assert "aaa.md" in out_8
+    # zzz.md est maintenant candidat (3e sur 3), et tiendrait seul seize fois
+    # dans le budget restant après aaa.md -- pourtant toujours absent : le
+    # relèvement de max_results n'a rien changé au résultat visible.
+    assert "zzz.md" not in out_8
+    assert "[résultats tronqués" in out_8
+
+
+def test_message_de_troncature_n_oriente_pas_vers_max_results(hub, make_bundle, registry):
+    """Le message par défaut de `BudgetedWriter` conseillait « réduisez
+    max_results » — un remède qui ne change jamais ce qui est affiché (cf.
+    test ci-dessus). `kb_search` fournit maintenant sa propre note, qui
+    n'induit plus cette fausse piste et pointe la reformulation, seul levier
+    qui change le classement.
+    """
+    gros = "cible " + ("remplissage " * 1000)
+    docs = {"aaa.md": f"# Aaa\n\n{gros}\n", "bbb.md": f"# Bbb\n\n{gros}\n"}
+    build(make_bundle, registry, docs)
+    out = search_tool.run(registry, {"base": "ma-base", "query": "cible", "max_results": 2})
+    assert "réduisez max_results" not in out
+    assert "reformulez la requête" in out
