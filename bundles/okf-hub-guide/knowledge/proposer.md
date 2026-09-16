@@ -6,7 +6,9 @@ description: >
   le plus fréquent sur schema.yaml, et comment retrouver la résolution.
 tags: [kb_propose, kb_proposal_status, kb_governance]
 applies-to: "rév. 4.1"
-generated: { by: "claude-code/opus-5", at: 2026-08-30T00:00:00Z }
+generated:
+  by: "claude-code/opus-5"
+  at: 2026-08-30T00:00:00Z
 ---
 
 # Déposer une proposition, et en relire le verdict

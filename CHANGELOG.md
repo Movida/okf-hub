@@ -84,6 +84,77 @@ Le projet suit la version de la spécification qu'il implémente : `bundle-spec 
   « au mieux » aurait cassée. Voir [`docs/API.md`](docs/API.md) § kb_search et
   [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) § 6 sexies.
 
+### Corrigé
+
+- **La fusion d'un champ de frontmatter ne reformate plus les champs qu'on ne
+  lui a pas demandé de toucher.** `okf-review resolve` relisait tout le
+  frontmatter avec `yaml.safe_load` et réémettait l'ensemble avec
+  `yaml.safe_dump` : le YAML restait valide, mais une liste écrite
+  `tags: [module:environnement, env:dev]` repassait en style bloc et un
+  `timestamp: 2026-08-27T12:00:00Z` ressortait `2026-08-27 12:00:00+00:00`.
+  Constaté en usage réel le 2026-09-16 sur une base métier : les corpus
+  embarquent des parseurs mono-ligne, documentés comme volontairement non
+  généraux, dont la regex sur un frontmatter en style bloc ne lit pas une liste
+  vide mais **une liste à un élément corrompu** — d'où une facette inconnue et
+  un `env:` manquant signalés sur une fiche correcte, sans aucune erreur.
+
+  La fusion passe désormais par le round-trip de `ruamel.yaml` (quatrième
+  dépendance runtime, élargissement de la règle de travail remonté au
+  propriétaire et accepté — le principe § 1.7 exige une bibliothèque YAML, pas
+  nommément PyYAML), et surtout par une **garde vérifiée avant toute
+  écriture** : un champ non ciblé doit être identique au caractère près,
+  commentaires, guillemets, styles bloc et flow, scalaires multilignes et
+  ordre des champs compris. Ce que la vérification ne peut pas établir est
+  **refusé** plutôt qu'écrit au mieux — frontmatter illisible ou non mapping,
+  clés dupliquées, ancre, alias ou clé de fusion `<<`, racine en style flow,
+  mise en forme non reproductible, frontmatter démesuré. Une liste ciblée
+  écrite en flow le reste. Le contrat d'entrée du hub est maintenu **en plus**
+  du round-trip (`safe_load`, qui refuse les tags inconnus que le round-trip
+  conserverait), la comparaison sémantique est sensible au type (`True` n'est
+  pas `1`), et les scalaires ambigus entre YAML 1.1 et 1.2 (`yes`, `on`,
+  `12:30`, `2026-09-16`) sont arbitrés par PyYAML, le parseur du hub.
+
+- **Un frontmatter illisible n'est plus effacé par une fusion.** Second bug de
+  la même fonction, trouvé en mesurant la correction sur les corpus installés,
+  et plus destructeur que le premier : `parse_document` tolère un frontmatter
+  qui n'est pas du YAML valide (§ 1.4, il rend `frontmatter=None` et garde le
+  bloc brut), et la fusion partait donc d'un dictionnaire vide — elle
+  réémettait un frontmatter réduit au seul champ fusionné. Vérifié sur un
+  document réel : `type`, `title`, `description`, `provenance`, `tags`,
+  `aliases` et `timestamp` remplacés par une unique ligne `last-verified`.
+  **91 documents** des cinq bases installées sont dans cet état (un `: ` non
+  échappé dans un scalaire nu, une accolade dans une liste flow) ; ils sont
+  désormais refusés, à corriger à la source.
+
+  Mesure de la correction sur ces mêmes corpus (3 166 documents à frontmatter,
+  fusion d'un champ sur chacun) : **3 071 fusions fidèles (97 %)**, 95 refus —
+  les 91 frontmatters invalides, et 4 fois une mise en forme que le round-trip
+  ne reproduit pas (`{ by: …, at: … }`, réémis sans ses espaces intérieurs).
+  Ces 95 refus ont ensuite été traités **à la source** : un front-matter
+  illisible viole la conformance OKF 0.2, les 91 fiches ont été réparées dans
+  leurs dépôts de base et le champ `generated` des 4 fiches du guide est passé
+  en style bloc (`bundles/okf-hub-guide`). Mesure après réparation : **3 166
+  fusions fidèles sur 3 166, aucun refus.**
+
+- **Un plan de résolution refusé en cours de route ne laisse plus rien
+  derrière lui.** `review.apply_plan` calcule maintenant le contenu de toutes
+  les éditions avant d'écrire la première (`_compose_edit`). Une section
+  introuvable ou une fusion de frontmatter refusée sur la troisième édition
+  d'un plan laissait les deux premières sur le disque, sans commit : le dépôt
+  se retrouvait dans un état intermédiaire qu'aucun audit ne décrit (§ 6.2).
+  Deux éditions du même fichier s'enchaînent toujours.
+
+### Tests
+
+- `tests/test_frontmatter_merge.py` (70 tests) : reproduction de l'incident du
+  2026-09-16, relecture par le parseur mono-ligne du corpus, représentations
+  préexistantes inchangées (guillemets, commentaires, listes bloc et flow,
+  scalaires multilignes, imbrication), refus explicites, injections dans une
+  valeur fusionnée, politique de résolution des scalaires ambigus YAML
+  1.1/1.2, non-effacement d'un frontmatter illisible, lecture des `tags` mis à
+  jour par le parseur mono-ligne des corpus, et **atomicité du refus** au
+  niveau d'un plan de résolution complet.
+
 ## [0.2.8] — 2026-09-02
 
 ### Ajouté

@@ -7,7 +7,9 @@ description: >
   délibéré.
 tags: [kb_hub_rescan, kb_propose, kb-review, okf-review]
 applies-to: "rév. 4.1"
-generated: { by: "claude-code/opus-5", at: 2026-08-30T00:00:00Z }
+generated:
+  by: "claude-code/opus-5"
+  at: 2026-08-30T00:00:00Z
 ---
 
 # Cycle de vie d'une base

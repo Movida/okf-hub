@@ -6,7 +6,9 @@ description: >
   de lecture qu'il faut comprendre pour ne pas rapatrier des documents entiers.
 tags: [kb_list, kb_search, kb_read]
 applies-to: "rév. 4.1"
-generated: { by: "claude-code/opus-5", at: 2026-08-30T00:00:00Z }
+generated:
+  by: "claude-code/opus-5"
+  at: 2026-08-30T00:00:00Z
 ---
 
 # Chercher et lire, sans gaspiller de contexte

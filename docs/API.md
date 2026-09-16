@@ -561,7 +561,7 @@ okf-review resolve   <base> --plan p.json [--dry-run]
 | `content` seul | Remplace **tout le fichier**. Crée le document s'il n'existe pas. |
 | `content` + `section` | Remplace **cette seule section**. À préférer : évite de réécrire un gros document. |
 | `append` | Ajoute en fin de document. Exclusif de `content`. |
-| `frontmatter` | Fusionne ces champs dans le frontmatter. Combinable avec les précédents. |
+| `frontmatter` | Fusionne ces champs dans le frontmatter. Combinable avec les précédents. Les champs non cités gardent leur écriture exacte — liste en style flow, timestamp ISO, commentaires, guillemets. Si cette fidélité ne peut pas être garantie, la résolution est refusée (`INVALID_INPUT`) **sans rien modifier** : le plan entier est sans effet, et le message dit quoi corriger à la source (voir `ARCHITECTURE.md` § 5.4). |
 
 **Un plan = un commit.** Trois groupes indépendants confirmés = trois plans
 successifs. Le regroupement en un seul commit ne vaut que pour des propositions

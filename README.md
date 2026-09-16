@@ -667,6 +667,7 @@ src/okf_hub/
 ├── remote_sync.py  synchronisation fast-forward-only avec le remote, au démarrage
 ├── governance.py   statut draft/stable d'un GOVERNANCE.md
 ├── mdutil.py       frontmatter, headings, sections
+├── frontmatter.py  fusion de frontmatter à représentation préservée, ou refus
 ├── textutil.py     plafonnement des sorties
 ├── review.py       moteur du rôle gestionnaire
 └── tools/          un module par outil kb_*
@@ -679,7 +680,7 @@ chacun, la carte détaillée des modules et les parcours d'appel sont dans
 
 ## Écarts assumés par rapport à la spec
 
-Deux, tous deux mesurés, documentés et réversibles :
+Trois, tous mesurés, documentés et réversibles :
 
 1. **Déclassement de `index.md` et `log.md` dans `kb_search`** — sur un corpus
    réel de 856 documents, 28 % des résultats étaient des sommaires générés ;
@@ -687,6 +688,12 @@ Deux, tous deux mesurés, documentés et réversibles :
 2. **Synchronisation de l'index git partagé après commit** — sans elle,
    `git status` affiche toutes les propositions commitées comme supprimées, et
    l'étape de réconciliation les re-commite, cassant l'invariant d'audit.
+3. **`ruamel.yaml` pour fusionner un frontmatter** — le principe § 1.7 exige
+   une bibliothèque YAML, pas nommément PyYAML ; réémettre tout le frontmatter
+   avec `safe_dump` reformatait les champs non ciblés (`tags: [a, b]` repassé
+   en style bloc, timestamp ISO réécrit), ce qui égarait sans erreur les
+   parseurs mono-ligne des corpus réels. La fidélité est **vérifiée avant
+   écriture** ; ce qui n'est pas vérifiable est refusé.
 
 Motif complet, mesure et manière de les annuler :
 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md), section « Écarts assumés ».

@@ -6,7 +6,9 @@ description: >
   consommatrice ne le peut pas même quand l'erreur est évidente.
 tags: [kb_propose, kb-review, okf-review]
 applies-to: "rév. 4.1"
-generated: { by: "claude-code/opus-5", at: 2026-08-30T00:00:00Z }
+generated:
+  by: "claude-code/opus-5"
+  at: 2026-08-30T00:00:00Z
 ---
 
 # Les trois rôles, et la frontière de confiance à l'écriture
