@@ -37,7 +37,14 @@ changement qui est faux, pas le test.
 
 **Jamais de YAML par templating de chaînes** (§ 1.7). Tout frontmatter, tout
 manifeste passe par `yaml.safe_dump` / `safe_load`. Les tests d'injection en
-dépendent, et les invariants d'audit du § 6.2 aussi.
+dépendent, et les invariants d'audit du § 6.2 aussi. **Une seule exception, et
+elle est un écart remonté au propriétaire** : `frontmatter.py` fusionne dans un
+frontmatter existant via le round-trip de `ruamel.yaml`, parce que réémettre
+tout le bloc avec `safe_dump` reformatait les champs non ciblés et égarait les
+parseurs mono-ligne des corpus (`ARCHITECTURE.md` § 5.4). Rien d'autre
+n'utilise `ruamel`, et la fusion ne tient que par sa garde : ce qui n'est pas
+vérifié fidèle est **refusé**. Affaiblir la garde pour faire passer une revue,
+c'est rouvrir le bug — le refus dit quoi corriger à la source.
 
 **Une nouvelle capacité d'écriture ne va pas dans `tools/`.** La surface MCP
 exposée aux sessions consommatrices se limite à `kb_propose`, confiné à
@@ -83,7 +90,7 @@ de l'instance.
 ## Vérifier avant de conclure
 
 ```sh
-uv run pytest -q                 # 237 tests, dont la boucle de stress
+uv run pytest -q                 # 423 tests, dont la boucle de stress
 uv run pytest -q -m "not slow"   # sans le test deux processus × 25 itérations
 ```
 

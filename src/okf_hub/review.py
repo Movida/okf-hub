@@ -29,6 +29,7 @@ import yaml
 from . import gitops, hublog
 from .config import HubConfig
 from .errors import INVALID_INPUT, NOT_FOUND, ToolError
+from .frontmatter import merge_frontmatter
 from .governance import DRAFT, status_of_text
 from .locking import base_lock, ensure_git_exclude
 from .mdutil import extract_section, parse_document
@@ -278,8 +279,16 @@ def _require(data: dict, key: str, kind: type, prefix: str = ""):
     return value.strip() if kind is str else value
 
 
-def _apply_edit(base: Base, edit: Edit) -> Path:
-    """Applique une édition du corpus. Le confinement est celui de kb_read (§ 5.3)."""
+def _compose_edit(base: Base, edit: Edit, en_cours: dict[Path, str]) -> tuple[Path, str]:
+    """Calcule (cible, contenu) d'une édition du corpus, **sans rien écrire**.
+
+    Le confinement est celui de kb_read (§ 5.3). La séparation calcul/écriture
+    est ce qui rend un refus atomique : la fusion de frontmatter peut refuser
+    (`frontmatter.merge_frontmatter`), et un refus sur la troisième édition
+    d'un plan ne doit pas laisser les deux premières sur le disque. `en_cours`
+    porte les contenus déjà calculés, pour que deux éditions du même fichier
+    s'enchaînent comme si la première avait été écrite.
+    """
     candidate = Path(edit.path)
     if candidate.is_absolute() or ".." in candidate.parts:
         raise ToolError(INVALID_INPUT, f"chemin d'édition refusé : {edit.path}")
@@ -289,7 +298,10 @@ def _apply_edit(base: Base, edit: Edit) -> Path:
     if base.is_excluded(target, is_dir=False):
         raise ToolError(INVALID_INPUT, f"chemin d'édition exclu du corpus : {edit.path}")
 
-    existing = target.read_text(encoding="utf-8") if target.is_file() else ""
+    if target in en_cours:
+        existing = en_cours[target]
+    else:
+        existing = target.read_text(encoding="utf-8") if target.is_file() else ""
 
     if edit.content is not None and edit.section:
         match = extract_section(existing, edit.section)
@@ -319,23 +331,9 @@ def _apply_edit(base: Base, edit: Edit) -> Path:
         nouveau = existing
 
     if edit.frontmatter:
-        nouveau = _merge_frontmatter(nouveau, edit.frontmatter)
+        nouveau = merge_frontmatter(nouveau, edit.frontmatter)
 
-    target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(nouveau if nouveau.endswith("\n") else nouveau + "\n", encoding="utf-8")
-    return target
-
-
-def _merge_frontmatter(text: str, updates: dict) -> str:
-    """Fusionne des champs dans le frontmatter, via la bibliothèque YAML (§ 1.7)."""
-    doc = parse_document(text)
-    data = dict(doc.frontmatter or {})
-    data.update(updates)
-    block = yaml.safe_dump(
-        data, allow_unicode=True, default_flow_style=False, sort_keys=False, width=10_000
-    )
-    body = doc.body if doc.frontmatter_raw else text
-    return f"---\n{block}---\n{body if body.startswith(chr(10)) else chr(10) + body}"
+    return target, nouveau if nouveau.endswith("\n") else nouveau + "\n"
 
 
 def _resolve_proposal(base: Base, prop: Proposal, res: Resolution) -> tuple[Path, Path]:
@@ -394,9 +392,19 @@ def apply_plan(base: Base, plan: Plan) -> str:
                 f"propositions absentes de pending/ : {', '.join(manquantes)}",
             )
 
-        touches: list[Path] = []
+        # Calcul d'abord, écriture ensuite : un refus de fusion de frontmatter
+        # (§ 1.7, `frontmatter.merge_frontmatter`) laisse le dépôt intact,
+        # quelles que soient les éditions déjà calculées avant lui.
+        planifie: dict[Path, str] = {}
         for edit in plan.edits:
-            touches.append(_apply_edit(base, edit))
+            cible, contenu = _compose_edit(base, edit, planifie)
+            planifie[cible] = contenu
+
+        touches: list[Path] = []
+        for cible, contenu in planifie.items():
+            cible.parent.mkdir(parents=True, exist_ok=True)
+            cible.write_text(contenu, encoding="utf-8")
+            touches.append(cible)
 
         trailers: list[tuple[str, str]] = []
         for res in plan.resolutions:

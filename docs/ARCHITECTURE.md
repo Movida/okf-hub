@@ -43,6 +43,9 @@ src/okf_hub/
 ├── textutil.py     Plafond de sortie (BudgetedWriter), normalisation.
 ├── mdutil.py       Frontmatter, headings, sections, normalisation de heading,
 │                   heading de la section contenant une ligne donnée.
+├── frontmatter.py  Fusion de champs dans un frontmatter existant, en
+│                   préservant la représentation des champs non ciblés —
+│                   vérifiée, sinon refusée (§ 1.7, § 5.4).
 ├── governance.py   Statut draft/stable d'un GOVERNANCE.md et son bandeau.
 ├── bootstrap.py    Installation des bases livrées (bundles/ → bases/), au
 │                   démarrage et en ligne de commande. Publication atomique.
@@ -184,7 +187,9 @@ review.apply_plan
   └─ with base_lock(root):               ← UNE acquisition pour tout (§ 4.4.b.3)
        ├─ load_pending + vérification que toutes les propositions existent
        │    └─ si l'une manque : NOT_FOUND, AVANT toute écriture
-       ├─ pour chaque edit  : _apply_edit      (confinement corpus vérifié)
+       ├─ pour chaque edit  : _compose_edit   (confinement corpus vérifié,
+       │                                        contenu calculé, rien d'écrit)
+       ├─ écriture des contenus calculés
        ├─ pour chaque résolution : frontmatter enrichi, fichier déplacé
        └─ gitops.commit_paths(tous les chemins, message + trailers)
 ```
@@ -192,6 +197,14 @@ review.apply_plan
 La vérification d'existence précède toute écriture : un plan partiellement faux
 ne laisse pas le dépôt à moitié modifié
 (`test_proposition_inconnue_refusee_sans_effet`).
+
+**Toutes les éditions sont calculées avant que la première ne soit écrite.**
+C'est ce qui rend atomique un refus de `frontmatter.merge_frontmatter` (§ 5.4) :
+une section introuvable ou une fidélité de frontmatter non garantie sur la
+troisième édition ne doit pas laisser les deux premières sur le disque
+(`test_le_refus_ne_modifie_rien_du_depot`). Deux éditions du même fichier
+s'enchaînent quand même, via la table des contenus déjà calculés
+(`test_deux_editions_du_meme_fichier_s_enchainent`).
 
 ---
 
@@ -232,7 +245,7 @@ ne perce pas le confinement.
 ## 5. Écarts assumés par rapport à la spécification
 
 La spec impose (§ 11, clôture) de remonter toute déviation aux principes du § 1
-ou aux mécanismes du § 4.4.b. **Les écarts 5.1 et 5.2 ont été remontés au
+ou aux mécanismes du § 4.4.b. **Les écarts 5.1, 5.2 et 5.4 ont été remontés au
 propriétaire du projet et acceptés.** Le § 5.3 ne relève ni du § 1 ni du
 § 4.4.b — c'est un écart au § 4.3 — mais il est demandé par le propriétaire et
 recensé ici au même titre : un écart qui ne figure pas dans cette liste est un
@@ -410,6 +423,122 @@ Tests concernés : `test_enregistrement_api_precede_le_test_ssh`,
 `test_enregistrement_api_reste_optionnel_sans_jeton`,
 `test_le_jeton_gh_app_n_est_jamais_journalise`,
 `test_le_jeton_gh_app_n_est_jamais_ecrit_sur_disque`.
+
+---
+
+### 5.4 Fusion de frontmatter par `ruamel.yaml`, sous garde de fidélité
+
+**Ce que dit la spec.** § 1, principe 7 : « frontmatter et YAML sont produits
+exclusivement via **une bibliothèque YAML** ». Le principe ne nomme aucune
+bibliothèque ; c'est la règle de travail de `CLAUDE.md` qui désignait
+nommément `yaml.safe_dump` / `yaml.safe_load`. L'écart porte donc sur la règle
+de travail du dépôt — élargie à `ruamel.yaml` pour ce seul usage — et sur
+l'ajout d'une quatrième dépendance runtime, **pas sur le principe § 1.7**, qui
+reste respecté à la lettre : aucun YAML n'est produit par templating de
+chaînes. Remonté au propriétaire du projet et accepté.
+
+**Le bug qu'il corrige.** `review._merge_frontmatter` relisait **tout** le
+frontmatter avec `safe_load`, fusionnait, et réémettait l'ensemble avec
+`safe_dump(default_flow_style=False)`. Le YAML restait valide et produit par
+une bibliothèque, mais les champs **non ciblés** perdaient leur
+représentation. Constaté en usage réel le 2026-09-16 sur `el2d-blueway` :
+
+1. `tags: [module:environnement, domaine:blueway, env:dev]` repassait en style
+   bloc. Les trois bases métier embarquent le même parseur maison, documenté
+   comme volontairement non général (« front-matter here is always flat
+   scalars plus one flow-list ») : sa regex `^tags:\s*(.+)$` ne lit pas une
+   liste vide sur un frontmatter en bloc, elle lit **une liste à un élément
+   corrompu** (`["- module:environnement"]`). Diagnostic faux, sans erreur —
+   une facette inconnue et un `env:` manquant signalés sur une fiche correcte.
+2. `timestamp: 2026-08-27T12:00:00Z` ressortait `2026-08-27 12:00:00+00:00`,
+   `safe_load` l'ayant résolu en `datetime` — un texte différent qu'aucune
+   règle ne demandait.
+
+**Le second bug, trouvé en mesurant.** La même fonction **effaçait tout le
+frontmatter** d'un document dont le frontmatter n'est pas du YAML valide.
+`parse_document` tolère ce cas (§ 1.4) : il rend `frontmatter=None` et garde le
+bloc brut. La fusion partait donc de `dict(doc.frontmatter or {})` — vide — et
+réémettait un frontmatter réduit au seul champ fusionné. Vérifié, pas supposé,
+sur `el2d-blueway/el2d-kb/environnement/apercu.md` : `type`, `title`,
+`description`, `provenance`, `tags`, `aliases` et `timestamp` remplacés par une
+seule ligne `last-verified`. **91 documents** des corpus installés sont dans cet
+état — un `: ` non échappé dans un scalaire nu, une accolade dans une liste
+flow. Ils sont désormais refusés (`test_un_frontmatter_illisible_n_est_pas_efface`).
+
+**Mesure sur les corpus réels** (3 166 documents à frontmatter, cinq bases
+installées, fusion d'un champ sur chacun) : **3 071 fusions fidèles (97 %)**,
+95 refus — 91 frontmatters qui ne sont déjà pas du YAML valide, et 4 fois une
+mise en forme que le round-trip ne reproduit pas (`{ by: …, at: … }`, réémis
+sans les espaces intérieurs). Aucun refus ne porte sur un document dont le
+frontmatter est valide et écrit dans une forme courante ; aucune fusion acceptée
+ne modifie un champ non ciblé.
+
+**Les 95 refus ont été traités à la source, pas contournés.** Un front-matter
+illisible viole la conformance OKF 0.2 (« Every non-reserved `.md` file in the
+tree contains a parseable YAML frontmatter block », cf.
+[`J0-verification-okf.md`](J0-verification-okf.md)) : les 91 fiches ont été
+réparées dans leurs dépôts respectifs (`el2d-blueway` 48bc9c4,
+`phoenix-blueway` cc275ec — écriture des scalaires changée, aucune valeur), et
+les 4 fiches du guide du hub sont passées en style bloc pour leur champ
+`generated` (`bundles/okf-hub-guide`, resync e1d5f22). **Mesure après
+réparation : 3 166 fusions fidèles sur 3 166, aucun refus.** Le refus n'est
+donc pas un plafond de couverture : il a servi de détecteur.
+
+**Ce que fait le code.** `frontmatter.merge_frontmatter` fusionne dans l'objet
+round-trip de `ruamel.yaml` (`YAML(typ="rt")`, `preserve_quotes=True`), puis
+**vérifie avant de rendre**. La garantie vient de la vérification, pas du nom
+« round-trip » — qui renormalise encore l'indentation :
+
+| Contrôle | Refus si |
+|---|---|
+| contrat d'entrée (`safe_load`, maintenu **en plus** du round-trip, qui garde les tags inconnus comme données) | racine non-mapping, YAML illisible, tag inconnu |
+| événements YAML | ancre, alias, clé de fusion `<<`, taille > 64 kio, profondeur > 20, > 5 000 nœuds |
+| chargement round-trip | clés dupliquées (refus explicite, pas « la dernière gagne ») |
+| **fidélité du round-trip** : réémission du document non modifié, comparée au texte d'origine au caractère près, l'indentation étant cherchée parmi quelques configurations | aucune configuration ne reproduit l'original (normalisation résiduelle) |
+| découpage par champ (marques du composeur, jamais une regex) | racine en style flow, deux clés sur une ligne, clé hors colonne 0 |
+| représentation | un champ **non ciblé** dont le texte change, un commentaire déplacé, l'ordre des champs modifié, les lignes qui précèdent un champ modifiées |
+| relecture du document entier par `mdutil.parse_document` | frontmatter plus délimité, corps modifié d'un seul caractère |
+| sémantique, **sensible au type** (`True` ≠ `1`) | une valeur relue qui diffère de la valeur demandée |
+
+Deux points de politique, testés indépendamment du corpus — les propositions
+sont des données semi-fiables :
+
+- **YAML 1.1 contre YAML 1.2.** `ruamel` résout en 1.2, PyYAML — le parseur du
+  hub — en 1.1. Une chaîne que `safe_load` ne relirait pas à l'identique est
+  mise entre quotes à l'émission : `yes`, `on`, `12:30` (sexagésimal en 1.1),
+  `2026-09-16`. C'est le contrat d'entrée du hub qui arbitre.
+- **Valeurs multilignes.** Émises en style double-quote, donc sur une seule
+  ligne avec des échappements. Une ligne de continuation valant `---` clorait
+  le frontmatter pour `parse_document`, qui reconnaît le délimiteur sur la
+  ligne *strippée* (§ 3.2).
+
+**Ce qu'un refus signifie.** Qu'un autre chemin de résolution conforme est
+nécessaire pour ce lot — corriger le frontmatter à la source, typiquement. Pas
+un contournement : recomposer un frontmatter complet à la main via
+`edits[].content` **recréerait exactement le templating de chaînes que le
+§ 1.7 interdit**, et le message d'erreur le dit. Le refus est atomique (§ 4.2).
+
+**Portée de la garantie.** « Aucun champ non ciblé ne change » est vérifié, pas
+supposé — mais la méthode ne couvre pas tout : elle refuse là où elle ne peut
+pas conclure. Un frontmatter dont l'indentation ne figure pas dans les
+configurations essayées, ou qui porte un espacement inhabituel (`a:   1`), est
+refusé plutôt que reformaté. Pour un champ **ciblé**, seul le style du nœud
+racine de l'ancienne valeur est repris — une liste flow reste flow, ce qui
+importe autant que le reste sur ces corpus : une revue qui met `tags` à jour
+casserait leurs lecteurs de la même manière que l'incident qu'elle corrige.
+Ce qu'il y a sous ce nœud est du contenu neuf.
+
+**Ce que l'écart ne couvre pas.** `review._resolve_proposal` continue de
+produire le frontmatter des propositions résolues avec `yaml.safe_dump` : il
+est **composé**, pas fusionné, sur un fichier que seul `kb_propose` a écrit —
+il n'y a pas de représentation d'origine à préserver.
+
+**Pour l'annuler.** Retirer `ruamel.yaml` des dépendances de `pyproject.toml`,
+et remplacer dans `frontmatter.py` le round-trip par `safe_load`/`safe_dump`
+en conservant la garde : la vérification par champ ne dépend pas de `ruamel`,
+seul le nombre de fusions qui la passent en dépend — plus de résolutions
+seraient refusées, aucune ne serait dégradée. Tests concernés :
+`tests/test_frontmatter_merge.py` en entier.
 
 ## 5 bis. Post-mortem — cooldown de re-scan : bug de l'amendement rév. 4.1, corrigé par la rév. 4.2
 
@@ -693,6 +822,10 @@ pour vérifier la couverture sans relire la suite.
 | fichier malformé → signalé, non commité | `test_fichier_malforme_signale_sans_commit` |
 | granularité « résolution complète » | `test_okf_lock_serialise_une_sequence_complete`, et `apply_plan` par construction |
 | commits § 6.2, lot multi-trailers | `test_lot_mele_integration_et_rejet_en_un_seul_commit`, `test_lot_uniquement_de_rejets`, `test_integration_simple`, `test_rejet_avec_motif` |
+| § 1.7 — fusion de frontmatter sans dégradation de représentation (§ 5.4) | `tests/test_frontmatter_merge.py` : `test_les_champs_non_cibles_restent_identiques_au_caractere_pres`, `test_le_parseur_mono_ligne_du_corpus_lit_encore_les_tags`, `test_representations_preexistantes_inchangees`, `test_une_liste_flow_ciblee_reste_en_flow` |
+| § 1.7 — refus explicite plutôt que fidélité non garantie | `test_refus_explicite`, `test_refus_sur_frontmatter_trop_volumineux`, `test_refus_sur_frontmatter_trop_imbrique` |
+| § 1.7 — injection neutralisée, scalaires ambigus 1.1/1.2 | `test_injection_dans_une_valeur_neutralisee`, `test_scalaire_ambigu_relu_comme_la_chaine_demandee`, `test_valeurs_non_chaines_relues_avec_leur_type` |
+| § 6.2 — **atomicité** d'un refus de fusion dans un plan | `test_le_refus_ne_modifie_rien_du_depot`, `test_deux_editions_du_meme_fichier_s_enchainent` |
 
 ### J5 — critère d'acceptation final
 

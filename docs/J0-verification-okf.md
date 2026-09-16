@@ -90,6 +90,61 @@ déclaratif et non authentifié (§ 8).
 
 ---
 
+## Re-vérification du 16/09/2026
+
+Refaite à l'occasion de la garde de fidélité du front-matter
+(`ARCHITECTURE.md` § 5.4), qui avait besoin de savoir ce qu'OKF exige d'un
+bloc de front-matter.
+
+**La spec est toujours en 0.2** — même dépôt, même fichier, aucune 0.3
+annoncée : le § 12 décrit le schéma de versionnage, le § 13 les ruptures
+depuis la 0.1, et la sous-section « Considered and deferred » n'engage aucune
+version. Les trois divergences ci-dessus tiennent donc toujours, y compris la
+troisième : le corpus `phoenix` reste en `timestamp` plutôt qu'en
+`generated.at`, ce qu'OKF tolère explicitement (§ 13.1 : les consommateurs
+« MAY fall back to a legacy `timestamp` when `generated` is absent »). **Rien à
+migrer.**
+
+Deux exigences relues de près, parce que la garde de fidélité les touche :
+
+### Le front-matter doit être parseable — et 91 documents ne l'étaient pas
+
+Section conformance : « Every non-reserved `.md` file in the tree contains a
+parseable YAML frontmatter block. » Ce n'est pas une recommandation.
+
+**91 documents des bases installées ne la respectaient pas**, sans que rien ne
+le signale : `mdutil.parse_document` tolère un front-matter illisible (§ 1.4 du
+hub) et le rend simplement en brut, les parseurs maison des bundles lisent
+champ par champ à la regex, et les `check_*.py` de chaque base ne vérifient pas
+la syntaxe YAML. Deux causes mécaniques : un `: ` non échappé dans un scalaire
+nu (`description:`), et une accolade dans une séquence flow
+(`aliases: [PUT /api/.../{environment}/notification, …]`, où `{` est un
+indicateur de flow interdit dans un scalaire nu).
+
+Corrigé à la source le 16/09/2026 — `el2d-blueway` (4 fiches, commit `48bc9c4`)
+et `phoenix-blueway` (87 fiches, commit `cc275ec`) : aucune valeur changée,
+seule leur écriture. Les corpus installés sont désormais **conformes sur ce
+point à 100 %** (3 166 documents à front-matter, 0 illisible), et le guide du
+hub a suivi sur une question de style (`e1d5f22`).
+
+### Les clés inconnues se préservent, et ne justifient aucun rejet
+
+« Producers MAY include any additional keys. Consumers SHOULD preserve unknown
+keys when round-tripping and MUST NOT reject documents with unrecognized
+fields. »
+
+Le hub va au-delà du « preserve » demandé : depuis la rév. de
+`frontmatter.py`, une fusion préserve la **représentation** des champs qu'elle
+ne cible pas, ou refuse de s'appliquer (§ 5.4 d'`ARCHITECTURE.md`). Le
+« MUST NOT reject » n'est pas entamé pour autant, et la nuance vaut d'être
+écrite : **aucun document n'est jamais rejeté**, ni à la lecture, ni à
+l'énumération, ni à la recherche, quels que soient ses champs. Ce qui peut être
+refusé, c'est une **écriture** dont la fidélité n'est pas établie — le document
+reste lisible exactement comme avant, et c'est le plan de résolution qui est
+renvoyé à son auteur.
+
+---
+
 ## Ce sur quoi rien ne repose
 
 Conformément à la spec du hub, **aucun autre livrable ne dépend de cette
