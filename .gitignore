@@ -16,6 +16,12 @@ hub.log
 # dépôts de bases, jamais ici.
 .okf-hub.lock
 
+# Notes de travail d'une revue kb-review en cours (skill skills/kb-review) —
+# recommandations d'agents et suivi de confirmation, pour reprise d'une
+# session à l'autre. Jamais versionné : c'est un brouillon de travail, pas un
+# artefact du hub.
+/.kb-review/
+
 # Python
 __pycache__/
 *.py[cod]
