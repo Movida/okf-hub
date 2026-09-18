@@ -13,6 +13,11 @@ verified:
   - by: claude-code/opus-5
     at: 2026-08-31T00:00:00Z
     note: "ajout de la section rév. 4.2 (correctif du cooldown de re-scan)"
+  - by: claude-sonnet-5
+    at: 2026-09-17T00:00:00Z
+    note: >-
+      kb_search multi-bases (§ 10.3) déplacée de « Reporté » à « Livré » —
+      livrée le 2026-09-02 (commit 00de954), l'entrée était restée périmée
 sources:
   - id: retour-j5
     resource: "premier retour d'usage réel d'une session consommatrice, post-J5"
@@ -115,20 +120,20 @@ est désormais compté **séparément par déclencheur**. « Deux `kb_list` en m
 de cinq secondes ne provoquent qu'un seul parcours » reste vrai ; un `kb_list`
 ne prive plus l'appel suivant du re-scan sur `UNKNOWN_BASE`.
 
-## Reporté
+## Livré — hors amendement (§ 10.3)
 
 ### `kb_search` multi-bases
 
-**Demande.** Pouvoir passer `base: [...]` ou `base: "*"` pour chercher dans
-plusieurs bases d'un coup.[^retour-j5]
+**Retour à l'origine.** Un appel par base pour couvrir plusieurs bases à la
+fois, en s'appuyant sur les descriptions de `kb_list` pour router.[^retour-j5]
 
-**Décision : reportée en v1 optionnelle**, sur un seul retour. Élargir la
-surface d'outils se paie sur toutes les sessions ; on attend la récurrence.
-
-**Spec pré-cadrée**, pour que la reprise soit mécanique le jour venu : plafond
-de sortie **global unique**, réparti entre les bases interrogées (et non un
-plafond par base, qui multiplierait la sortie par le nombre de bases) ;
-résultats **groupés par base**.
+**Décision.** Livré, sous la forme pré-cadrée plus haut par cette même
+roadmap (§ 10.3, déjà présente dans la spécification) : `base` accepte, en
+plus d'un nom unique, une **liste de noms** ou `"*"` pour toutes les bases
+enregistrées. Le plafond de sortie reste **global**, réparti à parts égales
+entre les bases interrogées — jamais un plafond par base, qui aurait
+multiplié la sortie par le nombre de bases. Les résultats sont **groupés par
+base** dans la sortie ; une base sans résultat n'y apparaît pas.
 
 ## Refusé
 
