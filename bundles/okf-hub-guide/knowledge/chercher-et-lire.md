@@ -9,6 +9,13 @@ applies-to: "rév. 4.1"
 generated:
   by: "claude-code/opus-5"
   at: 2026-08-30T00:00:00Z
+verified:
+  - by: claude-sonnet-5
+    at: 2026-09-17T00:00:00Z
+    note: >-
+      ajout des liens interbase dans kb_read, de kb_search multi-bases et de
+      la troncature par volume (livrés 2026-09-02 et 2026-09-10, non
+      répercutés ici avant cette relecture)
 ---
 
 # Chercher et lire, sans gaspiller de contexte
@@ -36,6 +43,12 @@ Lis la **description** de chaque base : elle est rédigée pour ça, elle dit ce
 qu'on y trouve. Si aucune ne couvre ton sujet, ne force pas la plus proche : la
 bonne réponse est qu'il n'y a pas de base pour ça. Signale-le plutôt à l'humain.
 
+Si le sujet peut vraiment être à cheval sur plusieurs bases, `kb_search`
+accepte une liste de bases (ou toutes les bases enregistrées) en un seul
+appel plutôt qu'un appel par base. Le plafond de sortie reste partagé entre
+elles, pas multiplié : ne le fais que si router vers une seule base est
+vraiment impossible, pas par réflexe.
+
 ## Comprendre ce que la recherche te répond
 
 La recherche est un plein texte, pas une recherche sémantique. Deux mécanismes
@@ -53,6 +66,14 @@ tables des matières et des journaux : denses en texte de liens, ils matchent
 beaucoup et n'apprennent rien. Ils passent derrière tout autre document, et la
 sortie le signale. S'ils remontent en tête, c'est qu'il n'y avait rien d'autre.
 
+**La troncature par le volume, pas par le nombre.** La sortie est plafonnée en
+taille, pas en nombre de résultats : `max_results` fixe combien de résultats
+sont *candidats*, mais l'écriture s'arrête dès que l'un d'eux dépasse ce qui
+reste de budget, et rien derrière lui n'est montré. Si tu vois
+`[résultats tronqués, … omis]`, monter ou baisser `max_results` ne fera
+jamais réapparaître ce qui a été coupé : seule une requête plus précise, qui
+change le classement, y change quelque chose.
+
 **Ce que la recherche n'est pas** : un moyen de compter. Un mot cité entre
 backticks dans un document de conventions sera trouvé comme s'il était une vraie
 occurrence. Elle sert à trouver, jamais à dénombrer.
@@ -68,6 +89,13 @@ document.
 kb_search  → "  L120-124 § reconnexion sso"
 kb_read    → section: "reconnexion sso"
 ```
+
+Le corps d'un document cite parfois une autre base par un lien littéral,
+`[libellé](phoenix-blueway:/chemin.md)`. Ce n'est pas réservé au rendu
+humain : recopie-le tel quel dans le `path` de `kb_read`, il est reconnu et
+lit directement l'autre base — inutile de le décomposer toi-même en `base` +
+`path`. Un préfixe qui ne correspond à aucune base enregistrée est traité
+comme un chemin littéral, pas comme une base inconnue.
 
 Au-delà d'une certaine taille, un document lu **sans** section ne renvoie pas son
 contenu mais sa **table des headings**. Ce n'est pas une erreur à contourner :

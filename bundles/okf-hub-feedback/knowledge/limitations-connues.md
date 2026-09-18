@@ -14,6 +14,15 @@ sources:
     resource: "README.md du dépôt okf-hub — section « Limitations v0 assumées »"
   - id: spec-v0
     resource: "docs/SPEC-okf-bundle-hub-v0.md"
+  - id: api-search
+    resource: "docs/API.md § kb_search — troncature et multi-bases"
+verified:
+  - by: claude-sonnet-5
+    at: 2026-09-17T00:00:00Z
+    note: >-
+      « Recherche mono-base » était périmée (multi-bases livré le 2026-09-02,
+      commit 00de954) : remplacée par la vraie limitation résiduelle, la
+      troncature par budget de sortie (docs/API.md § kb_search)
 ---
 
 # Limitations connues
@@ -86,11 +95,30 @@ Une seule exception, et c'est un écart documenté : `index.md` et `log.md` sont
 denses en texte de liens. Ils restent lisibles par `kb_read` et comptés par
 `kb_list`.
 
-## Recherche mono-base
+## Troncature de `kb_search` par le budget de sortie
 
-`kb_search` interroge une base à la fois. L'extension multi-bases est reportée —
-voir `roadmap.md`, section « Reporté ». En attendant : un appel par base, en
-s'appuyant sur les descriptions de `kb_list` pour router.
+**Ce qui se passe.** `kb_search` (comme `kb_list` et `kb_proposal_status`)
+plafonne sa sortie à ~4 000 tokens. Les résultats sont ajoutés dans l'ordre du
+classement, et l'ajout s'arrête **définitivement** au premier résultat qui
+dépasse le budget restant : tout résultat suivant est omis, quelle que soit sa
+taille.
+
+**Ce que ça implique.** Relever `max_results` ne fait jamais réapparaître un
+résultat masqué par ce plafond — la liste de candidats derrière la troncature
+s'allonge, pas ce qui est réellement montré. Le réduire ne change rien non
+plus. Les résultats affichés restent toujours un **préfixe** du classement,
+jamais un mélange qui aurait sauté un gros résultat pertinent pour faire de la
+place à un petit. Seule une **requête reformulée** change ce qui arrive en
+tête, donc ce qui est montré.
+
+Le message `[résultats tronqués, N élément(s) omis — …]` ne recommande plus de
+jouer sur `max_results` depuis la rév. de 2026-09-10 : reformuler avec moins
+ou d'autres termes est le seul levier réel.
+
+**`kb_search` interroge plusieurs bases si besoin** : `base` accepte une
+liste de noms ou `"*"`, avec le même plafond de sortie partagé entre elles
+(réparti à parts égales, le reliquat d'une base sans assez de résultats
+profitant aux autres) — ce n'est plus un appel par base à enchaîner.
 
 ## Gros documents : deux appels, ou un seul
 

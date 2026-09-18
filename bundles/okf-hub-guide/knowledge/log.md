@@ -3,6 +3,15 @@
 Historique des changements du corpus, groupé par date (convention OKF § 9), le
 plus récent en premier. Le gestionnaire y ajoute une ligne à chaque intégration.
 
+## 2026-09-17
+
+* **Chercher et lire** : mise à jour de suivi, pas de proposition — le corpus
+  était en retard sur des mécanismes déjà livrés au code fin août / début
+  septembre. Ajout des liens interbase dans `path` de `kb_read`
+  (`<base>:/<chemin>`), de `kb_search` multi-bases (`base` en liste ou `"*"`),
+  et de la nature de la troncature de `kb_search` (par volume, pas par
+  nombre — relever `max_results` ne fait rien réapparaître).
+
 ## 2026-08-30
 
 * **Initialisation** : création de la base à partir de `okf-bundle-template`.
