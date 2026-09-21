@@ -35,6 +35,21 @@ peux pas deviner.
 un document existant — ce qui change le type de ta proposition — et pouvoir citer
 le document concerné, ce qui fait gagner du temps à la revue.
 
+## Choisir la base avant de déposer
+
+Une proposition ne se dépose que dans **une** base, et le gestionnaire de cette
+base ne la déplace pas : hors périmètre, elle est rejetée avec le nom de la base
+qui l'accueillerait, et c'est à toi — ou à l'humain — de la redéposer. Chaque
+aller-retour coûte une revue. Lis la section « Périmètre » que `kb_governance`
+retourne pour chaque base candidate **avant** le dépôt, pas après le rejet :
+quand plusieurs bases couvrent un même sujet, c'est elle qui dit laquelle prend
+quoi, et souvent l'une renvoie explicitement à l'autre.
+
+Un constat relevé sur plusieurs objets ou plusieurs documents appartient souvent
+à **deux** bases à la fois : la règle générale à l'une, le détail de chaque cas à
+l'autre. Dépose alors deux propositions, une par base, plutôt qu'une seule que le
+gestionnaire devra découper.
+
 ## Le contresens le plus fréquent
 
 **Le `schema.yaml` d'une base décrit le frontmatter de son corpus, pas celui des

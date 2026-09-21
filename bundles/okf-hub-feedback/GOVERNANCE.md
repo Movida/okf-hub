@@ -30,6 +30,14 @@ skill `kb-review`.
 - le **contenu** des autres bases. Une erreur factuelle dans `phoenix` se
   propose dans `phoenix`. Ici, on parle des outils, pas de ce qu'ils
   retournent ;
+- l'**outillage propre d'une base** — son générateur, ses scripts `_work/`, le
+  rendu ou la datation de ses fiches générées. Un défaut de `build_catalogue.py`
+  n'est ni un outil du hub, ni un contenu déposable par `kb_propose` dans cette
+  base (elle le rejetterait aussi : ses fiches générées ne s'éditent pas). Il se
+  signale dans le dépôt de la base, en ligne de commande, et le motif de rejet
+  le dit — jamais « à resoumettre dans `<base>` ». Si le même retour porte en
+  plus sur un outil du hub (« à défaut, que `kb_read` serve les XML »), cette
+  part-là est d'ici et se tranche selon la règle 4 ;
 - les questions d'installation d'un poste particulier : c'est du support, pas de
   la connaissance capitalisable — sauf si le problème est reproductible et tient
   à l'outillage lui-même, auquel cas il rentre ;
