@@ -14,7 +14,7 @@ from .. import gitops, hublog
 from ..errors import INVALID_INPUT, IO_ERROR, ToolError
 from ..locking import base_lock, ensure_git_exclude
 from ..registry import ACCEPTED_SUBDIR, PENDING_SUBDIR, REJECTED_SUBDIR, Base, Registry
-from .common import require_str
+from .common import received_keys, require_str
 
 TYPES = ("observation", "correction", "addition", "question")
 CONFIDENCES = ("high", "medium", "low")
@@ -148,7 +148,10 @@ def _validate(arguments: dict) -> dict:
 
     content = arguments.get("content")
     if not isinstance(content, str) or not content.strip():
-        raise ToolError(INVALID_INPUT, "paramètre 'content' requis (chaîne non vide)")
+        raise ToolError(
+            INVALID_INPUT,
+            f"paramètre 'content' requis (chaîne non vide) ; {received_keys(arguments)}",
+        )
     size = len(content.encode("utf-8"))
     if size > CONTENT_MAX_BYTES:
         raise ToolError(

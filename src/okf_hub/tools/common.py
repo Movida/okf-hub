@@ -46,10 +46,42 @@ def frontmatter_digest(frontmatter: dict | None) -> str | None:
     return text
 
 
+def received_keys(arguments: dict) -> str:
+    """Décrit ce que l'outil a reçu — les clés seulement, jamais les valeurs.
+
+    Un paramètre absent a plusieurs causes très différentes côté client : le
+    modèle l'a oublié, il l'a mal nommé, il a imbriqué tous les champs sous une
+    clé unique, ou le client a transmis des arguments vides. Le message
+    d'erreur doit permettre de les distinguer — au lecteur du journal comme à
+    la session appelante, qui n'a que ce texte pour se corriger. Les valeurs
+    ne sont pas rendues : elles peuvent être longues et sont le contenu même de
+    la contribution.
+    """
+    keys = [str(k) for k in arguments]
+    if not keys:
+        return "aucun paramètre reçu"
+    return "paramètres reçus : " + ", ".join(keys)
+
+
+def _describe_bad_value(key: str, arguments: dict) -> str:
+    if key not in arguments:
+        return f"paramètre '{key}' absent"
+    value = arguments[key]
+    if value is None:
+        return f"paramètre '{key}' reçu null"
+    if isinstance(value, str):
+        return f"paramètre '{key}' reçu vide"
+    return f"paramètre '{key}' reçu de type {type(value).__name__}"
+
+
 def require_str(arguments: dict, key: str) -> str:
     value = arguments.get(key)
     if not isinstance(value, str) or not value.strip():
-        raise ToolError(INVALID_INPUT, f"paramètre '{key}' requis (chaîne non vide)")
+        raise ToolError(
+            INVALID_INPUT,
+            f"paramètre '{key}' requis (chaîne non vide) — "
+            f"{_describe_bad_value(key, arguments)} ; {received_keys(arguments)}",
+        )
     return value.strip()
 
 

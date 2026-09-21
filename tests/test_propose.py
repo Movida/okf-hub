@@ -285,3 +285,57 @@ def test_base_inconnue_sans_ecriture(make_bundle, registry):
     with pytest.raises(ToolError) as exc:
         propose(registry, base="fantome")
     assert exc.value.code == "UNKNOWN_BASE"
+
+
+# --- diagnostic d'un paramètre manquant --------------------------------------
+#
+# En usage réel, des sessions ont reçu à répétition « paramètre 'base' requis »
+# sur des appels qu'elles croyaient complets (journal des 15, 18 et 21/09/2026).
+# Le message ne permettait pas de distinguer un oubli du modèle, un champ mal
+# nommé, des arguments imbriqués sous une clé unique, ou des arguments arrivés
+# vides. Il doit nommer la cause et lister les clés reçues — jamais les valeurs.
+
+
+def test_base_absente_liste_les_cles_recues(base, registry):
+    with pytest.raises(ToolError) as exc:
+        propose_tool.run(registry, {**VALID})
+    assert exc.value.code == INVALID_INPUT
+    assert "paramètre 'base' absent" in exc.value.message
+    for cle in VALID:
+        assert cle in exc.value.message
+    # Les valeurs ne sont pas rendues.
+    assert VALID["content"] not in exc.value.message
+    assert VALID["concerns"] not in exc.value.message
+
+
+def test_arguments_vides_le_disent(registry):
+    with pytest.raises(ToolError) as exc:
+        propose_tool.run(registry, {})
+    assert "aucun paramètre reçu" in exc.value.message
+
+
+@pytest.mark.parametrize(
+    "valeur, fragment",
+    [(None, "reçu null"), ("   ", "reçu vide"), (["ma-base"], "reçu de type list")],
+)
+def test_base_mal_typee_nomme_le_type(base, registry, valeur, fragment):
+    with pytest.raises(ToolError) as exc:
+        propose(registry, base=valeur)
+    assert exc.value.code == INVALID_INPUT
+    assert fragment in exc.value.message
+
+
+def test_arguments_imbriques_sous_une_cle_unique(base, registry):
+    with pytest.raises(ToolError) as exc:
+        propose_tool.run(registry, {"proposal": {"base": "ma-base", **VALID}})
+    assert "paramètre 'base' absent" in exc.value.message
+    assert "paramètres reçus : proposal" in exc.value.message
+
+
+def test_content_absent_liste_les_cles_recues(base, registry):
+    args = {"base": "ma-base", **VALID}
+    del args["content"]
+    with pytest.raises(ToolError) as exc:
+        propose_tool.run(registry, args)
+    assert "paramètre 'content' requis" in exc.value.message
+    assert "paramètres reçus : base, type, concerns, sources" in exc.value.message
