@@ -590,6 +590,48 @@ scanne toujours qu'une fois par fenêtre
 Tests : `test_un_kb_list_ne_consomme_pas_le_rescan_d_unknown_base`,
 `test_deux_unknown_base_rapproches_ne_scannent_qu_une_fois`.
 
+
+---
+
+## 5 ter. Post-mortem — un `kb_propose` « cassé » invisible au journal (21/09/2026)
+
+Des sessions Claude Cowork ont signalé à plusieurs reprises un `kb_propose` qui
+échouait, sur ce qu'elles décrivaient comme une erreur de parsing JSON, tandis
+qu'un appel sans paramètre renvoyait normalement une erreur de validation. Le
+journal du hub ne montrait rien pour les appels échoués : ni ligne de succès, ni
+`INVALID_INPUT`. Une première hypothèse — un paramètre `base` manquant ou mal
+transmis — était fausse : ces appels-là *atteignent* l'outil et sont journalisés.
+
+**Cause réelle.** Le transport stdio du SDK MCP lit du JSON-RPC **délimité par
+sauts de ligne** : un message = une ligne physique. Quand le client sérialise
+mal le champ `content` — guillemet, antislash (chemins Windows, échappements CSS
+comme `\2192`) ou saut de ligne **non échappés** — la charge utile cesse d'être
+du JSON valide sur une seule ligne. Le SDK la rejette (`ValidationError`) *avant*
+tout routage vers un outil `kb_*`, renvoie l'erreur au client, puis **laisse
+tomber l'objet en silence** côté serveur. Reproduit sur l'étape de validation
+exacte du transport (`types.jsonrpc_message_adapter.validate_json` par ligne) :
+un `content` bien échappé passe ; un guillemet, un antislash, un saut de ligne ou
+une tabulation bruts échouent ; un appel à zéro paramètre, JSON valide, passe et
+atteint l'outil — d'où l'asymétrie observée. Le serveur accepte par ailleurs
+sans perte accents, tirets, emoji, caractères hors BMP, URL longues et contenus
+de 15 Ko dès lors que le JSON est bien formé. **La faute est côté client** (son
+encodage des arguments), pas dans le hub.
+
+**Ce qui a été fait, et ce qui ne peut pas l'être.** On ne peut pas récupérer un
+message que le transport ne sait pas lire : l'identifiant de requête lui-même
+peut être illisible, il n'y a rien à quoi répondre proprement, et le hub n'a pas
+la main sur la sérialisation du client. La seule correction possible côté hub est
+donc d'**observabilité** : le relais `_tee_read_stream` (`__main__.py`) journalise
+tout objet `Exception` transitant sur le flux de lecture — sans son corps, qui
+peut être volumineux ou corrompu — puis le réémet inchangé, laissant au SDK son
+comportement protocolaire. Ainsi, la prochaine occurrence apparaît dans
+`hub.log` au lieu de n'y laisser aucune trace. Le correctif de fond appartient au
+client MCP (échapper correctement `content`) ; ce dépôt ne peut pas l'appliquer.
+
+Tests : `test_transport_logging.py`
+(`test_le_relais_journalise_les_exceptions_et_transmet_tout`,
+`test_aucun_journal_sans_exception`).
+
 ---
 
 ## 6. Questions ouvertes du § 11 — comment elles ont été tranchées

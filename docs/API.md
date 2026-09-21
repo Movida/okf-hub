@@ -35,12 +35,27 @@ ERROR: <CODE>: <message>
 |---|---|---|
 | `UNKNOWN_BASE` | Base inconnue. Le message **liste les bases valides**. | Utiliser un nom de la liste. Un re-scan silencieux a déjà été tenté. |
 | `NOT_FOUND` | Document, section ou proposition introuvable. Pour une section, le message liste les headings disponibles. | Corriger le chemin ou la section. |
-| `INVALID_INPUT` | Paramètre hors bornes, énumération non respectée, regex invalide, retour à la ligne interdit. | Corriger l'entrée. Ne pas réessayer à l'identique. |
+| `INVALID_INPUT` | Paramètre manquant ou mal typé, hors bornes, énumération non respectée, regex invalide, retour à la ligne interdit. Pour un paramètre manquant, le message **nomme la cause** (absent, `null`, vide, mauvais type) et **liste les clés reçues** — jamais les valeurs. | Corriger l'entrée. Ne pas réessayer à l'identique. Si les clés reçues ne sont pas celles envoyées, le défaut est côté client : le signaler à l'opérateur avec le message complet. |
 | `BASE_BUSY` | Verrou d'écriture non acquis en 15 s. | **Réessayer plus tard.** Ce n'est pas une défaillance. |
 | `IO_ERROR` | Défaillance réelle : ripgrep absent, git en échec, disque. | Signaler à l'opérateur. Un retry n'aidera pas. |
 
-Un paramètre manquant ou mal typé produit une erreur **JSON-RPC standard**, pas
-un `isError` — c'est le SDK MCP qui la génère, avant d'atteindre l'outil.
+Le SDK MCP ne valide **pas** les arguments contre `inputSchema` : un paramètre
+manquant ou mal typé atteint l'outil, qui le rend en `INVALID_INPUT` (`isError`),
+avec la liste des clés reçues. Exemple, pour un appel arrivé sans aucun argument :
+
+```
+ERROR: INVALID_INPUT: paramètre 'base' requis (chaîne non vide) — paramètre 'base' absent ; aucun paramètre reçu
+```
+
+En revanche, un message **mal encodé en JSON** (par exemple un champ `content`
+dont un guillemet, un antislash ou un saut de ligne n'est pas échappé par le
+client) est rejeté par le **transport** avant d'atteindre le moindre outil : le
+client reçoit une erreur JSON-RPC standard, pas un `isError`. Ce cas n'apparaît
+donc dans aucun code `kb_*` ci-dessus ; côté serveur, le hub le journalise
+désormais (`transport : message client rejeté avant tout outil…`). Un `kb_propose`
+qui « échoue » sans laisser de trace ni de verdict relève de ce cas, pas d'une
+validation d'outil : le contenu à corriger est l'échappement JSON côté client,
+jamais la contribution elle-même (`ARCHITECTURE.md` § 5 ter).
 
 ### Plafond de sortie
 

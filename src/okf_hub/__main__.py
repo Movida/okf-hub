@@ -70,9 +70,45 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
+async def _tee_read_stream(source, sink) -> None:
+    """Transmet chaque message du transport inchangé, mais journalise les
+    `Exception` qui y transitent.
+
+    Le transport stdio du SDK lit du JSON-RPC délimité par sauts de ligne : un
+    message que le client n'a pas encodé correctement (par exemple un `content`
+    dont un guillemet, un antislash ou un saut de ligne n'est pas échappé, ce
+    qui coupe la ligne en fragments illisibles) est rejeté *avant* d'atteindre
+    le moindre outil `kb_*`, sous forme d'objet `Exception` posé sur le flux de
+    lecture. Sans ce point d'observation, le SDK renvoie l'erreur au client et
+    laisse tomber l'objet en silence : côté hub, l'appel n'apparaît nulle part
+    dans le journal — ni succès, ni `INVALID_INPUT` — ce qui rend un `kb_propose`
+    « cassé » indiscernable d'un `kb_propose` jamais émis (post-mortem
+    `ARCHITECTURE.md` § 5 ter). On journalise donc l'événement, sans le corps du
+    message (qui peut être volumineux ou justement corrompu), puis on le
+    réémet tel quel : le SDK garde exactement le comportement protocolaire qu'il
+    aurait eu sans ce relais.
+    """
+    async with sink:
+        async for item in source:
+            if isinstance(item, Exception):
+                hublog.info(
+                    "transport : message client rejeté avant tout outil — "
+                    "JSON-RPC illisible, souvent des arguments mal échappés "
+                    "(guillemet, antislash ou saut de ligne brut dans un champ "
+                    f"comme 'content') — {type(item).__name__}"
+                )
+            await sink.send(item)
+
+
 async def _serve(server) -> None:
     async with stdio_server() as (read_stream, write_stream):
-        await server.run(read_stream, write_stream, server.create_initialization_options())
+        # Relais d'observation sur le flux de lecture : cf. _tee_read_stream.
+        # Tampon nul, comme les flux internes du SDK — aucune mise en file.
+        send, recv = anyio.create_memory_object_stream(0)
+        async with anyio.create_task_group() as tg:
+            tg.start_soon(_tee_read_stream, read_stream, send)
+            await server.run(recv, write_stream, server.create_initialization_options())
+            tg.cancel_scope.cancel()
 
 
 def main(argv: list[str] | None = None) -> int:

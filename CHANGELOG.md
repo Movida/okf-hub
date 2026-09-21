@@ -86,6 +86,35 @@ Le projet suit la version de la spécification qu'il implémente : `bundle-spec 
 
 ### Corrigé
 
+- **Un message client illisible est désormais journalisé au lieu de disparaître.**
+  Des sessions Claude Cowork ont signalé un `kb_propose` « cassé » à plusieurs
+  reprises (21/09/2026) : la contribution échouait sur une erreur de parsing
+  JSON, alors qu'un appel sans paramètre renvoyait bien l'erreur de validation
+  attendue. Diagnostic (reproduit sur le flux exact du transport, `parse.py`) :
+  le transport stdio du SDK lit du JSON-RPC délimité par sauts de ligne ; quand
+  le client n'échappe pas correctement le champ `content` — un guillemet, un
+  antislash (chemins Windows, échappements CSS type `\2192`) ou un saut de
+  ligne brut — la ligne est coupée en fragments illisibles, **rejetés avant tout
+  outil `kb_*`**. Le hub ne voyait alors *rien* dans son journal : ni succès, ni
+  `INVALID_INPUT`. Un appel sans paramètre, lui, est un JSON valide et atteint
+  l'outil — d'où l'asymétrie observée. Le serveur accepte sans perte accents,
+  tirets, emoji, caractères hors BMP, URL longues et contenus de 15 Ko dès lors
+  que le JSON est bien formé : **la cause est côté client** (encodage des
+  arguments), pas dans le hub. On ne peut pas récupérer un message que le
+  transport ne sait pas lire ; on le **journalise** désormais (relais
+  `_tee_read_stream` dans `__main__.py`), sans son corps, pour que la prochaine
+  occurrence soit visible côté opérateur. Voir `ARCHITECTURE.md` § 5 ter.
+
+- **Un paramètre manquant dit désormais ce qui a été reçu.** Amélioration de
+  diagnostic indépendante, née de la même enquête : quand un appel atteint bien
+  l'outil mais sans `base` (ou `content`), le message `paramètre 'base' requis`
+  ne distinguait pas un oubli, un `null`, une valeur vide, un mauvais type ou
+  des champs imbriqués sous une clé unique. Il nomme maintenant la cause et
+  liste les clés reçues, jamais les valeurs ; il est journalisé tel quel.
+  `docs/API.md` corrigé au passage : le SDK MCP ne valide pas les arguments
+  contre le schéma déclaré — un paramètre manquant ou mal typé atteint l'outil,
+  contrairement à ce qui y était écrit.
+
 - **La fusion d'un champ de frontmatter ne reformate plus les champs qu'on ne
   lui a pas demandé de toucher.** `okf-review resolve` relisait tout le
   frontmatter avec `yaml.safe_load` et réémettait l'ensemble avec
