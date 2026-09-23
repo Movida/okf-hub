@@ -351,6 +351,90 @@ def test_cli_dry_run_ne_modifie_rien(base, registry, tmp_path, capsys):
     assert git(base.root, "rev-parse", "HEAD").strip() == avant
 
 
+def _plan(tmp_path, nom, pid, edits, resolution="accepted"):
+    res = {"id": pid, "resolution": resolution}
+    if resolution == "accepted":
+        res["integrated_into"] = ["sso.md"]
+    else:
+        res["reason"] = "doublon"
+    chemin = tmp_path / nom
+    chemin.write_text(
+        json.dumps({"summary": nom, "reviewed_by": "human:morva",
+                    "resolutions": [res], "edits": edits}),
+        encoding="utf-8",
+    )
+    return chemin
+
+
+def _dry_run(registry, *plans):
+    argv = ["--hub-root", str(registry.config.hub_root), "resolve", "ma-base", "--dry-run"]
+    for p in plans:
+        argv += ["--plan", str(p)]
+    return review.main(argv)
+
+
+def test_dry_run_verifie_les_propositions_en_attente(base, registry, tmp_path, capsys):
+    """Le dry-run ne se contente plus de la forme : un id absent de pending/ échoue."""
+    plan = _plan(tmp_path, "p.json", "prop-2026-01-01-dead", [])
+    assert _dry_run(registry, plan) == 4
+    assert "absentes de pending/" in capsys.readouterr().err
+
+
+def test_dry_run_verifie_les_sections(base, registry, tmp_path, capsys):
+    pid = depose(registry)
+    plan = _plan(tmp_path, "p.json", pid,
+                 [{"path": "sso.md", "section": "Inexistante", "content": "## Inexistante\n\nx"}])
+    avant = (base.corpus_dir / "sso.md").read_text(encoding="utf-8")
+    assert _dry_run(registry, plan) == 4
+    assert "introuvable" in capsys.readouterr().err
+    assert (base.corpus_dir / "sso.md").read_text(encoding="utf-8") == avant
+
+
+def test_dry_run_enchaine_une_cascade_de_plans(base, registry, tmp_path, capsys):
+    """Le second plan édite une section que seul le premier crée : ensemble, ça passe."""
+    p1 = depose(registry)
+    p2 = depose(registry, concerns="autre sujet")
+    plan1 = _plan(tmp_path, "1.json", p1, [{"path": "sso.md", "section": "Déconnexion",
+                                            "content": "## Déconnexion\n\nx\n\n## Verrouillage\n\ny"}])
+    plan2 = _plan(tmp_path, "2.json", p2, [{"path": "sso.md", "section": "Verrouillage",
+                                            "content": "## Verrouillage\n\nz"}])
+    assert _dry_run(registry, plan2) == 4
+    capsys.readouterr()
+    avant = git(base.root, "rev-parse", "HEAD").strip()
+    assert _dry_run(registry, plan1, plan2) == 0
+    assert git(base.root, "rev-parse", "HEAD").strip() == avant
+
+
+def test_dry_run_une_meme_proposition_ne_se_resout_pas_deux_fois(base, registry, tmp_path, capsys):
+    pid = depose(registry)
+    plan1 = _plan(tmp_path, "1.json", pid, [])
+    plan2 = _plan(tmp_path, "2.json", pid, [], resolution="rejected")
+    assert _dry_run(registry, plan1, plan2) == 4
+    assert "plan 2" in capsys.readouterr().err
+
+
+def test_dry_run_signale_une_section_en_double(base, registry, tmp_path, capsys):
+    pid = depose(registry)
+    (base.corpus_dir / "sso.md").write_text(
+        BASE_DOC + "\n# Miroir\n\n## Reconnexion\n\ncopie\n", encoding="utf-8"
+    )
+    plan = _plan(tmp_path, "p.json", pid,
+                 [{"path": "sso.md", "section": "Reconnexion", "content": "## Reconnexion\n\nx"}])
+    assert _dry_run(registry, plan) == 0
+    assert "seule la première" in capsys.readouterr().out
+
+
+def test_plusieurs_plans_refuses_hors_dry_run(base, registry, tmp_path, capsys):
+    p1, p2 = depose(registry), depose(registry, concerns="autre sujet")
+    argv = ["--hub-root", str(registry.config.hub_root), "resolve", "ma-base",
+            "--plan", str(_plan(tmp_path, "1.json", p1, [])),
+            "--plan", str(_plan(tmp_path, "2.json", p2, []))]
+    avant = git(base.root, "rev-parse", "HEAD").strip()
+    assert review.main(argv) == 4
+    assert "un plan = un commit" in capsys.readouterr().err
+    assert git(base.root, "rev-parse", "HEAD").strip() == avant
+
+
 def test_cli_inventory_et_context(base, registry, capsys):
     depose(registry)
     review.main(["--hub-root", str(registry.config.hub_root), "inventory", "ma-base"])
