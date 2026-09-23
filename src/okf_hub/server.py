@@ -146,6 +146,12 @@ class HubServer:
         #: `filesystem_watcher` (re-scan automatique par instance, sans état
         #: partagé).
         self._last_silent_rescan: dict[str, float] = {}
+        #: Changement de la liste des bases vu par l'observateur et pas encore
+        #: notifié. Son re-scan tourne hors de toute requête, sans session à
+        #: qui émettre `tools/list_changed` ; le re-scan suivant de `kb_list`
+        #: ne voyait plus de différence et la notification se perdait. Le
+        #: premier appel d'outil qui suit la porte à la place.
+        self._list_changed_pending = False
         self.registry.scan()
 
         # Observateur filesystem sur bases-dir : re-scan automatique par instance
@@ -177,7 +183,16 @@ class HubServer:
             self._last_silent_rescan[trigger] = now
         hublog.info(f"re-scan silencieux déclenché par {trigger}")
         report = self.registry.scan()
+        if report.changed and trigger == "filesystem_watcher":
+            with self._lock:
+                self._list_changed_pending = True
         return True, report.changed
+
+    def _take_list_changed_pending(self) -> bool:
+        """Consomme le changement laissé par l'observateur (voir `__init__`)."""
+        with self._lock:
+            pending, self._list_changed_pending = self._list_changed_pending, False
+        return pending
 
     # --- handlers MCP -------------------------------------------------------
 
@@ -204,7 +219,7 @@ class HubServer:
             return _error(ToolError("NOT_FOUND", f"outil inconnu : {params.name}"))
         arguments = dict(params.arguments or {})
 
-        notify_changed = False
+        notify_changed = self._take_list_changed_pending()
 
         # § B2 : un kb_list répond depuis l'état réel du disque, pas depuis un
         # registre figé au démarrage de l'instance. Même mécanisme et même
@@ -213,7 +228,7 @@ class HubServer:
             _, changed = await anyio.to_thread.run_sync(
                 lambda: self._silent_rescan(spec.name)
             )
-            notify_changed = changed
+            notify_changed = notify_changed or changed
 
         try:
             text = await anyio.to_thread.run_sync(
