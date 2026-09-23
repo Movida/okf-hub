@@ -114,3 +114,52 @@ def test_watcher_par_instance_pas_d_etat_partage(hub, make_bundle):
     finally:
         srv1.stop()
         srv2.stop()
+
+
+class _FakeSession:
+    def __init__(self) -> None:
+        self.list_changed = 0
+
+    async def send_tool_list_changed(self) -> None:
+        self.list_changed += 1
+
+
+class _FakeContext:
+    def __init__(self) -> None:
+        self.session = _FakeSession()
+
+
+def test_le_changement_vu_par_le_watcher_est_notifie_au_prochain_appel(
+    serveur, make_bundle
+):
+    """Le re-scan du watcher n'a pas de session : la notification ne doit pas se perdre.
+
+    Sans report, le re-scan suivant de kb_list ne voyait plus de différence
+    (le watcher l'avait déjà absorbée) et tools/list_changed n'était jamais émis.
+    """
+    import anyio
+    import mcp_types as types
+
+    ctx = _FakeContext()
+
+    def kb_list():
+        return anyio.run(
+            serveur.on_call_tool,
+            ctx,
+            types.CallToolRequestParams(name="kb_list", arguments={}),
+        )
+
+    kb_list()
+    assert ctx.session.list_changed == 0
+
+    make_bundle("nouvelle", name="nouvelle")
+    time.sleep(0.5)
+    assert "nouvelle" in serveur.registry.bases
+
+    serveur._last_silent_rescan.pop("kb_list", None)
+    kb_list()
+    assert ctx.session.list_changed == 1
+
+    serveur._last_silent_rescan.pop("kb_list", None)
+    kb_list()
+    assert ctx.session.list_changed == 1
