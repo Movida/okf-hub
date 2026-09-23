@@ -141,7 +141,7 @@ def test_boucle_complete_sans_acces_git_du_contributeur(hub, base_deployee, tmp_
                 "edits": [
                     {
                         "path": "limitations-connues.md",
-                        "append": "Constat de session repris ici.",
+                        "append": "## Constat de session\n\nConstat de session repris ici.",
                     }
                 ],
             }
@@ -166,10 +166,14 @@ def test_boucle_complete_sans_acces_git_du_contributeur(hub, base_deployee, tmp_
     assert "integrated-into : limitations-connues.md" in apres
 
     # Et il peut aller lire ce qui a été intégré, en suivant integrated-into.
+    # Par section : la base réelle dépasse le seuil de kb_read (8 Ko), qui rend
+    # alors la table des headings — le chemin documenté pour un gros document,
+    # valable aussi pour un petit.
     async def relire(session):
         return _texte(
             await session.call_tool(
-                "kb_read", {"base": nom, "path": "limitations-connues.md"}
+                "kb_read",
+                {"base": nom, "path": "limitations-connues.md", "section": "Constat de session"},
             )
         )
 

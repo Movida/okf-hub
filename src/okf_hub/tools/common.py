@@ -28,6 +28,31 @@ def _is_dateish(value) -> bool:
     return False
 
 
+def _dated_entries(value) -> list | None:
+    """Réduit une liste de mappings à leur `id` et à leurs dates, si elle en porte.
+
+    C'est la forme de `sources` en OKF 0.2 : la date d'une fiche qui reflète une
+    source vit dans `sources[].last_modified` (§ 5.1), plus au premier niveau
+    comme l'ancien `timestamp`. Sans cette descente, une base migrée en 0.2
+    perdait toute date dans les résultats de kb_search. Les autres clés de
+    l'entrée (`resource`, `title`…) ne remontent pas : le résumé reste limité à
+    title, dates, tags.
+    """
+    if not isinstance(value, list):
+        return None
+    reduites = []
+    for entree in value:
+        if not isinstance(entree, dict):
+            continue
+        dates = {
+            k: v for k, v in entree.items()
+            if isinstance(k, str) and (_DATE_KEY.search(k) or _is_dateish(v))
+        }
+        if dates:
+            reduites.append({**({"id": entree["id"]} if "id" in entree else {}), **dates})
+    return reduites or None
+
+
 def frontmatter_digest(frontmatter: dict | None) -> str | None:
     """Rend un sous-ensemble de frontmatter : title, dates, tags (§ 5.2)."""
     if not isinstance(frontmatter, dict):
@@ -38,6 +63,8 @@ def frontmatter_digest(frontmatter: dict | None) -> str | None:
             continue
         if key in _KEEP_KEYS or _DATE_KEY.search(key) or _is_dateish(value):
             kept[key] = value
+        elif (reduites := _dated_entries(value)) is not None:
+            kept[key] = reduites
     if not kept:
         return None
     text = yaml.safe_dump(
