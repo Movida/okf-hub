@@ -372,6 +372,62 @@ def build_subject(plan: Plan) -> str:
     return f"{verbe}: {n} proposals — {plan.summary}"
 
 
+def verify_plans(
+    base: Base, plans: list[Plan], planifie: dict[Path, str] | None = None
+) -> tuple[dict[Path, str], list[str]]:
+    """Vérifie une suite de plans contre l'état de la base, **sans rien écrire**.
+
+    Mêmes contrôles que l'exécution, dans le même ordre : propositions présentes
+    dans `pending/`, confinement des chemins, sections trouvées, fusion de
+    frontmatter acceptée par sa garde. Les plans s'enchaînent comme s'ils avaient
+    été exécutés l'un après l'autre — une proposition résolue par le premier
+    n'est plus en attente pour le second, et un fichier édité par le premier est
+    vu édité par le second. C'est ce qui permet de vérifier des plans rédigés en
+    cascade sur les mêmes sections. Retourne les contenus calculés et des
+    avertissements (ce qui passerait mais mérite un regard).
+    """
+    en_attente = {p.id for p in load_pending(base)}
+    planifie = {} if planifie is None else planifie
+    avertissements: list[str] = []
+    for n, plan in enumerate(plans, 1):
+        prefixe = f"plan {n} : " if len(plans) > 1 else ""
+        manquantes = [r.id for r in plan.resolutions if r.id not in en_attente]
+        if manquantes:
+            raise ToolError(
+                NOT_FOUND,
+                f"{prefixe}propositions absentes de pending/ : {', '.join(manquantes)}",
+            )
+        en_attente -= {r.id for r in plan.resolutions}
+        edites: set[str] = set()
+        for edit in plan.edits:
+            existant = planifie.get((base.corpus_dir / edit.path).resolve())
+            if edit.content is not None and edit.section:
+                source = existant
+                cible = base.corpus_dir / edit.path
+                if source is None and cible.is_file():
+                    source = cible.read_text(encoding="utf-8")
+                trouve = extract_section(source or "", edit.section)
+                if trouve is not None and trouve.duplicates:
+                    avertissements.append(
+                        f"{prefixe}{edit.path} : {trouve.duplicates + 1} sections "
+                        f"« {edit.section} » — seule la première (ligne "
+                        f"{trouve.heading.line + 1}) sera remplacée"
+                    )
+            cible, contenu = _compose_edit(base, edit, planifie)
+            if not cible.is_file() and cible not in planifie:
+                avertissements.append(f"{prefixe}{edit.path} : document créé")
+            planifie[cible] = contenu
+            edites.add(edit.path)
+        for res in plan.resolutions:
+            for chemin in res.integrated_into:
+                if chemin not in edites:
+                    avertissements.append(
+                        f"{prefixe}{res.id} : integrated_into cite {chemin}, "
+                        "qu'aucune édition du plan ne touche"
+                    )
+    return planifie, avertissements
+
+
 def apply_plan(base: Base, plan: Plan) -> str:
     """Exécute une résolution complète sous UNE seule acquisition du verrou.
 
@@ -385,20 +441,12 @@ def apply_plan(base: Base, plan: Plan) -> str:
         ensure_git_exclude(base.root)
 
         index = {p.id: p for p in load_pending(base)}
-        manquantes = [r.id for r in plan.resolutions if r.id not in index]
-        if manquantes:
-            raise ToolError(
-                NOT_FOUND,
-                f"propositions absentes de pending/ : {', '.join(manquantes)}",
-            )
 
         # Calcul d'abord, écriture ensuite : un refus de fusion de frontmatter
         # (§ 1.7, `frontmatter.merge_frontmatter`) laisse le dépôt intact,
-        # quelles que soient les éditions déjà calculées avant lui.
-        planifie: dict[Path, str] = {}
-        for edit in plan.edits:
-            cible, contenu = _compose_edit(base, edit, planifie)
-            planifie[cible] = contenu
+        # quelles que soient les éditions déjà calculées avant lui. Le même
+        # calcul sert au --dry-run, qui ne peut donc pas diverger de l'exécution.
+        planifie, _ = verify_plans(base, [plan])
 
         touches: list[Path] = []
         for cible, contenu in planifie.items():
@@ -536,7 +584,10 @@ def main(argv: list[str] | None = None) -> int:
 
     p_resolve = sub.add_parser("resolve")
     p_resolve.add_argument("base")
-    p_resolve.add_argument("--plan", type=Path, required=True)
+    p_resolve.add_argument(
+        "--plan", type=Path, required=True, action="append",
+        help="répétable avec --dry-run seulement : vérifie une cascade de plans",
+    )
     p_resolve.add_argument("--dry-run", action="store_true")
 
     args = parser.parse_args(argv)
@@ -552,23 +603,35 @@ def main(argv: list[str] | None = None) -> int:
         elif args.command == "reconcile":
             print(cmd_reconcile(base, args.apply))
         elif args.command == "resolve":
-            raw = json.loads(args.plan.read_text(encoding="utf-8"))
-            plan = parse_plan(raw)
+            plans = [
+                parse_plan(json.loads(f.read_text(encoding="utf-8"))) for f in args.plan
+            ]
             if args.dry_run:
-                print("Plan valide. Sujet du commit :")
-                print(f"  {build_subject(plan)}")
-                for res in plan.resolutions:
-                    detail = (
-                        ", ".join(res.integrated_into) if res.resolution == "accepted"
-                        else res.reason
-                    )
-                    print(f"  - {res.id} → {res.resolution} : {detail}")
-                for edit in plan.edits:
-                    quoi = "contenu" if edit.content is not None else (
-                        "ajout" if edit.append is not None else "frontmatter"
-                    )
-                    print(f"  - édition {edit.path} ({quoi})")
+                _, avertissements = verify_plans(base, plans)
+                for fichier, plan in zip(args.plan, plans):
+                    print(f"Plan vérifié ({fichier.name}), sans écriture. Sujet du commit :")
+                    print(f"  {build_subject(plan)}")
+                    for res in plan.resolutions:
+                        detail = (
+                            ", ".join(res.integrated_into) if res.resolution == "accepted"
+                            else res.reason
+                        )
+                        print(f"  - {res.id} → {res.resolution} : {detail}")
+                    for edit in plan.edits:
+                        quoi = "contenu" if edit.content is not None else (
+                            "ajout" if edit.append is not None else "frontmatter"
+                        )
+                        print(f"  - édition {edit.path} ({quoi})")
+                for message in avertissements:
+                    print(f"AVERTISSEMENT : {message}")
                 return 0
+            if len(plans) > 1:
+                raise ToolError(
+                    INVALID_INPUT,
+                    "une résolution = un plan = un commit : plusieurs --plan "
+                    "ne s'acceptent qu'avec --dry-run",
+                )
+            plan = plans[0]
             sha = apply_plan(base, plan)
             print(f"Résolution commitée : {sha}")
     except ToolError as exc:

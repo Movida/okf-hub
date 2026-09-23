@@ -443,8 +443,14 @@ bin/okf-review reconcile <base> --apply
 bin/okf-review context   <base>            # golden rules + schéma + corpus
 bin/okf-review inventory <base> --full     # propositions en attente
 bin/okf-review resolve   <base> --plan plan.json --dry-run
+bin/okf-review resolve   <base> --plan 01.json --plan 02.json --dry-run
 bin/okf-review resolve   <base> --plan plan.json
 ```
+
+`--dry-run` fait tous les contrôles de l'exécution sans rien écrire :
+propositions présentes dans `pending/`, sections trouvées, fusion de frontmatter
+acceptée. Répété, `--plan` vérifie une **cascade** de plans comme s'ils étaient
+exécutés dans l'ordre ; l'exécution, elle, n'accepte qu'un plan à la fois.
 
 `resolve` et `reconcile --apply` prennent eux-mêmes le verrou, à la granularité
 imposée : **une résolution complète = une acquisition**. Ne pas les envelopper

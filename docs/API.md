@@ -548,7 +548,15 @@ okf-review reconcile <base> [--apply]        # étape 0, rattrapage des crashs
 okf-review context   <base>                  # golden rules + schéma + corpus
 okf-review inventory <base> [--full]         # propositions en attente
 okf-review resolve   <base> --plan p.json [--dry-run]
+okf-review resolve   <base> --plan 01.json --plan 02.json --dry-run   # cascade
 ```
+
+`--dry-run` passe par le même calcul que l'exécution (`review.verify_plans`),
+sans écrire : un id absent de `pending/`, une section introuvable ou une fusion
+de frontmatter refusée y échouent comme à l'exécution. Il avertit, sans échouer,
+d'une section présente plusieurs fois (seule la première est remplacée), d'un
+document créé et d'un `integrated_into` qu'aucune édition ne touche. Un motif de
+rejet (`reason`) est plafonné à 500 caractères.
 
 **Format du plan** (`resolve`) :
 
