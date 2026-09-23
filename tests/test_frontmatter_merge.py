@@ -127,6 +127,28 @@ def test_le_parseur_du_corpus_lit_les_tags_apres_une_mise_a_jour_ciblee():
     assert '"' not in ligne and "'" not in ligne, ligne
 
 
+@pytest.mark.parametrize(
+    "texte",
+    ["# Nouvelle analyse\n\nCorps.\n", "---\ntitle: Existante\n---\n\nCorps.\n"],
+    ids=["frontmatter-cree", "champ-ajoute"],
+)
+def test_un_tags_sans_forme_existante_est_lu_par_le_parseur_du_corpus(texte):
+    """Sans forme à reprendre, une liste de scalaires s'écrit en style flow.
+
+    En style bloc, le parseur mono-ligne des corpus lisait zéro tag dans une
+    fiche créée par une revue (`edits[].frontmatter` sur un document neuf).
+    Une liste de mappings (`verified`) garde le style bloc.
+    """
+    attendus = ["type:analyse", "env:dev"]
+    obtenu = merge_frontmatter(
+        texte, {"tags": attendus, "verified": [{"by": "x", "at": "2026-09-23"}]}
+    )
+    bloc = parse_document(obtenu).frontmatter_raw
+    assert lire_tags_comme_le_corpus(bloc) == attendus
+    assert "tags: [type:analyse, env:dev]" in lignes(bloc)
+    assert "verified:" in lignes(bloc)
+
+
 def test_un_champ_existant_est_remplace_sans_toucher_ses_voisins():
     obtenu = merge_frontmatter(FICHE, {"statut": "obsolete"})
     assert "statut: obsolete" in lignes(obtenu)
