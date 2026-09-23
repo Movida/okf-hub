@@ -10,7 +10,7 @@ generated:
   by: "claude-code/opus-5"
   at: 2026-08-30T00:00:00Z
 verified:
-  - by: claude-sonnet-5
+  - by: claude-code/sonnet-5
     at: 2026-09-17T00:00:00Z
     note: >-
       ajout des liens interbase dans kb_read, de kb_search multi-bases et de

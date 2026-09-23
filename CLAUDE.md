@@ -64,6 +64,17 @@ elle doit être annoncée dans les `instructions`. Si elle a un dépôt canoniqu
 elle s'ajoute aussi à `bundles/upstreams.yaml` : elle sera clonée et non semée,
 sans quoi chaque machine s'en fabriquerait une histoire orpheline.
 
+**Une base clonée se corrige chez elle, jamais dans `bundles/`.** Pour
+`okf-hub-guide`, `bundles/` fait autorité et la copie déployée s'y resynchronise.
+Pour une base de `upstreams.yaml` (`okf-hub-feedback`), c'est l'inverse : sa
+copie dans `bundles/` n'est qu'une graine, que personne ne lit. Un changement de
+code qui rend fausse une de ses affirmations se reporte par une proposition
+`correction` déposée dans la base installée, puis résolue (`skills/kb-review`).
+Vu le 2026-09-23 : `b5e1605` avait corrigé la graine, et pendant trois semaines
+la base servie aux sessions a continué d'affirmer que `kb_search` était
+mono-base. `test_bases_meta.py` ne l'aurait pas vu : il lit `bundles/`, et ne
+contrôle que des noms d'outils et de paramètres, pas le sens des phrases.
+
 **Ce qui est écrit sur les outils ailleurs que dans leur description doit être
 gardé par un test.** Deux bases meta (`okf-hub-guide`, `okf-hub-feedback`)
 décrivent le hub. `tests/test_bases_meta.py` lit les `SCHEMA` du code et échoue
@@ -90,7 +101,7 @@ de l'instance.
 ## Vérifier avant de conclure
 
 ```sh
-uv run pytest -q                 # 436 tests, dont la boucle de stress
+uv run pytest -q                 # 446 tests, dont la boucle de stress
 uv run pytest -q -m "not slow"   # sans le test deux processus × 25 itérations
 ```
 

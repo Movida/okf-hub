@@ -86,6 +86,36 @@ Le projet suit la version de la spécification qu'il implémente : `bundle-spec 
 
 ### Corrigé
 
+- **La date d'une fiche OKF 0.2 remonte dans `kb_search`.** Le résumé de
+  frontmatter ne retenait que les clés de premier niveau ; la date d'une fiche qui
+  reflète une source vit en 0.2 dans `sources[].last_modified` (§ 5.1). Une base
+  migrée depuis `timestamp` perdait donc toute date dans les résultats. Les listes
+  de mappings datés remontent désormais réduites à leur `id` et à leurs dates —
+  jamais leur `resource`. Signalé par la migration d'`el2d-referentiel` du
+  2026-09-23.
+
+- **`okf-review resolve --dry-run` vérifie vraiment le plan.** Il ne faisait que
+  le parser : un id absent de `pending/`, une section introuvable ou une fusion
+  de frontmatter refusée passaient, et chaque revue réécrivait son propre
+  simulateur. Il passe désormais par le même calcul que l'exécution
+  (`review.verify_plans`), sans écrire, avertit d'une section en double, d'un
+  document créé et d'un `integrated_into` sans édition, et accepte plusieurs
+  `--plan` pour vérifier une cascade dans l'ordre. L'exécution n'en accepte
+  toujours qu'un.
+
+- **Un `tags` créé par une revue est lisible par les corpus.** Une liste de
+  scalaires sans forme existante (frontmatter créé, champ ajouté) s'écrivait en
+  style bloc, que les parseurs mono-ligne des bases lisent comme zéro tag. Elle
+  s'écrit maintenant en style flow ; une liste de mappings reste en bloc.
+
+- **`tools/list_changed` perdu après l'import d'une base.** Le re-scan du
+  watcher filesystem tourne hors de toute requête, sans session à notifier ; il
+  absorbait le changement, et le re-scan suivant de `kb_list` ne voyait plus de
+  différence : aucune notification n'était émise. Le changement vu par le
+  watcher est désormais reporté sur le premier appel d'outil qui suit. Les tests
+  de `test_rescan_implicite.py` arrêtent le watcher et ne pouvaient pas le voir ;
+  gardé par `test_le_changement_vu_par_le_watcher_est_notifie_au_prochain_appel`.
+
 - **Un message client illisible est désormais journalisé au lieu de disparaître.**
   Des sessions Claude Cowork ont signalé un `kb_propose` « cassé » à plusieurs
   reprises (21/09/2026) : la contribution échouait sur une erreur de parsing

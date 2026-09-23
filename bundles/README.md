@@ -38,7 +38,7 @@ Les deux bases ne se comportent pas pareil, et c'est délibéré.
 | Base | Source de vérité | Installée par | Divergence attendue |
 |---|---|---|---|
 | `okf-hub-guide` | **ici**, toujours | semis depuis `bundles/` | **Non.** Un test compare le corpus déployé à cette source. Une résolution appliquée à la copie déployée doit être reportée ici. |
-| `okf-hub-feedback` | son **dépôt canonique** | `git clone` | **Oui.** Alimentée par les sessions, son corpus s'enrichit de propositions intégrées. La copie ici n'est qu'une graine historique. |
+| `okf-hub-feedback` | son **dépôt canonique** | `git clone` | **Oui.** Alimentée par les sessions, son corpus s'enrichit de propositions intégrées. La copie ici n'est qu'une graine historique : **ne la corrige pas**, elle n'est servie à personne. Une correction passe par une proposition dans la base installée, puis par sa revue. |
 
 L'asymétrie tient à leur nature. Le guide est **rédigé par les mainteneurs**, en
 verrou avec le code : c'est de la documentation, sa place est dans le dépôt.

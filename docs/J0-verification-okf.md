@@ -153,3 +153,36 @@ bundle dont le corpus ignore complètement OKF se charge, se recherche et se lit
 normalement, du moment que ses fichiers sont du markdown UTF-8. C'est le § 1.4
 — « une base sans le hub reste utilisable » — pris dans l'autre sens : le hub
 reste utilisable sans OKF.
+
+---
+
+## Migration des bases métier en 0.2 — 23/09/2026
+
+Sur instruction du propriétaire (« la spécification OKF a évolué (0.2) ; mets à
+jour l'ensemble »). La spec elle-même n'a pas changé depuis le 21/08 (dernier
+commit de `okf/SPEC.md`, `62432a0`) : ce qui restait en 0.1, c'étaient les trois
+bases métier — `phoenix-blueway`, `el2d-blueway`, `el2d-referentiel`.
+
+**La divergence 3 ci-dessus est levée, sans perte de sens.** Son objection
+visait une migration vers `generated.at`, qui date le contenu. Or les trois
+`schema.yaml` disent la même chose : `timestamp` date **la source** (page
+miroir, relevé d'instance, `date_revision` du XML), jamais l'édition locale. La
+0.2 a exactement ce champ : `sources[].last_modified`, « when the source itself
+last changed … distinct from `generated.at` » (§ 5.1). La migration porte donc
+chaque `timestamp` sur l'entrée `sources` de la source qu'il date — le
+protocole de ré-audit de `phoenix-blueway` continue de comparer la même date.
+
+Correspondance appliquée aux trois bases (spécification commune, un script
+`_work/scripts/migrate_okf02.py` versionné dans chacune) :
+
+- `timestamp` → entrée `sources` avec `last_modified` en datetime ISO avec
+  décalage, puis retrait de `timestamp` (§ 13.1) ;
+- liste `# Citations` → entrées `sources` et notes `[^id]` (§ 5.1, § 13.1) ;
+- `generated: {by: process:<générateur>}` sans `at` sur les fiches générées, pour
+  qu'une régénération ne re-date pas le corpus ;
+- `log.md` aux titres stricts `## AAAA-MM-JJ` (§ 9), `okf_version: "0.2"` à la
+  racine et `okf-spec: "0.2"` au manifeste ;
+- contrôles de conformité des bases passés à la § 11 de la 0.2.
+
+Les deux bases meta étaient déjà en 0.2 ; seuls quelques horodatages et un
+acteur hors convention y ont été corrigés le même jour.
