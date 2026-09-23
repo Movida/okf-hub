@@ -150,6 +150,28 @@ def test_frontmatter_limite_a_title_dates_tags(hub, make_bundle, registry):
     assert "interne.test/secret" not in out
 
 
+def test_la_date_d_une_source_okf_02_remonte_sans_sa_resource(hub, make_bundle, registry):
+    """OKF 0.2 : la date de la source vit dans sources[].last_modified (§ 5.1).
+
+    Une base migrée depuis `timestamp` ne doit pas perdre sa date dans le
+    résumé ; la resource de l'entrée, elle, ne remonte pas plus qu'avant.
+    """
+    build(
+        make_bundle, registry,
+        {
+            "a.md": (
+                "---\ntype: Guide\ntitle: Titre A\n"
+                "sources: [{id: page, resource: 'https://interne.test/secret', "
+                "last_modified: 2025-06-03T00:00:00Z}, {id: sans-date, resource: x}]\n"
+                "---\n\n# A\n\ncible\n"
+            )
+        },
+    )
+    out = search_tool.run(registry, {"base": "ma-base", "query": "cible"})
+    assert "last_modified" in out and "2025-06-03" in out and "page" in out
+    assert "interne.test/secret" not in out and "sans-date" not in out
+
+
 def test_exclusions_transverses(hub, make_bundle, registry):
     b = build(make_bundle, registry, {"a.md": "# A\n\nmot-temoin\n"})
     # Ces fichiers sont hors corpus par construction (§ 3.3) ; on vérifie que la
