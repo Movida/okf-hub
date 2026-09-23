@@ -156,11 +156,59 @@ indépendants, écris trois plans successifs, pas un seul qui les mélange : le
 regroupement en un commit ne vaut que pour des propositions portant sur le
 **même sujet**.
 
+**Le `--dry-run` fait foi : ne réécris pas de simulateur.** Il passe par le même
+calcul que l'exécution, sans écrire : id absent de `pending/`, section
+introuvable, fusion de frontmatter refusée y échouent comme à l'exécution. Lis
+ses `AVERTISSEMENT` : une section en double (seule la première est remplacée —
+dans certaines bases, `Pièges` désigne un miroir généré et non `# Terrain >
+## Pièges`), un document créé, un `integrated_into` qu'aucune édition ne touche.
+Ce qu'il ne fait pas : lancer les scripts de génération et de contrôle propres à
+la base (`AGENTS.md`), à exécuter après chaque résolution réelle.
+
+**Plans en cascade.** Plusieurs plans qui réécrivent les mêmes sections se
+vérifient ensemble, dans l'ordre d'exécution :
+
+```
+okf-review resolve <base> --plan 01.json --plan 02.json --plan 03.json --dry-run
+```
+
+Ils s'exécutent ensuite un par un, **dans le même ordre** ; en écarter un oblige
+à régénérer les suivants. Refais un `inventory` juste avant d'exécuter : des
+propositions arrivent en cours de journée, et l'une d'elles peut contredire un
+plan déjà rédigé (vu : une arrivée du jour réfutait le mécanisme d'un plan prêt).
+
+**`reviewed_by`** : reprends la forme déjà présente dans l'historique de la base
+(`git -C <racine> log --format=%B | grep '^Reviewed-By'`) plutôt que d'en
+inventer une ; des formes concurrentes pour un même humain rendent l'audit
+inexploitable.
+
+**Permissions, avant de lancer l'exécution.** En mode auto, le classifieur de
+Claude Code refuse `okf-review resolve` et les commits dans `bases/` sans règle
+d'autorisation explicite — et les sous-agents héritent des mêmes règles. Vérifie
+que ces règles existent **avant** de déléguer une exécution à des agents : sinon
+ils s'arrêtent au premier `resolve`, et l'instruction est perdue pour la
+session. Si elles manquent, dis à l'humain lesquelles ajouter plutôt que de
+contourner.
+
+**Redéposer ailleurs sans `kb_propose`.** Si le hub n'est pas connecté à ta
+session, une part « à porter vers `<base>` » se note dans la recommandation et
+c'est l'humain qui la redépose. N'importe pas `propose_tool` depuis un script
+pour l'imiter : c'est un contournement, refusé par le classifieur en mode auto.
+
 ### 7. Fraîcheur
 
 Si le `schema.yaml` de la base définit des champs de fraîcheur (`last-verified`,
 `verified`, `generated`…), mets-les à jour dans le bloc `frontmatter` de chaque
 édition. Ne les invente pas si le schéma n'en parle pas.
+
+En OKF 0.2, deux dates ne se confondent pas : `generated.at` date **le contenu**
+de la fiche, `sources[].last_modified` date **la source** qu'elle reflète. Une
+proposition qui apporte une version plus récente de la source met à jour le
+`last_modified` de l'entrée concernée, pas `generated.at`. Tout horodatage est un
+datetime ISO 8601 avec décalage (`2026-09-23T00:00:00Z`), jamais une date seule.
+Un champ que la fusion ne sait pas retirer (`timestamp` d'une fiche 0.1, par
+exemple) ne se retire pas par un plan : c'est une migration de la base, pas une
+résolution.
 
 ## Format du plan
 
@@ -197,11 +245,11 @@ Champs :
 |---|---|
 | `summary` | Résumé court, sur une ligne — devient le sujet du commit. |
 | `reviewed_by` | L'humain qui a confirmé. Convention OKF : `human:<id>`. |
-| `resolutions[].resolution` | `accepted` ou `rejected`. Un rejet **exige** un `reason`. |
+| `resolutions[].resolution` | `accepted` ou `rejected`. Un rejet **exige** un `reason`, de 500 caractères au plus. |
 | `resolutions[].integrated_into` | Chemins des documents modifiés, relatifs au corpus. |
 | `edits[].path` | Chemin relatif au corpus. Le document est créé s'il n'existe pas. |
 | `edits[].content` | Contenu complet du fichier, ou de la section si `section` est fourni. |
-| `edits[].section` | Titre du heading à remplacer, au lieu du fichier entier. **Préfère cette forme** : elle évite de réécrire un gros document en entier. |
+| `edits[].section` | Titre du heading à remplacer, au lieu du fichier entier. **Préfère cette forme** : elle évite de réécrire un gros document en entier. Remplace la **première** section de ce titre, jusqu'au prochain heading de niveau égal ou supérieur. Il n'y a pas d'insertion : pour ajouter une section au milieu d'une fiche, remplace la section qui la précède par elle-même suivie de la nouvelle. |
 | `edits[].append` | Texte à ajouter en fin de document. Exclusif de `content`. |
 | `edits[].frontmatter` | Champs à fusionner dans le frontmatter du document. Les champs que tu ne cites pas gardent leur écriture exacte. |
 
