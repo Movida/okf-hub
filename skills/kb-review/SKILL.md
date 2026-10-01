@@ -165,6 +165,15 @@ dans certaines bases, `Pièges` désigne un miroir généré et non `# Terrain >
 Ce qu'il ne fait pas : lancer les scripts de génération et de contrôle propres à
 la base (`AGENTS.md`), à exécuter après chaque résolution réelle.
 
+**Un lien vers une autre base se déclare dans `# Amont`.** Dans `el2d-blueway`
+et `el2d-referentiel`, le contrôle « références amont » (`check_amont.py`,
+lancé par `check_all.py`) refuse toute
+référence `phoenix-blueway:/…` d'une fiche qui n'apparaît pas aussi dans sa
+section `# Amont`, et le `--dry-run` ne le voit pas. Quand une édition cite une
+base voisine, ajoute la ligne d'`# Amont` dans le même plan (section `Amont`
+réécrite, ou créée avant la première section si la fiche n'en a pas). Vu les
+28/09 et 01/10 : quatre liens oubliés, rattrapés par des commits de suivi.
+
 **Plans en cascade.** Plusieurs plans qui réécrivent les mêmes sections se
 vérifient ensemble, dans l'ordre d'exécution :
 
@@ -176,6 +185,13 @@ Ils s'exécutent ensuite un par un, **dans le même ordre** ; en écarter un obl
 à régénérer les suivants. Refais un `inventory` juste avant d'exécuter : des
 propositions arrivent en cours de journée, et l'une d'elles peut contredire un
 plan déjà rédigé (vu : une arrivée du jour réfutait le mécanisme d'un plan prêt).
+
+Si l'instruction est répartie entre plusieurs agents, **partage le lot par
+document visé, pas par nombre de propositions** : deux agents qui rédigent
+chacun leurs plans sur le même fichier partent du même état et s'écrasent
+l'un l'autre (vu le 24/09 : deux lots réécrivaient tous deux les `# Pièges` de
+`solution/bpm-achat.md`, et il a fallu tout régénérer en cascade avant
+d'exécuter).
 
 **`reviewed_by`** : reprends la forme déjà présente dans l'historique de la base
 (`git -C <racine> log --format=%B | grep '^Reviewed-By'`) plutôt que d'en
@@ -191,9 +207,11 @@ session. Si elles manquent, dis à l'humain lesquelles ajouter plutôt que de
 contourner.
 
 **Redéposer ailleurs sans `kb_propose`.** Si le hub n'est pas connecté à ta
-session, une part « à porter vers `<base>` » se note dans la recommandation et
-c'est l'humain qui la redépose. N'importe pas `propose_tool` depuis un script
-pour l'imiter : c'est un contournement, refusé par le classifieur en mode auto.
+session, une part « à porter vers `<base>` » se note dans la recommandation.
+Si l'humain demande que tu la redéposes, passe par `skills/kb-redepot` : il
+appelle le vrai serveur en client MCP stdio. N'importe pas `propose_tool`
+depuis un script pour l'imiter : c'est un contournement, refusé par le
+classifieur en mode auto.
 
 ### 7. Fraîcheur
 
