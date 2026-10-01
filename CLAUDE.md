@@ -17,6 +17,8 @@ séparés clonés dans `bases/` (non versionnés ici).
 | [`docs/J0-verification-okf.md`](docs/J0-verification-okf.md) | Ce que dit la spec OKF externe, et les trois points où elle diverge de celle du hub. |
 | [`README.md`](README.md) | Installation, connexion d'un client Claude, exploitation. |
 | [`skills/kb-review/SKILL.md`](skills/kb-review/SKILL.md) | Le rôle gestionnaire : déroulé de revue imposé. |
+| [`skills/kb-review-lot/SKILL.md`](skills/kb-review-lot/SKILL.md) | Un gros lot sur plusieurs bases : répartition entre agents, décisions sur preuves, commits d'après résolution. |
+| [`skills/kb-redepot/SKILL.md`](skills/kb-redepot/SKILL.md) | Redéposer des propositions sans hub connecté, par le vrai serveur en client MCP. |
 
 ## Règles de travail sur ce dépôt
 
