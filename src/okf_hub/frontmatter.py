@@ -269,10 +269,14 @@ def _preparer(valeur, existant):
       à jour casserait les lecteurs du corpus exactement comme l'incident
       qu'elle corrige. Seul le style du nœud racine de la valeur remplacée
       est repris ; ce qu'il y a dessous est du contenu neuf ;
-    - une liste de scalaires **sans forme existante** (champ ajouté, ou
-      frontmatter créé) s'écrit en style flow. C'est la forme des corpus
-      (`tags: [a, b]`), et la seule que lisent leurs parseurs mono-ligne : en
-      style bloc, un `tags` créé par une revue était lu comme zéro tag.
+    - une liste **sans forme existante** (champ ajouté, ou frontmatter créé)
+      dont les éléments sont des scalaires ou des mappings de scalaires
+      s'écrit en style flow, sur une ligne. C'est la forme des corpus
+      (`tags: [a, b]`, `sources: [{id: releve, …}]`), et la seule que lisent
+      leurs parseurs mono-ligne : en style bloc, un `tags` créé par une revue
+      était lu comme zéro tag, et un `sources` comme illisible. Un lecteur
+      YAML lit les deux formes ; la forme flow est donc la seule qui ne
+      casse aucun des deux. Une liste plus profonde garde le style bloc.
     """
     if isinstance(valeur, str):
         return _chaine(valeur)
@@ -280,9 +284,11 @@ def _preparer(valeur, existant):
         return valeur
     if isinstance(valeur, (list, tuple)):
         suite = CommentedSeq([_preparer(v, None) for v in valeur])
-        scalaires = all(not isinstance(v, (list, tuple, dict)) for v in valeur)
-        if _est_flow(existant) or (existant is None and scalaires):
+        if _est_flow(existant) or (existant is None and all(_plat(v) for v in valeur)):
             suite.fa.set_flow_style()
+            for element in suite:
+                if isinstance(element, CommentedMap):
+                    element.fa.set_flow_style()
         return suite
     if isinstance(valeur, dict):
         table = CommentedMap()
@@ -311,6 +317,13 @@ def _chaine(valeur: str):
     if type(relu) is str and relu == valeur:
         return valeur
     return SingleQuotedScalarString(valeur)
+
+
+def _plat(valeur) -> bool:
+    """Scalaire, ou mapping dont toutes les valeurs sont des scalaires."""
+    if isinstance(valeur, dict):
+        return all(not isinstance(v, (list, tuple, dict)) for v in valeur.values())
+    return not isinstance(valeur, (list, tuple))
 
 
 def _est_flow(existant) -> bool:
