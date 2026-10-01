@@ -137,16 +137,44 @@ def test_un_tags_sans_forme_existante_est_lu_par_le_parseur_du_corpus(texte):
 
     En style bloc, le parseur mono-ligne des corpus lisait zéro tag dans une
     fiche créée par une revue (`edits[].frontmatter` sur un document neuf).
-    Une liste de mappings (`verified`) garde le style bloc.
+    Une liste plus profonde que des mappings de scalaires garde le style bloc.
     """
     attendus = ["type:analyse", "env:dev"]
-    obtenu = merge_frontmatter(
-        texte, {"tags": attendus, "verified": [{"by": "x", "at": "2026-09-23"}]}
-    )
+    profond = [{"by": "x", "notes": ["a", "b"]}]
+    obtenu = merge_frontmatter(texte, {"tags": attendus, "verified": profond})
     bloc = parse_document(obtenu).frontmatter_raw
     assert lire_tags_comme_le_corpus(bloc) == attendus
     assert "tags: [type:analyse, env:dev]" in lignes(bloc)
     assert "verified:" in lignes(bloc)
+    assert yaml.safe_load(obtenu.split("---\n")[1])["verified"] == profond
+
+
+@pytest.mark.parametrize(
+    "texte",
+    ["# Nouvelle analyse\n\nCorps.\n", "---\ntitle: Existante\n---\n\nCorps.\n"],
+    ids=["frontmatter-cree", "champ-ajoute"],
+)
+def test_un_sources_sans_forme_existante_s_ecrit_sur_une_ligne(texte):
+    """Une liste de mappings de scalaires s'écrit aussi en flow, sur une ligne.
+
+    Vu le 2026-09-28 : une analyse créée par `okf-review resolve` portait
+    `sources` en liste bloc, que le contrôle de conformité de la base (parseur
+    mono-ligne) refusait comme illisible. Une virgule, un deux-points ou une
+    accolade dans une valeur restent lus à l'identique.
+    """
+    sources = [
+        {
+            "id": "releve",
+            "resource": "relevé sur l'instance, environnements dev (structure) et prod",
+            "last_modified": "2026-09-24T00:00:00Z",
+        },
+        {"id": "b", "resource": "x, y: [z] {w}", "n": 3},
+    ]
+    obtenu = merge_frontmatter(texte, {"sources": sources})
+    bloc = parse_document(obtenu).frontmatter_raw
+    ligne = next(l for l in lignes(bloc) if l.startswith("sources:"))
+    assert ligne.startswith("sources: [{id: releve, ") and ligne.endswith("}]"), ligne
+    assert yaml.safe_load(obtenu.split("---\n")[1])["sources"] == sources
 
 
 def test_un_champ_existant_est_remplace_sans_toucher_ses_voisins():
