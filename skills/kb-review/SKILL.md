@@ -163,7 +163,12 @@ ses `AVERTISSEMENT` : une section en double (seule la première est remplacée �
 dans certaines bases, `Pièges` désigne un miroir généré et non `# Terrain >
 ## Pièges`), un document créé, un `integrated_into` qu'aucune édition ne touche.
 Ce qu'il ne fait pas : lancer les scripts de génération et de contrôle propres à
-la base (`AGENTS.md`), à exécuter après chaque résolution réelle.
+la base (`AGENTS.md`), à exécuter après chaque résolution réelle. Ces contrôles
+refusent des formes que le `--dry-run` accepte : dans `phoenix-blueway`,
+`check_provenance` rejette les puces imbriquées en `-` sous `# Terrain` (passer
+en liste numérotée, comme `traitement-ecran.md`) ; dans `el2d-blueway`,
+`check_secrets` signale toute forme « mot de passe : <mot> », même sans valeur.
+Pour un lot, rejoue-les sur une copie de la base avant de présenter.
 
 **Un lien vers une autre base se déclare dans `# Amont`.** Dans `el2d-blueway`
 et `el2d-referentiel`, le contrôle « références amont » (`check_amont.py`,

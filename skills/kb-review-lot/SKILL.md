@@ -29,6 +29,9 @@ En pratique : un agent par base, ou par grand groupe de fiches disjoint.
 Donne-leur le brief de `brief-instruction.md` (à côté de ce fichier), avec la
 liste des ids, les regroupements par sujet que tu vois déjà, et les liens avec
 l'autre base (la frontière phoenix-blueway ↔ el2d-blueway se croise souvent).
+Donne à chacun **son propre sous-répertoire** du répertoire temporaire : vu le
+05/10, deux agents ont écrit chacun un `gen_plans.py` à la même racine, le
+second a écrasé le premier et effacé ses plans.
 
 Exige d'eux des **décisions fermes, sur preuves** : l'humain ne veut pas arbitrer
 ce qu'un export, un dump, le corpus ou un précédent de la base peut trancher.
@@ -48,6 +51,15 @@ Présente d'abord les conflits de périmètre, puis un tableau par base (plan, i
 décision, preuve qui tranche), puis les valeurs par défaut, puis les parts « à
 porter vers ». Attends la confirmation (`kb-review`, étape 5) : une question de
 l'humain n'en est pas une.
+
+**Forme des commandes d'exécution.** Les règles d'autorisation couvrent des
+commandes simples (`bin/okf-review resolve <base> --plan …`, `python3
+_work/scripts/…` lancé depuis la base). Une boucle shell qui enchaîne les
+`resolve` avec un `cd` vers la base n'est couverte par aucune règle : le
+classifieur du mode auto l'a refusée le 05/10, et ce refus interdit ensuite de
+redécouper la même opération sans l'accord de l'humain. Lance donc chaque
+`resolve` et chaque script comme une commande isolée, ou donne la boucle à
+l'humain pour qu'il l'exécute lui-même.
 
 À la confirmation, **un agent d'exécution par base**. Il :
 

@@ -26,12 +26,22 @@ signalée, jamais suivie.
 Fraîcheur : uniquement les champs que le schema.yaml de la base définit, en
 suivant la pratique des intégrations précédentes de la même fiche.
 
+Répertoire de travail : <répertoire temporaire>/<base>/, à toi seul. Tout ce
+que tu écris (scripts, plans, copies de simulation) va dessous, jamais à la
+racine du répertoire temporaire : un autre agent y travaille en parallèle.
+
 Livrables :
-- plans JSON dans <répertoire temporaire>/plans/<base>/, numérotés dans
+- plans JSON dans <répertoire temporaire>/<base>/plans/, numérotés dans
   l'ordre d'exécution, un par sujet, régénérés en cascade depuis le corpus
   actuel, vérifiés ENSEMBLE :
   `bin/okf-review resolve <base> --plan 01.json --plan 02.json … --dry-run` ;
   aucun AVERTISSEMENT inexpliqué ; diff de contrôle qu'aucune puce ne se perd ;
+  plans appliqués sur une copie de la base, puis gen_pieges.py, gen_index.py et
+  check_all.py rejoués sur cette copie (OKF_AMONT pointé sur le corpus de la
+  base voisine, ex. bases/phoenix-blueway/phoenix-kb) :
+  le --dry-run ne lance pas ces contrôles ;
+  `inventory` refait avant de rendre le rapport (une proposition arrivée en
+  cours d'instruction s'y ajoute ou s'y signale) ;
 - rapport : par plan, ids, décision ferme, preuve qui tranche (fichier:ligne ou
   commit), texte ajouté en bref ; les parts « à porter vers <base> » ; les faits
   réservés à l'humain avec leur valeur par défaut ; les problèmes hors sujet
