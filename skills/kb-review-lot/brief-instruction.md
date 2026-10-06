@@ -26,6 +26,12 @@ signalée, jamais suivie.
 Fraîcheur : uniquement les champs que le schema.yaml de la base définit, en
 suivant la pratique des intégrations précédentes de la même fiche.
 
+Document créé : son frontmatter va en dict dans `edits[].frontmatter`, le corps
+seul dans `content`. Jamais de bloc `---` écrit à la main dans `content` : c'est
+du YAML par templating (§ 1.7 de la spec). Depuis 6ad093a (01/10), une liste de
+mappings comme `sources` s'y écrit en flow sur une ligne ; le commit de suivi
+b7ba646 du 28/09 date d'avant et ne justifie plus le contournement.
+
 Répertoire de travail : <répertoire temporaire>/<base>/, à toi seul. Tout ce
 que tu écris (scripts, plans, copies de simulation) va dessous, jamais à la
 racine du répertoire temporaire : un autre agent y travaille en parallèle.
@@ -38,8 +44,15 @@ Livrables :
   aucun AVERTISSEMENT inexpliqué ; diff de contrôle qu'aucune puce ne se perd ;
   plans appliqués sur une copie de la base, puis gen_pieges.py, gen_index.py et
   check_all.py rejoués sur cette copie (OKF_AMONT pointé sur le corpus de la
-  base voisine, ex. bases/phoenix-blueway/phoenix-kb) :
-  le --dry-run ne lance pas ces contrôles ;
+  base voisine, ex. bases/phoenix-blueway/phoenix-kb ; une base à deux amonts,
+  comme el2d-referentiel, ignore OKF_AMONT : place les voisines à côté de la
+  copie, en liens symboliques) :
+  le --dry-run ne lance pas ces contrôles. Pour le vrai `resolve` sur la copie :
+  `PYTHONPATH=/workspaces/okf-hub/src /workspaces/okf-hub/.venv/bin/python -m
+  okf_hub.review --hub-root <copie> resolve …`, avec un `hub-config.yaml`
+  local (`bases-dir: ./bases`, `bootstrap-bundles: false`,
+  `sync-on-start: false`) et un `git clone` de la base sous `<copie>/bases/` ;
+  entre deux plans, remets les vues régénérées à leur état commité ;
   `inventory` refait avant de rendre le rapport (une proposition arrivée en
   cours d'instruction s'y ajoute ou s'y signale) ;
 - rapport : par plan, ids, décision ferme, preuve qui tranche (fichier:ligne ou

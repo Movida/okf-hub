@@ -33,6 +33,11 @@ Donne à chacun **son propre sous-répertoire** du répertoire temporaire : vu l
 05/10, deux agents ont écrit chacun un `gen_plans.py` à la même racine, le
 second a écrasé le premier et effacé ses plans.
 
+Des propositions arrivent pendant l'instruction (cinq le 06/10, dont une qui
+réfutait un plan prêt). Quand l'agent les signale, relance-le (SendMessage) pour
+qu'il les instruise à la suite, en cascade, depuis sa copie où ses premiers
+plans sont déjà appliqués : le lot reste présenté d'un seul tenant.
+
 Exige d'eux des **décisions fermes, sur preuves** : l'humain ne veut pas arbitrer
 ce qu'un export, un dump, le corpus ou un précédent de la base peut trancher.
 Ne remontent vers lui que les faits qu'aucune source n'établit, chacun avec une
@@ -72,6 +77,37 @@ l'humain pour qu'il l'exécute lui-même.
 3. exécute un plan à la fois, puis lance depuis la base `gen_pieges.py`,
    `gen_index.py`, `check_all.py` (doit sortir 0) ;
 4. ne commite pas les vues régénérées : c'est toi qui le fais, ensuite.
+
+Dans un fil d'agent, un `cd` ne persiste pas d'un appel à l'autre : les scripts
+de la base se lancent par chemin absolu (`python3
+/workspaces/okf-hub/bases/<base>/_work/scripts/check_all.py`), ils retrouvent
+leur racine par `__file__`.
+
+**Le lancement des agents d'exécution peut lui-même être refusé.** Le 06/10,
+trois agents lancés ensemble après « continue » : le classifieur en a refusé deux
+(« Modify Shared Resources »), malgré les règles d'autorisation, et en a laissé
+partir un. Le refus vaut pour le résultat : ni `resolve` à la main, ni nouvel
+agent pour ces bases. Donne alors à l'humain, pour chaque base refusée, la boucle
+prête à coller (`resolve` puis scripts, arrêt au premier échec), ou attends qu'il
+te dise explicitement d'exécuter toi-même. Prépare cette boucle dès la
+présentation du lot, pour qu'elle soit prête dans ce cas : un script dans le
+répertoire temporaire, que l'humain lance par `! sh <chemin>`. L'après-midi du
+06/10, le refus a de nouveau visé el2d-referentiel seul, alors que les agents de
+phoenix-blueway et d'el2d-blueway sont partis : prévois d'office ce script pour
+cette base.
+
+Dans le brief d'exécution, écris que chaque commande se lance **seule et l'une
+après l'autre** : un agent a lancé `gen_pieges`, `gen_index` et `check_all` dans
+un même bloc d'appels, donc peut-être en parallèle, et a dû les rejouer.
+
+**Un lot confirmé mais resté bloqué survit à sa session.** Les plans sont dans
+le répertoire temporaire de la session précédente
+(`/tmp/claude-1000/-workspaces-okf-hub/<session>/scratchpad/<base>/plans/`), et
+les dernières réponses de son transcript (`~/.claude/projects/-workspaces-okf-hub/<session>.jsonl`)
+disent ce qui a été présenté et exécuté. Si le corpus n'a reçu que des commits
+`proposal:` depuis, copie ces plans, refais le `--dry-run`, et fais instruire
+les arrivées en cascade après eux. Présente l'ensemble : la confirmation d'une
+autre session ne vaut pas pour celle-ci.
 
 Durées à prévoir : dans el2d-referentiel, `check_all.py` prend environ 7 min
 (`check_catalogue` rejoue le générateur) — 8 plans font une heure. Ne donne
