@@ -94,7 +94,11 @@ présentation du lot, pour qu'elle soit prête dans ce cas : un script dans le
 répertoire temporaire, que l'humain lance par `! sh <chemin>`. L'après-midi du
 06/10, le refus a de nouveau visé el2d-referentiel seul, alors que les agents de
 phoenix-blueway et d'el2d-blueway sont partis : prévois d'office ce script pour
-cette base.
+cette base. Écris-le **reprenable** : il saute un plan dont les propositions ne
+sont plus dans `pending/`. Avec `set -e`, un script qui rejoue un plan déjà
+résolu s'arrête dès le premier, et l'humain qui s'absente pendant ses 25 minutes
+ne le laisse pas toujours finir (vu le 06/10 au soir :
+`reprendre-el2d-referentiel.sh`, dans le répertoire temporaire de la session).
 
 Dans le brief d'exécution, écris que chaque commande se lance **seule et l'une
 après l'autre** : un agent a lancé `gen_pieges`, `gen_index` et `check_all` dans
