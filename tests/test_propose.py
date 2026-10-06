@@ -339,3 +339,12 @@ def test_content_absent_liste_les_cles_recues(base, registry):
         propose_tool.run(registry, args)
     assert "paramètre 'content' requis" in exc.value.message
     assert "paramètres reçus : base, type, concerns, sources" in exc.value.message
+
+
+def test_description_dit_de_scinder_un_constat_entre_bases(base, registry):
+    # Seul texte qu'une session lit au moment du dépôt sans appel préalable : une
+    # proposition qui mêle les parts de deux bases coûte un rejet et un redépôt
+    # (API.md, « Une proposition, une base »).
+    desc = propose_tool.description(registry)
+    assert "Périmètre" in desc and "kb_governance" in desc
+    assert "une proposition par base" in desc

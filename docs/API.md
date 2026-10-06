@@ -388,6 +388,17 @@ de `kb_propose` rappelle l'appel exact. Seul le **corps** d'une proposition
 résolue reste hors MCP : il se relit par accès git direct dans
 `proposals/accepted|rejected/`.
 
+**Une proposition, une base** — le gestionnaire n'intègre que la part qui relève
+du périmètre de sa base, et ne déplace rien vers une autre : chaque part mal
+placée coûte un rejet, un redépôt et une seconde revue. La description de
+l'outil le dit au moment du dépôt : lire la section « Périmètre » de
+`kb_governance` pour chaque base candidate, et scinder un constat qui en couvre
+plusieurs (la règle générale dans l'une, sa conséquence ou le cas particulier
+dans l'autre) en une proposition par base, chacune citant l'autre dans
+`sources`. Motif : environ une proposition résolue sur dix a dû être déplacée,
+presque toujours parce qu'elle mêlait les parts de deux bases (relevé du
+06/10/2026).
+
 **`schema.yaml` ne s'applique pas ici** — il décrit le frontmatter du **corpus**,
 pas celui des propositions. Ne cherchez pas à vous y conformer : soumettez
 l'information, sa mise en forme conforme au schéma relève du gestionnaire à
@@ -514,7 +525,10 @@ kb_read    base=… path=… section=…       → le contenu utile, pas le fich
 **Contribuer un fait nouveau**
 
 ```
-kb_governance base=…                      → ce que la base exige
+kb_governance base=…                      → ce que la base exige, et son
+                                            périmètre — pour chaque base
+                                            candidate ; un constat à cheval
+                                            se scinde, une proposition par base
 kb_list       include_pending_concerns=true  → quelqu'un l'a-t-il déjà signalé ?
 kb_search     base=… query="sujet"        → que dit le corpus aujourd'hui ?
 kb_propose    base=… type=correction …    → dépôt. Le corpus n'est pas modifié.
