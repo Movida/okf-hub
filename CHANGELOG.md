@@ -5,6 +5,13 @@ Le projet suit la version de la spécification qu'il implémente : `bundle-spec 
 
 ## [Non publié]
 
+### Sécurité
+
+- **pyjwt 2.13.0 → 2.15.1** (dépendance de `mcp`, verrou seul) : corrige quatorze avis de failles connues, dont
+  sept de gravité élevée ou critique (la pire à 9,1, `PYSEC-2026-4145`), signalées par `osv-scanner`. Aucun
+  autre paquet ne change ; la suite de tests passe, hors `test_le_guide_deploye_est_conforme_a_sa_source`, qui
+  échouait déjà avant (copie déployée de `okf-hub-guide` en retard sur `bundles/`).
+
 ### Ajouté
 
 - **Profils de configuration pour `hub-config.yaml`.** Plutôt que de configurer
