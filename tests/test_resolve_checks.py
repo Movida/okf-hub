@@ -4,10 +4,21 @@ approuvés de la base tournent dans la base, et ce qu'ils régénèrent est comm
 
 from __future__ import annotations
 
+import tempfile
+
+import pytest
+
 from okf_hub import review
 
 from conftest import git
 from test_verify import CHECK, GEN, _approuve, _base, _checks, _depose, _plan
+
+
+@pytest.fixture(autouse=True)
+def _journaux_dans_le_test(tmp_path, monkeypatch):
+    """Un contrôle en échec garde ses journaux pour examen : en test, sous
+    `tmp_path`, pas dans le /tmp de la machine."""
+    monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
 
 
 def _resolve(hub, *args):
