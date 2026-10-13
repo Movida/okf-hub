@@ -59,6 +59,14 @@ Tu obtiens le `GOVERNANCE.md` (le périmètre et les golden rules), le `schema.y
 s'il existe, et la structure du corpus. **Lis les golden rules avant de juger quoi
 que ce soit** : ce sont elles qui décident, pas ton avis général sur la question.
 
+Lis ensuite l'`AGENTS.md` de la base (à défaut son `CLAUDE.md`), et d'abord sa
+section **« Revue des propositions par le hub »** si elle en a une : ce que ses
+contrôles refusent, à quelles bases elle a le droit de lier, où trouver les
+preuves pour trancher, ce qui coûte cher dans un lot. Cette skill est
+générique et son dépôt est public : **une règle propre à une base vit dans la
+base, jamais ici** — c'est aussi là que s'écrit une leçon de revue qui ne vaut
+que pour elle.
+
 Si la sortie s'ouvre sur **⚠ GOUVERNANCE EN BROUILLON** (le `GOVERNANCE.md` porte
 `status: draft`), dis-le à l'humain dès l'ouverture de la session, en une phrase :
 *« les règles appliquées ne sont pas validées »*. Tu instruis quand même, avec ces
@@ -156,52 +164,63 @@ indépendants, écris trois plans successifs, pas un seul qui les mélange : le
 regroupement en un commit ne vaut que pour des propositions portant sur le
 **même sujet**.
 
-**Le `--dry-run` fait foi : ne réécris pas de simulateur.** Il passe par le même
-calcul que l'exécution, sans écrire : id absent de `pending/`, section
-introuvable, fusion de frontmatter refusée y échouent comme à l'exécution. Lis
-ses `AVERTISSEMENT` : une section en double (seule la première est remplacée —
-dans certaines bases, `Pièges` désigne un miroir généré et non `# Terrain >
-## Pièges`), un document créé, un `integrated_into` qu'aucune édition ne touche.
-Ce qu'il ne fait pas : lancer les scripts de génération et de contrôle propres à
-la base (`AGENTS.md`), à exécuter après chaque résolution réelle. Ces contrôles
-refusent des formes que le `--dry-run` accepte : dans `produit-x`,
-`check_provenance` rejette les puces imbriquées en `-` sous `# Terrain` (passer
-en liste numérotée, comme `traitement-ecran.md`) ; dans `installation-x`,
-`check_secrets` signale toute forme « mot de passe : <mot> », même sans valeur.
-Pour un lot, rejoue-les sur une copie de la base avant de présenter.
+**Le `--dry-run` fait foi pour le hub : ne réécris pas de simulateur.** Il passe
+par le même calcul que l'exécution, sans écrire : id absent de `pending/`,
+section introuvable, fusion de frontmatter refusée y échouent comme à
+l'exécution. Lis ses `AVERTISSEMENT` : une section en double (seule la première
+est remplacée — vérifie que c'est celle que tu visais), un document créé, un
+`integrated_into` qu'aucune édition ne touche.
 
-**Un lien vers une autre base se déclare dans `# Amont`.** Dans `installation-x`
-et `referentiel-x`, le contrôle « références amont » (`check_amont.py`,
-lancé par `check_all.py`) refuse toute
-référence `produit-x:/…` d'une fiche qui n'apparaît pas aussi dans sa
-section `# Amont`, et le `--dry-run` ne le voit pas. Quand une édition cite une
-base voisine, ajoute la ligne d'`# Amont` dans le même plan (section `Amont`
-réécrite, ou créée avant la première section si la fiche n'en a pas). Vu les
-28/09 et 01/10 : quatre liens oubliés, rattrapés par des commits de suivi.
+**`verify` fait foi pour la base.** Le `--dry-run` ne connaît pas les règles
+propres à une base, portées par ses scripts : format d'une section datée,
+déclaration d'un lien vers une autre base, tournures que refuse un contrôle de
+secrets. Si le manifeste de la base déclare des contrôles
+(`governance.checks`), rejoue les plans pour de vrai sur une copie jetable de
+tout le hub, qui les lance ensuite :
+
+```
+okf-review verify <base> --plan 01.json --plan 02.json --plan 03.json
+```
+
+Ne présente pas un plan que `verify` refuse. Un refus « contrôles non
+approuvés » se remonte à l'humain tel quel : c'est à lui d'ajouter la base à
+`trusted-checks` dans `hub-config.local.yaml` après avoir relu ses scripts. Ne
+lance pas ces scripts toi-même sur une copie montée à la main : ce serait la même
+exécution, sans l'approbation. `--each` contrôle après chaque plan, pour
+désigner le fautif quand le contrôle final échoue ; il coûte autant de passes
+que de plans.
+
+**Un lien vers une autre base suit la règle de la base qui cite.** Certaines
+bases n'autorisent de liens `<base>:/…` que vers des voisines déclarées, et
+exigent qu'ils figurent aussi dans une section dédiée de la fiche ; d'autres
+n'en autorisent aucun. Sa section de revue le dit ; à défaut, **nomme** la base
+et le document en clair, sans lien. Quand une édition ajoute un lien, la
+déclaration qui l'accompagne va dans le même plan : vu les 28/09 et 01/10, quatre
+liens oubliés ont dû être rattrapés par des commits de suivi.
 
 **Plans en cascade.** Plusieurs plans qui réécrivent les mêmes sections se
-vérifient ensemble, dans l'ordre d'exécution :
-
-```
-okf-review resolve <base> --plan 01.json --plan 02.json --plan 03.json --dry-run
-```
-
-Ils s'exécutent ensuite un par un, **dans le même ordre** ; en écarter un oblige
-à régénérer les suivants. Refais un `inventory` juste avant d'exécuter : des
+vérifient ensemble, dans l'ordre d'exécution : `--dry-run` comme `verify`
+acceptent plusieurs `--plan`. Ils s'exécutent ensuite un par un, **dans le même
+ordre** ; en écarter un oblige à régénérer les suivants. Refais un `inventory` juste avant d'exécuter : des
 propositions arrivent en cours de journée, et l'une d'elles peut contredire un
 plan déjà rédigé (vu : une arrivée du jour réfutait le mécanisme d'un plan prêt).
 
 Si l'instruction est répartie entre plusieurs agents, **partage le lot par
 document visé, pas par nombre de propositions** : deux agents qui rédigent
 chacun leurs plans sur le même fichier partent du même état et s'écrasent
-l'un l'autre (vu le 24/09 : deux lots réécrivaient tous deux les `# Pièges` de
-`solution/processus-x.md`, et il a fallu tout régénérer en cascade avant
+l'un l'autre (vu le 24/09 : deux lots réécrivaient tous deux la même section
+d'une même grosse fiche, et il a fallu tout régénérer en cascade avant
 d'exécuter).
 
 **`reviewed_by`** : reprends la forme déjà présente dans l'historique de la base
 (`git -C <racine> log --format=%B | grep '^Reviewed-By'`) plutôt que d'en
 inventer une ; des formes concurrentes pour un même humain rendent l'audit
 inexploitable.
+
+**Après chaque résolution réelle**, lance depuis la racine de la base, dans
+l'ordre, les commandes de son `governance.checks` (elles régénèrent les vues
+dérivées et doivent sortir 0), puis commite les vues régénérées sous le verrou
+(`kb-review-lot`, § 4).
 
 **Permissions, avant de lancer l'exécution.** En mode auto, le classifieur de
 Claude Code refuse `okf-review resolve` et les commits dans `bases/` sans règle

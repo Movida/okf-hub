@@ -7,7 +7,9 @@ description: Traiter en une session un gros lot de propositions en attente sur p
 
 `skills/kb-review/SKILL.md` fait autorité sur chaque proposition : lis-le en
 entier d'abord. Ce skill ne dit que comment **orchestrer** un gros lot sans
-perdre ce qu'il garantit.
+perdre ce qu'il garantit. Comme lui, il est générique et public : ce qui ne
+vaut que pour une base est dans la section « Revue des propositions par le
+hub » de son `AGENTS.md`, et c'est là qu'une leçon propre à une base s'écrit.
 
 ## 1. État des lieux (toi, pas un agent)
 
@@ -17,9 +19,18 @@ bin/okf-review inventory <base>                 # pour chaque base qui a du pend
 git -C bases/<base> log --format=%B | grep '^Reviewed-By' | sort | uniq -c
 ```
 
-Vérifie les règles d'autorisation de `.claude/settings.local.json`
-(`bin/okf-review *`, `okf-lock … git -C bases/* commit`, `python3 _work/scripts/*`)
-**avant** de déléguer : sans elles, un agent s'arrête au premier `resolve`.
+Lis la section de revue de l'`AGENTS.md` de chaque base concernée : tu y
+trouveras les sources de preuves, les frontières qui se croisent souvent, et ce
+qui rend un lot long.
+
+Vérifie aussi, **avant** de déléguer :
+
+- les règles d'autorisation de `.claude/settings.local.json` (`bin/okf-review *`,
+  `okf-lock … git -C bases/* commit`) : sans elles, un agent s'arrête au premier
+  `resolve` ;
+- que chaque base touchée qui déclare des `governance.checks` figure dans
+  `trusted-checks` (`hub-config.local.yaml`) : sinon `verify` refuse, et c'est à
+  l'humain de l'y ajouter après relecture des scripts.
 
 ## 2. Instruire : un agent par base, ou par groupe de documents
 
@@ -28,46 +39,50 @@ qui rédigent des plans sur le même fichier partent du même état et s'écrase
 En pratique : un agent par base, ou par grand groupe de fiches disjoint.
 Donne-leur le brief de `brief-instruction.md` (à côté de ce fichier), avec la
 liste des ids, les regroupements par sujet que tu vois déjà, et les liens avec
-l'autre base (la frontière produit-x ↔ installation-x se croise souvent).
-Donne à chacun **son propre sous-répertoire** du répertoire temporaire : vu le
-05/10, deux agents ont écrit chacun un `gen_plans.py` à la même racine, le
-second a écrasé le premier et effacé ses plans.
+les bases voisines. Donne à chacun **son propre sous-répertoire** du répertoire
+temporaire : vu le 05/10, deux agents ont écrit chacun un `gen_plans.py` à la
+même racine, le second a écrasé le premier et effacé ses plans.
 
 Des propositions arrivent pendant l'instruction (cinq le 06/10, dont une qui
 réfutait un plan prêt). Quand l'agent les signale, relance-le (SendMessage) pour
-qu'il les instruise à la suite, en cascade, depuis sa copie où ses premiers
-plans sont déjà appliqués : le lot reste présenté d'un seul tenant.
+qu'il les instruise à la suite, en cascade, après ses premiers plans : le lot
+reste présenté d'un seul tenant.
 
-**Plusieurs agents sur une même base (vu le 13/10, 233 propositions).** Quand
-une base dépasse ce qu'un agent instruit, découpe-la par dossiers ou par
-fichier : un agent pour la grosse fiche (`processus-x.md`), un autre pour tout
-le reste. Il reste toujours un fichier partagé : l'`index.md` racine, dont la
-table « Routage par `type` » porte des effectifs que `check_index_contract.py`
-compare au corpus. Chaque plan qui crée une fiche doit la mettre à jour. Fixe
-donc d'emblée un **ordre d'exécution** entre les agents, et exige un
-**générateur de plans** (`gen_plans.py`) qui recalcule cette table sur le
-corpus qu'on lui donne, en dernière édition de chaque plan : le lot suivant se
-régénère après le précédent. Dis à chacun quels fichiers lui sont réservés ; ce
-qu'il lui faudrait ailleurs passe par toi (« À verser par un autre agent »), et
-tu le relaies par SendMessage, tout comme les chemins des fiches que les autres
-vont créer, pour qu'il les lie au lieu de les répéter. Quand les rapports sont
-là, fais **rejouer toute la cascade sur une seule copie** par un agent de
-contrôle : chaque agent n'avait vérifié que ses plans seuls. Celui du 13/10 a
-trouvé des renvois à sens unique, une contradiction entre deux fiches (règle
-10) et une colonne d'`index.md` devenue fausse. Il écrit aussi le script
-d'exécution reprenable.
+**Plusieurs agents sur une même base (vu le 13/10).** Quand une base dépasse ce
+qu'un agent instruit, découpe-la par dossiers ou par fichier : un agent pour la
+grosse fiche que sa section de revue désigne, un autre pour tout le reste. Il
+reste presque toujours un fichier partagé — typiquement un index racine dont une
+table porte des effectifs qu'un contrôle compare au corpus, et que chaque plan
+qui crée une fiche doit mettre à jour. Fixe donc d'emblée un **ordre
+d'exécution** entre les agents, et exige un **générateur de plans**
+(`gen_plans.py`) qui recalcule ce fichier sur le corpus qu'on lui donne, en
+dernière édition de chaque plan : le lot suivant se régénère après le précédent.
+Dis à chacun quels fichiers lui sont réservés ; ce qu'il lui faudrait ailleurs
+passe par toi (« À verser par un autre agent »), et tu le relaies par
+SendMessage, tout comme les chemins des fiches que les autres vont créer, pour
+qu'il les lie au lieu de les répéter.
 
-Exige d'eux des **décisions fermes, sur preuves** : l'humain ne veut pas arbitrer
-ce qu'un export, un dump, le corpus ou un précédent de la base peut trancher.
-Ne remontent vers lui que les faits qu'aucune source n'établit, chacun avec une
-valeur par défaut sûre déjà écrite dans le plan. Sources de preuves disponibles
-sans l'humain :
+Quand les rapports sont là, **rejoue toute la cascade d'un seul `verify`** :
+chaque agent n'a vérifié que ses plans. `verify` accepte des plans de plusieurs
+bases, dans l'ordre d'exécution :
 
-- exports Designer : `bases/installation-x/_work/brut/`,
-  `bases/referentiel-x/source/library/` ;
-- dumps de base : `bases/referentiel-x/source/db/` ;
-- fiches générées par objet : `bases/referentiel-x/referentiel-x-kb/` ;
-- précédents : `git -C bases/<base> log --grep '^integrate\|^reject'`.
+```sh
+bin/okf-review verify --plan <base-a>:<rep>/<base-a>/plans/01.json \
+                      --plan <base-a>:<rep>/<base-a>/plans/02.json \
+                      --plan <base-b>:<rep>/<base-b>/plans/01.json
+```
+
+Celui du 13/10, fait alors à la main par un agent de contrôle, a trouvé des
+renvois à sens unique, une contradiction entre deux fiches et une colonne
+d'index devenue fausse. Un contrôle qui échoue en fin de cascade se localise
+par `--each`.
+
+Exige des agents des **décisions fermes, sur preuves** : l'humain ne veut pas
+arbitrer ce qu'un export, un dump, le corpus ou un précédent de la base peut
+trancher. Ne remontent vers lui que les faits qu'aucune source n'établit, chacun
+avec une valeur par défaut sûre déjà écrite dans le plan. Les sources de preuves
+de chaque base sont dans sa section de revue ; les précédents, dans
+`git -C bases/<base> log --grep '^integrate\|^reject'`.
 
 ## 3. Présenter, puis exécuter
 
@@ -77,13 +92,13 @@ porter vers ». Attends la confirmation (`kb-review`, étape 5) : une question d
 l'humain n'en est pas une.
 
 **Forme des commandes d'exécution.** Les règles d'autorisation couvrent des
-commandes simples (`bin/okf-review resolve <base> --plan …`, `python3
-_work/scripts/…` lancé depuis la base). Une boucle shell qui enchaîne les
-`resolve` avec un `cd` vers la base n'est couverte par aucune règle : le
-classifieur du mode auto l'a refusée le 05/10, et ce refus interdit ensuite de
-redécouper la même opération sans l'accord de l'humain. Lance donc chaque
-`resolve` et chaque script comme une commande isolée, ou donne la boucle à
-l'humain pour qu'il l'exécute lui-même.
+commandes simples (`bin/okf-review resolve <base> --plan …`, une commande de
+contrôle lancée depuis la base). Une boucle shell qui enchaîne les `resolve`
+avec un `cd` vers la base n'est couverte par aucune règle : le classifieur du
+mode auto l'a refusée le 05/10, et ce refus interdit ensuite de redécouper la
+même opération sans l'accord de l'humain. Lance donc chaque `resolve` et chaque
+contrôle comme une commande isolée, ou donne la boucle à l'humain pour qu'il
+l'exécute lui-même.
 
 À la confirmation, **un agent d'exécution par base**. Il :
 
@@ -91,61 +106,56 @@ l'humain pour qu'il l'exécute lui-même.
    instruit les nouvelles sans les résoudre, et écarte un plan qu'une arrivée
    contredit ;
 2. régénère les plans **en cascade depuis le corpus actuel**, les vérifie
-   ensemble au `--dry-run`, et compare les sections avant/après pour qu'aucune
+   ensemble par `verify`, et compare les sections avant/après pour qu'aucune
    puce ne se perde ;
-3. exécute un plan à la fois, puis lance depuis la base `gen_pieges.py`,
-   `gen_index.py`, `check_all.py` (doit sortir 0) ;
+3. exécute un plan à la fois, puis lance depuis la base, une par une, les
+   commandes de son `governance.checks` (la dernière doit sortir 0) ;
 4. ne commite pas les vues régénérées : c'est toi qui le fais, ensuite.
 
-Dans un fil d'agent, un `cd` ne persiste pas d'un appel à l'autre : les scripts
-de la base se lancent par chemin absolu (`python3
-/workspaces/okf-hub/bases/<base>/_work/scripts/check_all.py`), ils retrouvent
-leur racine par `__file__`.
+Dans un fil d'agent, un `cd` ne persiste pas d'un appel à l'autre : une
+commande de contrôle se lance avec son chemin absolu, ou depuis la racine de la
+base dans le même appel. Écris dans le brief d'exécution que chaque commande se
+lance **seule et l'une après l'autre** : un agent a lancé trois scripts de
+contrôle dans un même bloc d'appels, donc peut-être en parallèle, et a dû les
+rejouer.
 
 **Le lancement des agents d'exécution peut lui-même être refusé.** Le 06/10,
 trois agents lancés ensemble après « continue » : le classifieur en a refusé deux
 (« Modify Shared Resources »), malgré les règles d'autorisation, et en a laissé
-partir un. Le refus vaut pour le résultat : ni `resolve` à la main, ni nouvel
-agent pour ces bases. Donne alors à l'humain, pour chaque base refusée, la boucle
-prête à coller (`resolve` puis scripts, arrêt au premier échec), ou attends qu'il
-te dise explicitement d'exécuter toi-même. Prépare cette boucle dès la
-présentation du lot, pour qu'elle soit prête dans ce cas : un script dans le
-répertoire temporaire, que l'humain lance par `! sh <chemin>`. L'après-midi du
-06/10, le refus a de nouveau visé referentiel-x seul, alors que les agents de
-produit-x et d'installation-x sont partis : prévois d'office ce script pour
-cette base. Écris-le **reprenable** : il saute un plan dont les propositions ne
-sont plus dans `pending/`. Avec `set -e`, un script qui rejoue un plan déjà
-résolu s'arrête dès le premier, et l'humain qui s'absente pendant ses 25 minutes
-ne le laisse pas toujours finir (vu le 06/10 au soir :
-`reprendre-referentiel-x.sh`, dans le répertoire temporaire de la session).
-
-Dans le brief d'exécution, écris que chaque commande se lance **seule et l'une
-après l'autre** : un agent a lancé `gen_pieges`, `gen_index` et `check_all` dans
-un même bloc d'appels, donc peut-être en parallèle, et a dû les rejouer.
+partir un ; l'après-midi, le refus a de nouveau visé une seule base. Le refus
+vaut pour le résultat : ni `resolve` à la main, ni nouvel agent pour ces bases.
+Donne alors à l'humain, pour chaque base refusée, la boucle prête à lancer
+(`resolve` puis contrôles, arrêt au premier échec), ou attends qu'il te dise
+explicitement d'exécuter toi-même. Prépare cette boucle dès la présentation du
+lot : un script dans le répertoire temporaire, que l'humain lance par
+`sh <chemin>` dans un terminal, avec sa sortie copiée dans un journal
+(`… | tee <tmp>/execution.log`) que tu vérifies ensuite. Écris-le
+**reprenable** : il saute un plan dont les propositions ne sont plus dans
+`pending/`. Avec `set -e`, un script qui rejoue un plan déjà résolu s'arrête dès
+le premier, et l'humain qui s'absente pendant une longue exécution ne le laisse
+pas toujours finir (vu le 06/10 au soir).
 
 **Un lot confirmé mais resté bloqué survit à sa session.** Les plans sont dans
 le répertoire temporaire de la session précédente
-(`/tmp/claude-1000/-workspaces-okf-hub/<session>/scratchpad/<base>/plans/`), et
-les dernières réponses de son transcript (`~/.claude/projects/-workspaces-okf-hub/<session>.jsonl`)
+(`/tmp/claude-<uid>/<projet>/<session>/scratchpad/<base>/plans/`), et les
+dernières réponses de son transcript (`~/.claude/projects/<projet>/<session>.jsonl`)
 disent ce qui a été présenté et exécuté. Si le corpus n'a reçu que des commits
-`proposal:` depuis, copie ces plans, refais le `--dry-run`, et fais instruire
-les arrivées en cascade après eux. Présente l'ensemble : la confirmation d'une
-autre session ne vaut pas pour celle-ci.
+`proposal:` depuis, copie ces plans, refais un `verify`, et fais instruire les
+arrivées en cascade après eux. Présente l'ensemble : la confirmation d'une autre
+session ne vaut pas pour celle-ci.
 
-Durées à prévoir : dans referentiel-x, `check_all.py` prend environ 7 min
-(`check_catalogue` rejoue le générateur) — 8 plans font une heure si on le
-relance après chacun. Quand la cascade a déjà été prouvée sur une copie (check_all
-à 0 après chaque plan), l'exécution réelle n'a besoin que d'un contrôle final :
-le 13/10, 155 plans sur cinq bases ont tourné en 12 minutes, par un script
-maître (`executer-lot.sh`, une base après l'autre, un journal par base, bilan à
-la fin). Ne donne pas à un agent une attente bornée plus courte que
-l'exécution qu'il attend.
+**Durées.** Une base dont les contrôles sont longs le dit dans sa section de
+revue ; relancés après chacun des plans, ils peuvent coûter une heure pour huit
+plans. Quand la cascade a déjà été prouvée par `verify`, l'exécution réelle n'a
+besoin que d'un contrôle final par base : le 13/10, 155 plans sur cinq bases ont
+tourné en 12 minutes, par un script maître (une base après l'autre, un journal
+par base, bilan à la fin). Ne donne pas à un agent une attente bornée plus courte
+que l'exécution qu'il attend.
 
 ## 4. Après les résolutions (toi)
 
-Les vues générées (`references/pieges-et-limites.md`…) et les correctifs
-d'outillage de `_work/scripts/` ne passent pas par `okf-review`. Commite-les
-**sous le verrou** de la base :
+Les vues régénérées par les contrôles et les correctifs d'outillage d'une base
+ne passent pas par `okf-review`. Commite-les **sous le verrou** de la base :
 
 ```sh
 git -C bases/<base> add <fichiers>
@@ -159,9 +169,9 @@ vérifie `git status -sb`. Les parts « à porter vers » se redéposent par
 ## 5. Ce qui a coûté cher la première fois (24/09/2026)
 
 - Deux agents d'instruction sur la même base ont écrit des plans concurrents sur
-  `solution/processus-x.md` : tout a dû être régénéré.
-- Le brief demandait `generated.at` : plusieurs `schema.yaml` le réservent aux
-  fiches produites par un générateur. Le brief dit maintenant « selon le
+  la même grosse fiche : tout a dû être régénéré.
+- Le brief imposait un champ de fraîcheur que plusieurs `schema.yaml` réservent
+  aux fiches produites par un générateur. Le brief dit maintenant « selon le
   `schema.yaml` de la base ».
 - Huit questions renvoyées à l'humain, dont six se tranchaient par un export ou
   un dump. D'où la règle des décisions fermes, avec une valeur par défaut.

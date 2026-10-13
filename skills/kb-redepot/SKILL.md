@@ -26,9 +26,10 @@ le classifieur du mode auto le refuse.
 1. **Rédiger** chaque proposition comme une contribution autonome
    (`bundles/okf-hub-guide/knowledge/proposer.md`) :
    - vérifier que la base cible l'accueille, **par la règle de son
-     `GOVERNANCE.md`**, et adapter la forme à ce qu'elle attend (produit-x :
-     générique et anonymisé ; installation-x : un motif et la règle qu'on en tire ;
-     referentiel-x : par objet) ;
+     `GOVERNANCE.md`**, et adapter la forme à ce qu'elle attend (une base
+     produit veut le fait générique et anonymisé, une base d'installation le
+     motif et la règle qu'on en tire, un inventaire le fait rattaché à son
+     objet) ;
    - première entrée de `sources` : `redépôt depuis <base>:<id>, instruction du
      <date>` — la proposition doit dire d'où elle vient, sinon le gestionnaire
      de la base cible peut la renvoyer (`kb-review`, étape 3.d, « déjà
@@ -48,6 +49,15 @@ le classifieur du mode auto le refuse.
    uv run python skills/kb-redepot/deposer.py <fichier.json>
    ```
    Chaque dépôt affiche l'id attribué. Donne-les à l'humain, avec la base cible.
+
+   En mode auto, le classifieur refuse ce dépôt (« Modify Shared Resources »),
+   même sur demande explicite. Ne le contourne pas : écris un script
+   d'enrobage dans le répertoire temporaire, qui fait `cd` vers le hub et copie
+   la sortie dans un journal (`… | tee <tmp>/depot.log`), et donne à l'humain
+   la ligne `sh <chemin>` à lancer. Dans l'extension VS Code, il la colle dans
+   un terminal intégré ; la commande `! cd … && uv run …` passée dans le
+   prompt n'a rien produit le 13/10. Vérifie ensuite le journal et
+   `proposals/pending/` : un « fait » sans id affiché ne prouve pas le dépôt.
 
 Les propositions déposées attendent ensuite une revue dans leur base, comme
 toutes les autres : les redéposer ne vaut pas les intégrer.

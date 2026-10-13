@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import shlex
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -40,6 +41,10 @@ class Manifest:
     okf_spec: str | None = None
     frontmatter_schema: Path | None = None
     review: str = "human"
+    checks: tuple[tuple[str, ...], ...] = ()
+    """`governance.checks`, chaque commande découpée en argv (rév. 4.3, § 3.3).
+    Lues ici, lancées par `okf-review verify` seul, et seulement si l'opérateur
+    a approuvé la base (§ 8)."""
     warnings: list[str] = field(default_factory=list)
     """Avertissements non bloquants, journalisés et remontés par kb_hub_rescan."""
 
@@ -143,6 +148,8 @@ def load_manifest(bundle_root: Path) -> Manifest:
         warnings.append(f"governance.review='{review}' non supporté en v0 — traité comme 'human'")
         review = "human"
 
+    checks = _parse_checks(governance.get("checks"), warnings)
+
     # --- bundle-spec : tolérance de compatibilité (§ 3.3) ---
     if bundle_spec != SUPPORTED_BUNDLE_SPEC:
         warnings.append(
@@ -166,8 +173,36 @@ def load_manifest(bundle_root: Path) -> Manifest:
         okf_spec=okf_spec,
         frontmatter_schema=frontmatter_schema,
         review=review,
+        checks=checks,
         warnings=warnings,
     )
+
+
+def _parse_checks(raw, warnings: list[str]) -> tuple[tuple[str, ...], ...]:
+    """`governance.checks` : liste de commandes, découpées comme par un shell
+    mais jamais passées à un shell (pas d'expansion, pas d'enchaînement).
+
+    Un champ mal formé n'invalide pas le bundle — il ne sert qu'à la revue, et la
+    découverte tolère tout champ qu'elle n'utilise pas (§ 3.3) : il est ignoré
+    avec un avertissement, que `okf-review verify` répète.
+    """
+    if raw is None:
+        return ()
+    if not isinstance(raw, list) or not all(isinstance(c, str) for c in raw):
+        warnings.append("governance.checks doit être une liste de commandes — ignoré")
+        return ()
+    out: list[tuple[str, ...]] = []
+    for commande in raw:
+        try:
+            argv = tuple(shlex.split(commande))
+        except ValueError as exc:
+            warnings.append(f"governance.checks : « {commande} » illisible ({exc}) — ignoré")
+            return ()
+        if not argv:
+            warnings.append("governance.checks : commande vide — ignoré")
+            return ()
+        out.append(argv)
+    return tuple(out)
 
 
 def _require_str(data: dict, key: str) -> str:

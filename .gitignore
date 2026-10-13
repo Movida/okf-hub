@@ -8,6 +8,11 @@
 # adresse personnelle n'a rien à faire dans le dépôt.
 /.devcontainer/git-identity.env
 
+# Configuration propre à la machine (config.LOCAL_CONFIG_FILENAME) : elle nomme
+# les bases de l'opérateur (`trusted-checks`), qui n'ont rien à faire dans un
+# dépôt public.
+/hub-config.local.yaml
+
 # Journal du hub (§ 4.1)
 hub.log
 *.log

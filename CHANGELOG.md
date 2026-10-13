@@ -14,6 +14,24 @@ Le projet suit la version de la spécification qu'il implémente : `bundle-spec 
 
 ### Ajouté
 
+- **`okf-review verify` : les plans rejoués sur une copie jetable du hub, puis
+  les contrôles que la base déclare** (spec rév. 4.3). Une base liste dans
+  `governance.checks` les commandes qui régénèrent ses vues et vérifient ses
+  règles propres ; `verify` clone toutes les bases du hub depuis leur HEAD,
+  applique les plans pour de vrai dans la copie, puis lance ces commandes —
+  sans shell, et seulement pour une base que l'opérateur a inscrite dans
+  `trusted-checks`. Le serveur MCP ne les lance jamais. Ce que le `--dry-run`
+  ne pouvait pas voir n'était décrit qu'en prose dans les skills de revue, qui
+  expliquaient comment monter la copie à la main. Voir `README.md`, § « Le rôle
+  gestionnaire », et `docs/ARCHITECTURE.md`, § 6 septies.
+
+- **`hub-config.local.yaml`, jamais versionné**, surcharge `hub-config.yaml` :
+  `trusted-checks`, et `private-terms` pour le garde-fou ci-dessous.
+
+- **`tests/test_neutralite.py` : le dépôt public ne nomme aucune base privée.**
+  Il déduit de `bases/` les noms des bases installées qui ne sont pas livrées
+  avec le hub, et échoue si un fichier versionné les cite. Sauté en CI.
+
 - **Profils de configuration pour `hub-config.yaml`.** Plutôt que de configurer
   chaque paramètre individuellement (`bases-dir`, `read-toc-threshold`,
   `log-file`, `bootstrap-bundles`, `sync-on-start`), on peut désormais choisir
@@ -90,6 +108,20 @@ Le projet suit la version de la spécification qu'il implémente : `bundle-spec 
   restent toujours un **préfixe du classement**, propriété qu'un remplissage
   « au mieux » aurait cassée. Voir [`docs/API.md`](docs/API.md) § kb_search et
   [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) § 6 sexies.
+
+### Modifié
+
+- **Les skills de revue redeviennent génériques.** Six semaines de leçons y
+  avaient fait entrer les règles, les scripts et les objets de bases
+  particulières. Elles vivent désormais dans la section « Revue des
+  propositions par le hub » de l'`AGENTS.md` de chaque base ; les skills y
+  renvoient, et la copie montée à la main cède la place à `verify`. La
+  documentation, les exemples et les tests prennent des noms neutres
+  (`produit-x`, `installation-x`, `referentiel-x`).
+
+- **README : deux limitations périmées retirées ou corrigées** — la recherche
+  n'est plus mono-base, et la synchronisation au démarrage existe (aucun push,
+  toujours).
 
 ### Corrigé
 

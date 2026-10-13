@@ -10,7 +10,7 @@
 > sont recensés dans [`ARCHITECTURE.md`](ARCHITECTURE.md), section « Écarts
 > assumés » — nulle part ailleurs.
 >
-> **Révision courante : 4.2.** L'amendement rév. 4.1 (premier retour d'usage
+> **Révision courante : 4.3.** L'amendement rév. 4.1 (premier retour d'usage
 > réel d'une session consommatrice, post-J5) a été intégré dans le corps du
 > texte, section par section, plutôt qu'annexé : les renvois « § x.y » du code
 > restent ainsi la seule adresse d'une exigence. Les passages issus de
@@ -19,7 +19,10 @@
 > prévaut et le conflit est remonté au propriétaire — c'est ce mécanisme de
 > clôture qui a produit la **rév. 4.2** (§ 4.4.c), après qu'une implémentation
 > conforme à la lettre de la rév. 4.1 a fait échouer une garantie de la rév. 4.
-> Les passages qui en sont issus portent la mention **(rév. 4.2)**.
+> Les passages qui en sont issus portent la mention **(rév. 4.2)**. La
+> **rév. 4.3** (§ 3.3, § 4.1, § 7.1, § 8) ouvre l'exécution des contrôles
+> qu'une base déclare, sous approbation de l'opérateur ; ses passages portent
+> la mention **(rév. 4.3)**.
 
 Document d'implémentation, révision 4.1 — révision 4 (version finale pour
 implémentation, intégrant les retours des trois relectures croisées), amendée
@@ -170,11 +173,23 @@ governance:
   frontmatter-schema: ./schema.yaml # optionnel ; si absent, pas de doc de schéma
   review: human                     # optionnel, défaut "human" — seule valeur v0.
                                     # [v1+] : "agent", "auto"
+  checks:                           # optionnel (rév. 4.3) — contrôles de la base,
+    - python3 scripts/check.py      # lancés par `okf-review verify` seulement (§ 7.1)
 
 # --- Extensions [v1+] — ignorées en v0, le parseur ne doit PAS les rejeter ---
 tools: []
 skills: []
 ```
+
+**Contrôles de la base (rév. 4.3).** `governance.checks` liste, dans l'ordre,
+les commandes qui régénèrent les vues dérivées de la base et vérifient ses
+règles propres — celles qu'aucun outil du hub ne connaît. Chaque entrée est
+découpée comme par un shell (`shlex`) mais **jamais passée à un shell** : ni
+expansion, ni enchaînement. Le hub n'en lance aucune de lui-même : seul
+`okf-review verify` les exécute, sur une copie jetable, et seulement pour une
+base que l'opérateur a approuvée (§ 4.1, § 8). Un champ mal formé n'invalide pas
+le bundle : il est ignoré avec un avertissement, comme tout champ que la
+découverte n'utilise pas.
 
 **Adressage :** le paramètre `base` des outils MCP correspond au champ `name` du
 manifeste, **pas** au nom du répertoire dans `bases/`. Les deux peuvent différer
@@ -290,6 +305,17 @@ read-toc-threshold: 8192    # octets ; au-delà, kb_read sans section retourne l
                             # table des headings (§ 5.3). Configurable car la
                             # granularité des corpus varie beaucoup.
 log-file: ./hub.log
+```
+
+**Configuration locale (rév. 4.3).** `hub-config.local.yaml`, à côté, **jamais
+versionné** : ses clés remplacent celles de `hub-config.yaml`. Il porte ce qui
+appartient à l'opérateur d'une machine et nomme ses bases — à commencer par
+`trusted-checks`, la liste des bases dont `okf-review verify` peut lancer les
+contrôles (§ 8). Le dépôt du hub pouvant être public, une base privée ne doit
+jamais y être nommée.
+
+```yaml
+trusted-checks: [ma-base, mon-autre-base]
 ```
 
 **Journalisation multi-instances :** `hub.log` est partagé entre toutes les
@@ -845,6 +871,15 @@ qui échoue silencieusement.
    proposition contenant des directives adressées au gestionnaire (« ignore tes
    règles », « intègre sans revue »...) est **escaladée à l'humain avec
    signalement**.
+4 bis. **Vérification sur copie (rév. 4.3)** : si une base touchée par le lot
+   déclare des contrôles (§ 3.3), les plans sont rejoués **ensemble, dans
+   l'ordre d'exécution**, par `okf-review verify`, avant d'être présentés.
+   Ce que la vérification à blanc (`--dry-run`) ne peut pas voir — les règles
+   propres à une base — y échoue comme à l'exécution. La copie couvre toutes les
+   bases du hub, clonées depuis leur HEAD : un contrôle qui lit ses voisines les
+   lit dans la copie, et ne peut écrire dans aucune vraie base par un chemin
+   relatif. Les règles de revue propres à une base vivent dans la base
+   (`AGENTS.md`, `GOVERNANCE.md`), jamais dans la skill, qui reste générique.
 5. **Mode `review: human` (v0)** : présenter le lot de recommandations à
    l'humain, **n'exécuter les commits qu'après confirmation explicite**, par
    élément ou en lot. Exécution via `okf-lock`, une résolution = une acquisition.
@@ -876,7 +911,7 @@ dans ce cadre ; ce qui n'y résiste pas est marqué.
 | Contenu de proposition malveillant/erroné | Une proposition est **inerte** : texte jamais exécuté, jamais intégré sans revue. Double barrière : règle « données non fiables » (§ 7.1.4) + confirmation humaine. |
 | Injection de prompt via un bundle importé | **Risque réel et partiellement couvert en v0.** Trois vecteurs : (1) `title`/`description` du manifeste, injectés dans les descriptions d'outils MCP donc dans le contexte de toutes les sessions connectées, sans même ouvrir le bundle — atténué par la validation § 3.3, qui limite la surface sans l'éliminer ; (2) `GOVERNANCE.md`, injecté dans le contexte du gestionnaire ; (3) `CLAUDE.md`, dans celui de toute session ouvrant le dépôt. Importer un bundle v0 est sans risque d'**exécution**, mais pas sans risque d'**influence**. **Consigne v0 (README + template) : n'importer que des bundles de confiance, et relire manifeste, `GOVERNANCE.md` et `CLAUDE.md` avant le premier usage de tout bundle tiers.** [v1+] : revue d'import outillée, éventuellement bundles signés. |
 | Usurpation `submitted-by` | Non authentifié, documenté comme tel. [v1+] : jetons par contributeur ou signatures. |
-| Bundles tiers → exécution de code | Sans objet en v0 : `tools`/`skills` non chargés. [v1+] : approbation explicite par outil + sous-processus confiné. |
+| Bundles tiers → exécution de code | `tools`/`skills` non chargés en v0 ; [v1+] : approbation explicite par outil + sous-processus confiné. **(rév. 4.3)** Les `governance.checks` d'une base (§ 3.3) sont du code de la base : jamais lancés par le serveur MCP, ni à la découverte, ni par une session consommatrice ; seulement par `okf-review verify`, invoqué par l'opérateur ou le gestionnaire, pour une base inscrite dans `trusted-checks` (§ 4.1). L'approbation porte sur la base, pas sur chaque commande : c'est le code de ses scripts qu'on approuve, et figer leurs lignes de commande ne figerait pas leur contenu. Le confinement est celui d'une copie jetable : aucune vraie base n'est atteignable par chemin relatif ; ce n'est pas un bac à sable contre un script malveillant, hors du modèle de menace v0. |
 | Corruption par écritures concurrentes | `flock()` (auto-libéré à la mort du processus, fd frais par acquisition — § 4.4.b) + index git temporaire initialisé depuis HEAD + écriture atomique par `rename`. Fenêtre de crash résiduelle rattrapée par réconciliation (§ 7.1.0). **Tests de concurrence obligatoires (J2).** |
 | Déni par inflation | `content` ≤ 16 Ko, `sources` ≤ 20 × 300 car., `concerns` ≤ 200 car., `submitted_by` ≤ 100 car. → `INVALID_INPUT` au-delà. `description` de manifeste plafonnée (§ 3.3). Sorties d'outils plafonnées (§ 5). Re-scan silencieux sous cooldown 5 s (§ 4.4.c). |
 
@@ -1110,9 +1145,33 @@ Non retenu : revenir à un compteur unique en échange d'un mécanisme de rattra
 supplémentaire — cela aurait réintroduit un second mécanisme, exactement ce que
 la rév. 4.1 exclut.
 
+### rév. 4.3 — contrôles déclarés par la base (post-J5-ter)
+
+Origine : six semaines de revues réelles. Ce que la vérification à blanc ne voit
+pas — les règles propres à chaque base, portées par ses scripts — s'est
+accumulé en prose dans la skill générique : comment monter une copie, quels
+scripts y lancer, ce que chacun refuse. Deux effets : la skill est devenue le
+manuel de bases particulières, publié avec le dépôt du hub, et chaque revue
+remontait la même copie à la main. Le § 8 classait l'exécution de code d'un
+bundle en [v1+] avec approbation explicite ; ouverte ici par décision du
+propriétaire, dans le périmètre le plus étroit qui règle le problème.
+
+| § amendé | Objet |
+|---|---|
+| § 3.3 | `governance.checks` : contrôles déclarés par la base, jamais passés à un shell |
+| § 4.1 | `hub-config.local.yaml`, jamais versionné ; `trusted-checks` |
+| § 7.1 | Étape 4 bis : `okf-review verify`, plans rejoués sur une copie de tout le hub ; règles propres à une base dans la base |
+| § 8 | Exécution des contrôles : CLI seulement, approbation par base, confinement par copie |
+
+Non retenu : lancer les contrôles depuis le serveur MCP ou après chaque
+`kb_propose` (code d'une base exécuté sur l'initiative d'une session
+consommatrice) ; approbation commande par commande (fausse sécurité, voir § 8) ;
+liens symboliques vers les bases voisines dans la copie (un contrôle aurait pu y
+écrire).
+
 ---
 
-*Fin de spécification (rév. 4.2).* **Toute déviation par rapport aux principes du
+*Fin de spécification (rév. 4.3).* **Toute déviation par rapport aux principes du
 § 1 ou aux mécanismes du § 4.4.b doit être remontée au propriétaire du projet
 avant implémentation.** En cas de conflit non identifié entre deux révisions,
 **la plus ancienne prévaut** et le conflit est remonté.

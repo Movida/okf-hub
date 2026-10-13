@@ -37,7 +37,8 @@ src/okf_hub/
 │                   déclencheur, § 4.4.c rév. 4.2, cf. § 5 bis), émission de
 │                   tools/list_changed.
 │
-├── config.py       hub-config.yaml → HubConfig (immuable).
+├── config.py       hub-config.yaml, surchargé par hub-config.local.yaml
+│                   (jamais versionné) → HubConfig (immuable).
 ├── hublog.py       Journal multi-instances : O_APPEND, une entrée = un write.
 ├── errors.py       Codes d'erreur et ToolError.
 ├── textutil.py     Plafond de sortie (BudgetedWriter), normalisation.
@@ -65,7 +66,9 @@ src/okf_hub/
 ├── gitops.py       Index temporaire depuis HEAD, identité explicite, trailers,
 │                   synchronisation de l'index partagé.
 ├── search.py       ripgrep, ET strict puis repli OU, déclassement des sommaires.
-├── review.py       Moteur du rôle gestionnaire : réconciliation, plan, résolution.
+├── review.py       Moteur du rôle gestionnaire : réconciliation, plan, résolution,
+│                   et `verify` : plans rejoués sur une copie jetable du hub,
+│                   puis contrôles déclarés par la base (rév. 4.3).
 ├── resolve.py      CLI name → chemin, pour les scripts shell.
 └── tools/          Un module par outil : SCHEMA, description(), run().
 ```
@@ -753,6 +756,31 @@ point unique par instance, sans état partagé, et ne pousse jamais.
 
 ---
 
+## 6 septies. Décisions d'implémentation d'`okf-review verify` (rév. 4.3)
+
+Origine : la skill de revue, générique et publiée avec le hub, s'était chargée
+en six semaines de tout ce que le `--dry-run` ne voit pas dans des bases
+particulières — comment monter une copie, quels scripts y lancer, ce que chacun
+refuse. Le propriétaire a ouvert le § 8 (exécution du code d'une base) dans le
+périmètre le plus étroit : spec rév. 4.3.
+
+| Point | Décision | Motif |
+|---|---|---|
+| Où vit la liste des contrôles | Dans la base : `governance.checks` du manifeste | La base sait comment se vérifier ; une liste tenue côté hub dériverait à chaque nouveau script, et nommerait des bases privées dans un dépôt public. |
+| Qui approuve | L'opérateur, dans `hub-config.local.yaml` (`trusted-checks`), **par base** | L'approbation suit la confiance réelle : on approuve le code des scripts d'une base, pas des lignes de commande, qui ne figent pas ce qu'elles lancent. Le fichier est local parce qu'il nomme des bases. |
+| Qui lance | `okf-review verify` seul, jamais le serveur MCP | Une session consommatrice ne doit pas pouvoir faire exécuter le code d'une base (§ 1.3, § 8) ; la revue est déjà en ligne de commande. |
+| Refus sans approbation | Avant toute copie, avec les commandes déclarées et la ligne à ajouter ; contrôlé une seconde fois sur les manifestes de la copie | Un `verify` qui rejouerait les plans en sautant silencieusement les contrôles donnerait une fausse assurance. La copie exécute les manifestes de HEAD : un manifeste modifié sans être commité ne doit pas faire passer des commandes que personne n'a approuvées. |
+| Ce qui est copié | **Toutes** les bases du hub, clonées depuis HEAD dans un hub jetable (`bases/`, `hub-config.yaml` minimal) | Les contrôles lisent leurs voisines par chemin relatif (`../<base>/…`). Un lien symbolique vers les vraies leur aurait permis d'y écrire ; un clone local partage les objets par liens physiques : 8 s pour sept bases et 270 Mo. |
+| Rejeu des plans | `apply_plan` réel dans la copie, un commit par plan, dans l'ordre donné ; `<base>:<chemin>` pour un lot sur plusieurs bases | Le même code que l'exécution réelle, pas un simulateur ; un contrôle qui lit une voisine voit les plans de la voisine déjà appliqués. |
+| Moment des contrôles | Après le dernier plan par défaut ; `--each` après chaque plan, avec retour à HEAD entre deux | Un `check_all` de plusieurs minutes, relancé après chaque plan, rendait la vérification d'un lot impraticable ; `--each` sert à désigner le plan fautif. Le retour à HEAD remet les vues régénérées dans l'état contre lequel le plan suivant a été rédigé. |
+| Exécution d'une commande | `shlex.split` à la lecture du manifeste, `subprocess` sans shell, `cwd` = la base dans la copie, arrêt au premier échec par base | Pas d'enchaînement ni d'expansion cachés dans une chaîne ; une vue qui n'a pas pu être régénérée rendrait les contrôles suivants trompeurs. |
+| Journal | Celui de la copie, pas `hub.log`, le temps de la vérification | Le journal partagé dirait « commit … dans <base> » pour une intégration qui n'a pas eu lieu. |
+| Copie conservée | En cas d'échec (ou `--keep`), avec un journal par commande | On examine l'état exact qui a échoué, sans le reconstituer. |
+
+**Aucun écart assumé** : le § 8 est amendé, pas contourné.
+
+---
+
 ## 6 quinquies. Décisions d'implémentation de la navigation dans `kb_read`
 
 Origine : un diagnostic architectural externe (propriétaire du projet, retour
@@ -911,6 +939,18 @@ pour vérifier la couverture sans relire la suite.
 | Bases livrées — **dépôt canonique cloné, jamais semé** | `test_une_base_avec_amont_est_clonee_pas_semee`, `test_un_clone_impossible_ne_seme_jamais`, `test_le_journal_dit_comment_rattraper` |
 | **D4 — critère d'acceptation** : contribution → revue → verdict, sans git côté contributeur | `test_boucle_complete_sans_acces_git_du_contributeur`, `test_le_rejet_est_lisible_avec_son_motif` |
 
+### rév. 4.3 — contrôles déclarés par la base
+
+| Exigence | Test (`tests/test_verify.py`) |
+|---|---|
+| § 8 — aucun contrôle lancé sans approbation, refus avant toute copie ; approbation vérifiée aussi sur les manifestes de HEAD, ceux que la copie exécute | `test_base_non_approuvee_refusee_avant_toute_copie`, `test_l_approbation_porte_sur_les_manifestes_de_head` |
+| § 3.3 — `governance.checks` mal formé n'invalide pas le bundle | `test_checks_mal_formes_n_invalident_pas_le_bundle` |
+| § 4.1 — `hub-config.local.yaml` surcharge, `trusted-checks` validé | `test_config_locale_surcharge_et_valide` |
+| § 7.1.4 bis — plans rejoués, contrôles lancés, vraie base intacte, journal partagé muet | `test_plans_rejoues_et_controles_reussis_sans_toucher_la_base` |
+| Contrôle en échec : rapporté, copie conservée | `test_controle_en_echec_rapporte_et_copie_conservee`, `test_plan_refuse_arrete_la_verification` |
+| `--each` : plan fautif désigné, vues remises à HEAD | `test_each_designe_le_plan_fautif_et_restaure_les_vues` |
+| Lot sur plusieurs bases ; voisines clonées, **jamais écrites** | `test_lot_multi_bases_et_voisines_clonees` |
+
 Exécution :
 
 ```sh
@@ -935,6 +975,13 @@ précisément un problème de concurrence. D'où `hublog.py` en `os.write` direc
 **Rien ne doit sérialiser du YAML par templating de chaînes** (§ 1.7). Si vous
 ajoutez un champ au frontmatter d'une proposition, il passe par
 `yaml.safe_dump`, sans exception. Les tests d'injection en dépendent.
+
+**Le dépôt du hub est public ; les bases d'un opérateur ne le sont pas.**
+Aucun nom de base privée, d'objet, de serveur ou de personne n'entre dans un
+fichier versionné du hub : ni dans un exemple, ni dans un test, ni dans une
+leçon de revue. Une règle propre à une base s'écrit dans la base (son
+`AGENTS.md`), un nom propre à l'opérateur dans `hub-config.local.yaml`.
+`tests/test_neutralite.py` le vérifie contre les bases installées localement.
 
 **Une nouvelle capacité d'écriture ne va pas dans `tools/`.** La surface MCP
 exposée aux sessions consommatrices se limite à `kb_propose`, confiné à
@@ -984,10 +1031,19 @@ un livrable distinct, publié sur GitHub et non monté dans le devcontainer ; la
 modification qui lui revenait a été livrée en patch, appliquée en amont, puis
 retirée d'ici. C'est la procédure à reprendre pour toute évolution du template.
 
+**En attente d'application en amont (rév. 4.3)** :
+[`docs/patches/okf-bundle-template-governance-checks.patch`](patches/okf-bundle-template-governance-checks.patch)
+documente `governance.checks` dans le manifeste du template et dans
+`INSTANTIATE.md`. Procédure : `git -C <clone d'okf-bundle-template> am <patch>`,
+pousser, puis retirer le patch de ce dépôt.
+
 **L'index de recherche dérivé mérite un mot** : la spec dit de ne l'ajouter que
-si ripgrep devient *mesurablement* insuffisant. Mesure actuelle sur le corpus le
-plus gros disponible (856 documents) : découverte + recherche en **0,15 s**. Rien
-ne le justifie aujourd'hui.
+si ripgrep devient *mesurablement* insuffisant. Mesure du 2026-10-13, sept bases
+installées (3 492 documents) : sur la plus grosse (2 476 documents), découverte
++ recherche en **0,15 s** par requête (médiane de 8 requêtes × 5 passes) ; sur
+toutes les bases à la fois (`base: "*"`), **0,25 s**. La mesure précédente
+(0,15 s sur 856 documents) a été faite sur un corpus trois fois plus petit, et le
+coût n'a pas bougé : rien ne justifie un index aujourd'hui.
 
 **Extraits bornés par résultat dans `kb_search` n'est pas fait.** Piste
 retenue par le propriétaire (2026-09-10, cf. § 6 sexies) pour traiter à la

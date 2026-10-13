@@ -444,6 +444,7 @@ bin/okf-review context   <base>            # golden rules + schéma + corpus
 bin/okf-review inventory <base> --full     # propositions en attente
 bin/okf-review resolve   <base> --plan plan.json --dry-run
 bin/okf-review resolve   <base> --plan 01.json --plan 02.json --dry-run
+bin/okf-review verify    <base> --plan 01.json --plan 02.json   # sur une copie
 bin/okf-review resolve   <base> --plan plan.json
 ```
 
@@ -451,6 +452,28 @@ bin/okf-review resolve   <base> --plan plan.json
 propositions présentes dans `pending/`, sections trouvées, fusion de frontmatter
 acceptée. Répété, `--plan` vérifie une **cascade** de plans comme s'ils étaient
 exécutés dans l'ordre ; l'exécution, elle, n'accepte qu'un plan à la fois.
+
+`verify` va plus loin : il rejoue les plans **pour de vrai** sur une copie
+jetable de tout le hub (chaque base clonée depuis son HEAD), puis lance les
+contrôles que la base déclare dans son manifeste — ce qu'aucun `--dry-run` ne
+peut voir, puisque ces règles sont propres à la base :
+
+```yaml
+# okf-bundle.yaml de la base
+governance:
+  rules: ./GOVERNANCE.md
+  checks:
+    - python3 _work/scripts/gen_index.py
+    - python3 _work/scripts/check_all.py
+```
+
+Rien n'est lancé sans l'accord de l'opérateur : la base doit figurer dans
+`trusted-checks` de `hub-config.local.yaml` (voir « Configuration »), après
+relecture de ses scripts. Le serveur MCP ne lance jamais ces commandes. Les
+contrôles tournent après le dernier plan ; `--each` les lance après chaque plan
+pour désigner le fautif ; `--plan <base>:<chemin>` vérifie un lot qui touche
+plusieurs bases, dans l'ordre d'exécution. En cas d'échec, la copie est
+conservée avec un journal par commande.
 
 `resolve` et `reconcile --apply` prennent eux-mêmes le verrou, à la granularité
 imposée : **une résolution complète = une acquisition**. Ne pas les envelopper
@@ -482,22 +505,17 @@ git -C bases/<nom> log --grep "Proposal: prop-2026-08-30-a3f2"
 cat bases/<nom>/proposals/rejected/prop-2026-08-30-a3f2.md
 ```
 
-### La recherche est mono-base
-
-`kb_search` interroge une base à la fois. L'extension multi-bases est reportée en
-v1 optionnelle : un seul retour d'usage l'a demandée, on attend la récurrence
-avant d'élargir la surface d'outils.
-
 ### `submitted_by` n'est pas authentifié
 
 C'est un champ déclaratif. Il ne doit peser dans aucune décision d'intégration.
 
-### Aucune synchronisation avec un remote
+### Aucun push automatique
 
-Le clone présent dans `bases/` est la copie canonique. Aucun `push` ni `pull`
-automatique n'est effectué, même si le bundle a un remote. Toute
-synchronisation est manuelle et **hors garanties** : un `pull` qui écrase des
-propositions locales non poussées est de la responsabilité de l'opérateur.
+Le clone présent dans `bases/` est la copie canonique. Au démarrage, chaque
+instance avance une base sur son remote **en fast-forward seulement** (voir
+« Elles se synchronisent avec leur remote au démarrage ») ; elle ne pousse
+jamais, et une divergence est signalée, jamais résolue. Pousser reste manuel et
+**hors garanties**.
 
 Pratique recommandée : pousser après chaque session de revue.
 
@@ -640,6 +658,22 @@ Exemple combinant profil et surcharge :
 ```yaml
 profile: dev
 read-toc-threshold: 4096  # surcharge du profil dev
+```
+
+### Configuration locale, jamais versionnée
+
+`hub-config.local.yaml`, à côté de `hub-config.yaml`, est ignoré par git : ses
+clés remplacent celles du fichier versionné. Il porte ce qui appartient à
+l'opérateur de la machine — et **nomme ses bases**, qui n'ont rien à faire dans
+le dépôt public du hub :
+
+```yaml
+# Bases dont `okf-review verify` peut lancer les contrôles, après relecture.
+trusted-checks: [ma-base, mon-autre-base]
+
+# Termes que le dépôt du hub ne doit jamais contenir, en plus des noms des bases
+# privées installées (déduits d'office) — vérifiés par tests/test_neutralite.py.
+private-terms: [MonOrganisation, NOM_DE_PROJET]
 ```
 
 ## Invariants d'audit

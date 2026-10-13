@@ -48,6 +48,22 @@ n'utilise `ruamel`, et la fusion ne tient que par sa garde : ce qui n'est pas
 vérifié fidèle est **refusé**. Affaiblir la garde pour faire passer une revue,
 c'est rouvrir le bug — le refus dit quoi corriger à la source.
 
+**Ce dépôt est public ; les bases de l'opérateur ne le sont pas.** Aucun nom
+de base privée, d'objet, de table, d'environnement ou d'organisation n'entre
+dans un fichier versionné du hub — ni skill, ni doc, ni exemple, ni test. Une
+leçon de revue propre à une base s'écrit dans la section « Revue des
+propositions par le hub » de son `AGENTS.md` ; un exemple prend un nom neutre
+(`produit-x`, `installation-x`, `referentiel-x`). Vu le 2026-10-13 : six
+semaines de leçons avaient fait des skills le manuel de bases privées, publié ;
+il a fallu réécrire l'historique. `tests/test_neutralite.py` le garde, à partir
+des bases installées et de `private-terms` (`hub-config.local.yaml`, jamais
+versionné) : sauté en CI, il ne protège que sur le poste — d'où la règle.
+
+**Le code d'une base ne se lance que par `okf-review verify`.** Ses
+`governance.checks`, sur une copie jetable de tout le hub, pour une base que
+l'opérateur a inscrite dans `trusted-checks` (spec rév. 4.3, § 8). Jamais depuis
+le serveur MCP, jamais sur l'initiative d'une session consommatrice.
+
 **Une nouvelle capacité d'écriture ne va pas dans `tools/`.** La surface MCP
 exposée aux sessions consommatrices se limite à `kb_propose`, confiné à
 `proposals/pending/`. Ce qui touche au corpus vit dans `review.py`, invoqué en
@@ -103,7 +119,7 @@ de l'instance.
 ## Vérifier avant de conclure
 
 ```sh
-uv run pytest -q                 # 449 tests, dont la boucle de stress
+uv run pytest -q                 # 460 tests, dont la boucle de stress
 uv run pytest -q -m "not slow"   # sans le test deux processus × 25 itérations
 ```
 

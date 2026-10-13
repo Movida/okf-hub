@@ -5,6 +5,7 @@
 #   okf-review inventory <base> [--full]
 #   okf-review reconcile <base> [--apply]
 #   okf-review resolve   <base> --plan <plan.json> [--dry-run]
+#   okf-review verify    <base> --plan <plan.json>... [--each] [--keep]
 #
 # Le verrouillage est intégré : `resolve` et `reconcile --apply` acquièrent
 # eux-mêmes le verrou de la base à la granularité imposée (§ 4.4.b.3), une

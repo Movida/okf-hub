@@ -9,6 +9,13 @@ import yaml
 
 CONFIG_FILENAME = "hub-config.yaml"
 
+#: Surcharge propre à la machine, jamais versionnée (`.gitignore`). Ses clés
+#: remplacent celles de `hub-config.yaml`. C'est là que vit `trusted-checks` :
+#: approuver l'exécution du code d'une base est une décision de l'opérateur de
+#: CE hub, et nommer ses bases dans un fichier versionné les publierait avec le
+#: dépôt du hub.
+LOCAL_CONFIG_FILENAME = "hub-config.local.yaml"
+
 DEFAULT_BASES_DIR = "./bases"
 DEFAULT_READ_TOC_THRESHOLD = 8192
 DEFAULT_LOG_FILE = "./hub.log"
@@ -63,19 +70,14 @@ class HubConfig:
     log_file: Path | None
     bootstrap_bundles: bool = DEFAULT_BOOTSTRAP_BUNDLES
     sync_on_start: bool = DEFAULT_SYNC_ON_START
+    trusted_checks: frozenset[str] = frozenset()
+    """Bases dont `okf-review verify` peut lancer les `governance.checks` (§ 8)."""
 
     @staticmethod
     def load(hub_root: Path) -> "HubConfig":
         hub_root = hub_root.resolve()
         path = hub_root / CONFIG_FILENAME
-        raw: dict = {}
-        if path.is_file():
-            loaded = yaml.safe_load(path.read_text(encoding="utf-8"))
-            if loaded is None:
-                loaded = {}
-            if not isinstance(loaded, dict):
-                raise ValueError(f"{path} : la racine doit être une correspondance YAML")
-            raw = loaded
+        raw = {**_read(path), **_read(hub_root / LOCAL_CONFIG_FILENAME)}
 
         # Charger les valeurs par défaut du profil spécifié (ou "solo" par défaut).
         profile_name = raw.get("profile", DEFAULT_PROFILE)
@@ -104,6 +106,10 @@ class HubConfig:
         if not isinstance(sync_on_start, bool):
             raise ValueError(f"{path} : sync-on-start doit être un booléen")
 
+        trusted = raw.get("trusted-checks") or []
+        if not isinstance(trusted, list) or not all(isinstance(n, str) for n in trusted):
+            raise ValueError(f"{path} : trusted-checks doit être une liste de noms de bases")
+
         return HubConfig(
             hub_root=hub_root,
             bases_dir=bases_dir,
@@ -111,7 +117,19 @@ class HubConfig:
             log_file=log_file,
             bootstrap_bundles=bootstrap,
             sync_on_start=sync_on_start,
+            trusted_checks=frozenset(trusted),
         )
+
+
+def _read(path: Path) -> dict:
+    if not path.is_file():
+        return {}
+    loaded = yaml.safe_load(path.read_text(encoding="utf-8"))
+    if loaded is None:
+        return {}
+    if not isinstance(loaded, dict):
+        raise ValueError(f"{path} : la racine doit être une correspondance YAML")
+    return loaded
 
 
 def _resolve(hub_root: Path, value) -> Path:

@@ -12,6 +12,7 @@ Usage :
     python -m okf_hub.review inventory <base> [--full]
     python -m okf_hub.review reconcile <base> [--apply]
     python -m okf_hub.review resolve   <base> --plan <plan.json> [--dry-run]
+    python -m okf_hub.review verify    <base> --plan <plan.json>... [--each] [--keep]
 """
 
 from __future__ import annotations
@@ -19,7 +20,13 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
+import shlex
+import shutil
+import subprocess
 import sys
+import tempfile
+import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -27,7 +34,7 @@ from pathlib import Path
 import yaml
 
 from . import gitops, hublog
-from .config import HubConfig
+from .config import LOCAL_CONFIG_FILENAME, HubConfig
 from .errors import INVALID_INPUT, NOT_FOUND, ToolError
 from .frontmatter import merge_frontmatter
 from .governance import DRAFT, status_of_text
@@ -469,6 +476,177 @@ def apply_plan(base: Base, plan: Plan) -> str:
     return sha
 
 
+# --- vérification sur copie jetable (rév. 4.3, § 7.1 étape 4 bis) -------------
+
+#: Lignes de journal reproduites quand un contrôle échoue ; le journal entier
+#: reste dans la copie, conservée en cas d'échec.
+CHECK_TAIL_LINES = 40
+
+
+@dataclass
+class Etape:
+    base: str
+    fichier: Path
+    plan: Plan
+
+
+def _copie_jetable(registry: Registry, racine: Path) -> Registry:
+    """Clone chaque base enregistrée sous `racine/bases/` et y ouvre un registre.
+
+    Toutes les bases, pas seulement celles que les plans touchent : un contrôle
+    lit souvent ses voisines par chemin relatif (`../<base>/…`), et un lien
+    symbolique vers les vraies lui permettrait d'y écrire. Le clone local partage
+    les objets par liens physiques : quelques secondes pour tout un hub. Il part
+    de HEAD — ce qui n'est pas commité n'est pas vérifié.
+    """
+    bases = racine / "bases"
+    bases.mkdir(parents=True)
+    for base in registry.ordered():
+        subprocess.run(
+            ["git", "clone", "-q", str(base.root), str(bases / base.dir_name)],
+            check=True, capture_output=True, text=True,
+        )
+    (racine / "hub-config.yaml").write_text(
+        yaml.safe_dump({
+            "bases-dir": "./bases", "log-file": None,
+            "bootstrap-bundles": False, "sync-on-start": False,
+        }),
+        encoding="utf-8",
+    )
+    copie = Registry(HubConfig.load(racine))
+    copie.scan()
+    return copie
+
+
+def _controler(base: Base, journaux: Path, etiquette: str) -> bool:
+    """Lance les `governance.checks` de `base` dans sa copie, dans l'ordre déclaré.
+
+    S'arrête au premier échec : une vue générée qui n'a pas pu l'être rendrait
+    les contrôles suivants trompeurs.
+    """
+    if not base.manifest.checks:
+        print(f"  {base.name} : aucun contrôle déclaré (governance.checks)")
+        return True
+    for k, argv in enumerate(base.manifest.checks, 1):
+        commande = shlex.join(argv)
+        journal = journaux / f"{etiquette}-{base.name}-{k}.log"
+        print(f"  {base.name} → {commande}", flush=True)
+        debut = time.monotonic()
+        try:
+            with journal.open("w", encoding="utf-8") as sortie:
+                code = subprocess.run(
+                    argv, cwd=base.root, stdout=sortie, stderr=subprocess.STDOUT
+                ).returncode
+        except OSError as exc:
+            print(f"    ✗ lancement impossible : {exc}")
+            return False
+        duree = time.monotonic() - debut
+        if code != 0:
+            lignes = journal.read_text(encoding="utf-8", errors="replace").splitlines()
+            print(f"    ✗ code {code} ({duree:.0f} s) — journal : {journal}")
+            for ligne in lignes[-CHECK_TAIL_LINES:]:
+                print(f"    | {ligne}")
+            return False
+        print(f"    ✓ ({duree:.0f} s)")
+    return True
+
+
+def _supprimer_copie(racine: Path) -> None:
+    # Le hub tout entier est cloné : aucun lien ne sort de la copie, la
+    # suppression ne peut rien atteindre au-dehors.
+    shutil.rmtree(racine, ignore_errors=True)
+
+
+def cmd_verify(
+    registry: Registry, etapes: list[Etape], chaque: bool, garder: bool,
+    workdir: Path | None,
+) -> int:
+    """Rejoue les plans pour de vrai sur une copie du hub, puis lance les
+    contrôles que chaque base déclare. Rien n'est écrit dans les vraies bases.
+
+    Ce que le `--dry-run` ne peut pas voir — les règles propres à une base,
+    portées par ses scripts — se voit ici avant toute résolution réelle.
+    """
+    touchees = list(dict.fromkeys(e.base for e in etapes))
+    # Approbation d'abord, avant toute copie : lancer le code d'une base est une
+    # décision de l'opérateur du hub (§ 8), jamais un effet de son manifeste.
+    _exiger_approbation(registry, touchees, registry.config.trusted_checks)
+
+    racine = Path(tempfile.mkdtemp(prefix="okf-verify-", dir=workdir))
+    print(f"Copie jetable du hub, depuis HEAD de chaque base : {racine}", flush=True)
+    journaux = racine / "journaux"
+    journaux.mkdir()
+    # Le journal partagé du hub ne doit jamais dire « commit … dans <base> » pour
+    # un commit de la copie : on y lirait une intégration qui n'a pas eu lieu.
+    hublog.configure(journaux / "hub.log")
+    try:
+        try:
+            copie = _copie_jetable(registry, racine)
+            # Ce qui tourne, ce sont les manifestes de HEAD, pas ceux du
+            # répertoire de travail : un manifeste modifié sans être commité ne
+            # doit pas faire lancer des commandes que personne n'a vues.
+            _exiger_approbation(copie, touchees, registry.config.trusted_checks)
+        except BaseException:
+            _supprimer_copie(racine)
+            raise
+        ok = _rejouer(copie, etapes, chaque, journaux)
+    finally:
+        hublog.configure(registry.config.log_file)
+
+    if ok and not garder:
+        _supprimer_copie(racine)
+        print("Vérification réussie. Copie supprimée.")
+    else:
+        print(f"{'Vérification réussie' if ok else 'ÉCHEC'}. Copie conservée : {racine}")
+    return 0 if ok else 1
+
+
+def _exiger_approbation(registry: Registry, noms: list[str], approuvees) -> None:
+    for nom in noms:
+        base = registry.get(nom)
+        illisible = [w for w in base.manifest.warnings if w.startswith("governance.checks")]
+        if illisible:
+            raise ToolError(INVALID_INPUT, f"{nom} : {illisible[0]}")
+        if base.manifest.checks and nom not in approuvees:
+            commandes = "\n".join(f"  {shlex.join(a)}" for a in base.manifest.checks)
+            raise ToolError(
+                INVALID_INPUT,
+                f"la base '{nom}' déclare des contrôles que ce hub n'a pas approuvés :\n"
+                f"{commandes}\n"
+                f"Relisez ces scripts, puis ajoutez '{nom}' à `trusted-checks` dans "
+                f"{LOCAL_CONFIG_FILENAME}, à la racine du hub (jamais versionné).",
+            )
+
+
+def _rejouer(copie: Registry, etapes: list[Etape], chaque: bool, journaux: Path) -> bool:
+    for n, etape in enumerate(etapes, 1):
+        base = copie.get(etape.base)
+        libelle = f"plan {n} ({etape.fichier.name}, {etape.base})"
+        try:
+            _, avertissements = verify_plans(base, [etape.plan])
+            apply_plan(base, etape.plan)
+        except ToolError as exc:
+            print(f"✗ {libelle} refusé — {exc.code}: {exc.message}")
+            return False
+        print(f"✓ {libelle} : {build_subject(etape.plan)}")
+        for message in avertissements:
+            print(f"  AVERTISSEMENT : {message}")
+        if chaque:
+            if not _controler(base, journaux, f"{n:02d}"):
+                return False
+            # Les plans suivants ont été rédigés contre le corpus commité : on y
+            # revient, vues régénérées comprises.
+            for args in (["reset", "-q", "--hard", "HEAD"], ["clean", "-fdq"]):
+                subprocess.run(["git", "-C", str(base.root), *args], check=True)
+    if chaque:
+        return True
+    print("Contrôles, après le dernier plan :", flush=True)
+    ok = True
+    for nom in dict.fromkeys(e.base for e in etapes):
+        ok = _controler(copie.get(nom), journaux, "final") and ok
+    return ok
+
+
 # --- CLI ----------------------------------------------------------------------
 
 
@@ -590,10 +768,32 @@ def main(argv: list[str] | None = None) -> int:
     )
     p_resolve.add_argument("--dry-run", action="store_true")
 
+    p_verify = sub.add_parser("verify")
+    p_verify.add_argument(
+        "base", nargs="?",
+        help="base des plans non préfixés ; facultative si tous le sont",
+    )
+    p_verify.add_argument(
+        "--plan", required=True, action="append",
+        help="répétable, dans l'ordre d'exécution ; `<base>:<chemin>` vise une "
+        "autre base (lot sur plusieurs bases)",
+    )
+    p_verify.add_argument(
+        "--each", action="store_true",
+        help="contrôles après chaque plan (désigne le plan fautif, mais plus long)",
+    )
+    p_verify.add_argument("--keep", action="store_true", help="conserver la copie")
+    p_verify.add_argument("--workdir", type=Path, default=None)
+
     args = parser.parse_args(argv)
 
     try:
         registry = _registry(args.hub_root)
+        if args.command == "verify":
+            return cmd_verify(
+                registry, _etapes(registry, args.base, args.plan),
+                args.each, args.keep, args.workdir,
+            )
         base = registry.get(args.base)
 
         if args.command == "context":
@@ -637,10 +837,31 @@ def main(argv: list[str] | None = None) -> int:
     except ToolError as exc:
         print(f"ERROR: {exc.code}: {exc.message}", file=sys.stderr)
         return 4
+    except subprocess.CalledProcessError as exc:
+        print(f"ERROR: {shlex.join(exc.cmd)} : {(exc.stderr or '').strip()}", file=sys.stderr)
+        return 5
     except (OSError, json.JSONDecodeError) as exc:
         print(f"ERROR: {type(exc).__name__}: {exc}", file=sys.stderr)
         return 5
     return 0
+
+
+def _etapes(registry: Registry, defaut: str | None, valeurs: list[str]) -> list[Etape]:
+    """`--plan` → étapes. Un préfixe `<base>:` n'est lu comme tel que s'il nomme
+    une base enregistrée : un chemin qui contiendrait `:` reste un chemin."""
+    etapes = []
+    for valeur in valeurs:
+        m = re.match(r"^([a-z0-9-]+):(.+)$", valeur)
+        if m and m.group(1) in registry.bases:
+            nom, chemin = m.group(1), Path(m.group(2))
+        elif defaut:
+            nom, chemin = defaut, Path(valeur)
+        else:
+            raise ToolError(INVALID_INPUT, f"--plan {valeur} : préfixez-le par `<base>:`")
+        registry.get(nom)
+        plan = parse_plan(json.loads(chemin.read_text(encoding="utf-8")))
+        etapes.append(Etape(nom, chemin, plan))
+    return etapes
 
 
 if __name__ == "__main__":
