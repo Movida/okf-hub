@@ -38,6 +38,25 @@ réfutait un plan prêt). Quand l'agent les signale, relance-le (SendMessage) po
 qu'il les instruise à la suite, en cascade, depuis sa copie où ses premiers
 plans sont déjà appliqués : le lot reste présenté d'un seul tenant.
 
+**Plusieurs agents sur une même base (vu le 13/10, 233 propositions).** Quand
+une base dépasse ce qu'un agent instruit, découpe-la par dossiers ou par
+fichier : un agent pour la grosse fiche (`processus-x.md`), un autre pour tout
+le reste. Il reste toujours un fichier partagé : l'`index.md` racine, dont la
+table « Routage par `type` » porte des effectifs que `check_index_contract.py`
+compare au corpus. Chaque plan qui crée une fiche doit la mettre à jour. Fixe
+donc d'emblée un **ordre d'exécution** entre les agents, et exige un
+**générateur de plans** (`gen_plans.py`) qui recalcule cette table sur le
+corpus qu'on lui donne, en dernière édition de chaque plan : le lot suivant se
+régénère après le précédent. Dis à chacun quels fichiers lui sont réservés ; ce
+qu'il lui faudrait ailleurs passe par toi (« À verser par un autre agent »), et
+tu le relaies par SendMessage, tout comme les chemins des fiches que les autres
+vont créer, pour qu'il les lie au lieu de les répéter. Quand les rapports sont
+là, fais **rejouer toute la cascade sur une seule copie** par un agent de
+contrôle : chaque agent n'avait vérifié que ses plans seuls. Celui du 13/10 a
+trouvé des renvois à sens unique, une contradiction entre deux fiches (règle
+10) et une colonne d'`index.md` devenue fausse. Il écrit aussi le script
+d'exécution reprenable.
+
 Exige d'eux des **décisions fermes, sur preuves** : l'humain ne veut pas arbitrer
 ce qu'un export, un dump, le corpus ou un précédent de la base peut trancher.
 Ne remontent vers lui que les faits qu'aucune source n'établit, chacun avec une
@@ -114,8 +133,13 @@ les arrivées en cascade après eux. Présente l'ensemble : la confirmation d'un
 autre session ne vaut pas pour celle-ci.
 
 Durées à prévoir : dans referentiel-x, `check_all.py` prend environ 7 min
-(`check_catalogue` rejoue le générateur) — 8 plans font une heure. Ne donne
-pas à un agent une attente bornée plus courte que l'exécution qu'il attend.
+(`check_catalogue` rejoue le générateur) — 8 plans font une heure si on le
+relance après chacun. Quand la cascade a déjà été prouvée sur une copie (check_all
+à 0 après chaque plan), l'exécution réelle n'a besoin que d'un contrôle final :
+le 13/10, 155 plans sur cinq bases ont tourné en 12 minutes, par un script
+maître (`executer-lot.sh`, une base après l'autre, un journal par base, bilan à
+la fin). Ne donne pas à un agent une attente bornée plus courte que
+l'exécution qu'il attend.
 
 ## 4. Après les résolutions (toi)
 
