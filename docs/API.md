@@ -75,6 +75,16 @@ Les descriptions de `kb_list`, `kb_search`, `kb_read`, `kb_governance`,
 sont recalculées à chaque `tools/list`. C'est ce qui permet à une session de
 router sa requête vers la bonne base **sans appel préalable**.
 
+### Annotations
+
+Chaque outil porte des annotations MCP, d'après lesquelles un client classe les
+outils et règle leur approbation (Claude Desktop : lecture seule, écriture,
+autres). Tous s'annoncent en lecture seule (`readOnlyHint: true`), sauf
+`kb_propose` : écriture (`readOnlyHint: false`), mais non destructive
+(`destructiveHint: false`), puisqu'elle n'ajoute qu'un fichier dans
+`proposals/pending/`. Aucun n'est ouvert sur l'extérieur
+(`openWorldHint: false`). `tests/test_annotations.py` garde cette répartition.
+
 ---
 
 ## kb_list

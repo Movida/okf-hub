@@ -72,11 +72,29 @@ WATCHER_CREATE_SETTLE_S = 0.3
 RESCAN_BEFORE = frozenset({"kb_list"})
 
 
+#: Annotations MCP : un client s'en sert pour classer les outils et régler
+#: leur autorisation (Claude Desktop : lecture seule / écriture / autres). Tout
+#: est en lecture, sauf `kb_propose`, écriture additive confinée à
+#: `proposals/pending/` : jamais destructrice, jamais hors du hub.
+READ_ONLY = types.ToolAnnotations(
+    read_only_hint=True, destructive_hint=False, idempotent_hint=True,
+    open_world_hint=False,
+)
+PROPOSE = types.ToolAnnotations(
+    read_only_hint=False, destructive_hint=False, idempotent_hint=False,
+    open_world_hint=False,
+)
+
+
 class ToolSpec:
-    def __init__(self, name: str, module, schema: dict) -> None:
+    def __init__(
+        self, name: str, module, schema: dict,
+        annotations: types.ToolAnnotations = READ_ONLY,
+    ) -> None:
         self.name = name
         self.module = module
         self.schema = schema
+        self.annotations = annotations
 
     def describe(self, registry: Registry) -> str:
         return self.module.description(registry)
@@ -90,7 +108,7 @@ TOOLS: list[ToolSpec] = [
     ToolSpec("kb_search", search_tool, search_tool.SCHEMA),
     ToolSpec("kb_read", read_tool, read_tool.SCHEMA),
     ToolSpec("kb_governance", governance_tool, governance_tool.SCHEMA),
-    ToolSpec("kb_propose", propose_tool, propose_tool.SCHEMA),
+    ToolSpec("kb_propose", propose_tool, propose_tool.SCHEMA, PROPOSE),
     ToolSpec(
         "kb_proposal_status", proposal_status_tool, proposal_status_tool.SCHEMA
     ),
@@ -206,6 +224,7 @@ class HubServer:
                 name=spec.name,
                 description=spec.describe(self.registry),
                 input_schema=spec.schema,
+                annotations=spec.annotations,
             )
             for spec in TOOLS
         ]
