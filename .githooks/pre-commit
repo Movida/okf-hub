@@ -1,0 +1,11 @@
+#!/bin/sh
+# okf-hub — aucun terme privé dans un dépôt public (spec rév. 4.4).
+# Activé par `okf-hub setup` (core.hooksPath), pour le hub et ses bases
+# publiques. Les termes se déduisent des bases installées et de `private-terms`
+# (hub-config.local.yaml) : voir src/okf_hub/confidentialite.py.
+hub=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd -P)
+if [ -n "${OKF_HUB_PYTHON:-}" ]; then py=$OKF_HUB_PYTHON
+elif [ -x "$hub/.venv/bin/python" ]; then py="$hub/.venv/bin/python"
+else py=python3; fi
+OKF_HUB_ROOT="${OKF_HUB_ROOT:-$hub}" PYTHONPATH="$hub/src${PYTHONPATH:+:$PYTHONPATH}" \
+    exec "$py" -m okf_hub.confidentialite index

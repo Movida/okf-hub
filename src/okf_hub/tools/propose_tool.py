@@ -10,7 +10,7 @@ from pathlib import Path
 
 import yaml
 
-from .. import gitops, hublog
+from .. import confidentialite, gitops, hublog
 from ..errors import INVALID_INPUT, IO_ERROR, ToolError
 from ..locking import base_lock, ensure_git_exclude
 from ..registry import ACCEPTED_SUBDIR, PENDING_SUBDIR, REJECTED_SUBDIR, Base, Registry
@@ -105,9 +105,16 @@ def description(registry: Registry) -> str:
     )
     if not bases:
         return head + " Aucune base n'est actuellement enregistrée."
+    publiques = confidentialite.bases_publiques(registry.config)
     lines = [head, "", "Bases contributables :"]
     for base in bases:
-        lines.append(f"- {base.name} — {base.manifest.title} : {base.manifest.description}")
+        marque = (
+            " [DÉPÔT PUBLIC : aucun nom de base, d'objet, de serveur ou d'organisation "
+            "privés — proposition refusée sinon]" if base.name in publiques else ""
+        )
+        lines.append(
+            f"- {base.name} — {base.manifest.title} : {base.manifest.description}{marque}"
+        )
     return "\n".join(lines)
 
 
@@ -296,9 +303,34 @@ def _ensure_proposal_dirs(base: Base) -> list[Path]:
 # --- outil -------------------------------------------------------------------
 
 
+def _refuser_termes_prives(registry: Registry, base: Base, fields: dict) -> None:
+    """Une base publique ne reçoit aucun terme privé (§ 5.5, rév. 4.4).
+
+    C'est ici ou nulle part : le commit de soumission fait entrer le texte dans
+    l'historique, et une revue qui le rejetterait le garderait dans `rejected/`.
+    """
+    if base.name not in confidentialite.bases_publiques(registry.config):
+        return
+    rx = confidentialite.motif(confidentialite.termes_prives(registry))
+    texte = "\n".join(
+        [fields["concerns"], fields["content"], fields["submitted_by"], *fields["sources"]]
+    )
+    cites = confidentialite.trouver(rx, texte)
+    if cites:
+        raise ToolError(
+            INVALID_INPUT,
+            f"la base '{base.name}' est publique, et la proposition cite "
+            f"{', '.join(f'« {t} »' for t in cites)} — nom propre à une base privée de "
+            f"ce hub ou déclaré privé par son opérateur. Rien n'a été déposé. "
+            f"Reformulez avec un nom neutre (« une base métier », « produit-x »), "
+            f"y compris dans `sources` et `submitted_by`.",
+        )
+
+
 def run(registry: Registry, arguments: dict) -> str:
     base = registry.get(require_str(arguments, "base"))
     fields = _validate(arguments)
+    _refuser_termes_prives(registry, base, fields)
 
     now = datetime.now(timezone.utc)
     submitted_at = now.strftime("%Y-%m-%dT%H:%M:%SZ")

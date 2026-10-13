@@ -91,49 +91,34 @@ décision, preuve qui tranche), puis les valeurs par défaut, puis les parts « 
 porter vers ». Attends la confirmation (`kb-review`, étape 5) : une question de
 l'humain n'en est pas une.
 
-**Forme des commandes d'exécution.** Les règles d'autorisation couvrent des
-commandes simples (`bin/okf-review resolve <base> --plan …`, une commande de
-contrôle lancée depuis la base). Une boucle shell qui enchaîne les `resolve`
-avec un `cd` vers la base n'est couverte par aucune règle : le classifieur du
-mode auto l'a refusée le 05/10, et ce refus interdit ensuite de redécouper la
-même opération sans l'accord de l'humain. Lance donc chaque `resolve` et chaque
-contrôle comme une commande isolée, ou donne la boucle à l'humain pour qu'il
-l'exécute lui-même.
+**Une commande par base.** À la confirmation, chaque base s'exécute par :
 
-À la confirmation, **un agent d'exécution par base**. Il :
+```sh
+bin/okf-review resolve <base> --plan <rep>/<base>/plans/01.json … --checks
+```
 
-1. refait `inventory` — des propositions arrivent en cours de journée ; il
-   instruit les nouvelles sans les résoudre, et écarte un plan qu'une arrivée
-   contredit ;
-2. régénère les plans **en cascade depuis le corpus actuel**, les vérifie
-   ensemble par `verify`, et compare les sections avant/après pour qu'aucune
-   puce ne se perde ;
-3. exécute un plan à la fois, puis lance depuis la base, une par une, les
-   commandes de son `governance.checks` (la dernière doit sortir 0) ;
-4. ne commite pas les vues régénérées : c'est toi qui le fais, ensuite.
+Un commit par plan, dans l'ordre ; les contrôles approuvés ensuite, et les vues
+régénérées commitées à part (`regen:`). Une commande interrompue se relance
+telle quelle : les plans déjà résolus sont sautés, et les contrôles tournent
+même si tous l'étaient. C'est une commande simple, couverte par la règle
+d'autorisation `bin/okf-review *` ; n'enchaîne pas les bases dans une boucle
+shell avec des `cd` — le classifieur du mode auto l'a refusée le 05/10, et ce
+refus interdit ensuite de redécouper la même opération sans l'accord de l'humain.
 
-Dans un fil d'agent, un `cd` ne persiste pas d'un appel à l'autre : une
-commande de contrôle se lance avec son chemin absolu, ou depuis la racine de la
-base dans le même appel. Écris dans le brief d'exécution que chaque commande se
-lance **seule et l'une après l'autre** : un agent a lancé trois scripts de
-contrôle dans un même bloc d'appels, donc peut-être en parallèle, et a dû les
-rejouer.
+Avant de lancer, refais un `inventory` : des propositions arrivent en cours de
+journée. Instruis les nouvelles sans les résoudre ; écarte un plan qu'une
+arrivée contredit, et régénère les suivants en cascade, revérifiés par `verify`.
 
-**Le lancement des agents d'exécution peut lui-même être refusé.** Le 06/10,
-trois agents lancés ensemble après « continue » : le classifieur en a refusé deux
-(« Modify Shared Resources »), malgré les règles d'autorisation, et en a laissé
-partir un ; l'après-midi, le refus a de nouveau visé une seule base. Le refus
-vaut pour le résultat : ni `resolve` à la main, ni nouvel agent pour ces bases.
-Donne alors à l'humain, pour chaque base refusée, la boucle prête à lancer
-(`resolve` puis contrôles, arrêt au premier échec), ou attends qu'il te dise
-explicitement d'exécuter toi-même. Prépare cette boucle dès la présentation du
-lot : un script dans le répertoire temporaire, que l'humain lance par
-`sh <chemin>` dans un terminal, avec sa sortie copiée dans un journal
-(`… | tee <tmp>/execution.log`) que tu vérifies ensuite. Écris-le
-**reprenable** : il saute un plan dont les propositions ne sont plus dans
-`pending/`. Avec `set -e`, un script qui rejoue un plan déjà résolu s'arrête dès
-le premier, et l'humain qui s'absente pendant une longue exécution ne le laisse
-pas toujours finir (vu le 06/10 au soir).
+**Le lancement peut lui-même être refusé.** Le 06/10, trois agents d'exécution
+lancés ensemble après « continue » : le classifieur en a refusé deux (« Modify
+Shared Resources »), malgré les règles d'autorisation. Le refus vaut pour le
+résultat : ni `resolve` à la main, ni nouvel agent pour ces bases. Donne alors
+à l'humain la commande ci-dessus, prête à coller dans un terminal, sortie copiée
+dans un journal (`… | tee <tmp>/execution.log`) que tu vérifies ensuite — ou
+attends qu'il te dise explicitement d'exécuter toi-même. Pour modifier un
+fichier d'une base hors `okf-review` (un `AGENTS.md`, une gouvernance, sur
+instruction directe), préfère les outils Edit et Write, que les règles
+d'autorisation couvrent, à un script shell qui écrit dans `bases/`.
 
 **Un lot confirmé mais resté bloqué survit à sa session.** Les plans sont dans
 le répertoire temporaire de la session précédente
@@ -145,26 +130,24 @@ arrivées en cascade après eux. Présente l'ensemble : la confirmation d'une au
 session ne vaut pas pour celle-ci.
 
 **Durées.** Une base dont les contrôles sont longs le dit dans sa section de
-revue ; relancés après chacun des plans, ils peuvent coûter une heure pour huit
-plans. Quand la cascade a déjà été prouvée par `verify`, l'exécution réelle n'a
-besoin que d'un contrôle final par base : le 13/10, 155 plans sur cinq bases ont
-tourné en 12 minutes, par un script maître (une base après l'autre, un journal
-par base, bilan à la fin). Ne donne pas à un agent une attente bornée plus courte
-que l'exécution qu'il attend.
+revue ; `--checks` ne les lance qu'une fois, après le dernier plan. Le 13/10,
+155 plans sur cinq bases ont tourné en 12 minutes, une base après l'autre. Ne
+donne pas à un agent une attente bornée plus courte que l'exécution qu'il
+attend.
 
 ## 4. Après les résolutions (toi)
 
-Les vues régénérées par les contrôles et les correctifs d'outillage d'une base
-ne passent pas par `okf-review`. Commite-les **sous le verrou** de la base :
+`git -C bases/<base> push origin main` si l'humain l'a demandé, et vérifie
+`git status -sb`. **Une base publique** (`okf-hub-feedback`) passe par le hook
+`pre-push` du hub, qui refuse de publier un terme privé : s'il refuse,
+expurge le commit fautif avant de repousser — ne le contourne jamais par
+`--no-verify`. Les parts « à porter vers » se redéposent par `skills/kb-redepot`
+si l'humain le demande ; dans une base publique, `kb_propose` refuse un texte
+qui cite une base privée, à reformuler avec des noms neutres.
 
-```sh
-git -C bases/<base> add <fichiers>
-bin/okf-lock <base> -- git -C bases/<base> commit -m "…"
-```
-
-Puis `git -C bases/<base> push origin main` si l'humain l'a demandé, et
-vérifie `git status -sb`. Les parts « à porter vers » se redéposent par
-`skills/kb-redepot` si l'humain le demande.
+Un correctif d'outillage d'une base (`_work/scripts/`) ne passe pas par
+`okf-review` : il se commite sous le verrou de la base,
+`bin/okf-lock <base> -- git -C bases/<base> commit -m "…"`.
 
 ## 5. Ce qui a coûté cher la première fois (24/09/2026)
 

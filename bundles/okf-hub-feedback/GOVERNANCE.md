@@ -27,6 +27,13 @@ skill `kb-review`.
 
 **N'appartient PAS à cette base :**
 
+- tout **nom propre à une installation privée** — base, objet, table, serveur,
+  environnement, organisation, personne. **Ce dépôt est public**
+  (`github.com/Movida/okf-hub-feedback`). Un retour sur l'outillage se formule
+  avec des noms neutres (« une base métier », `produit-x`, « un écran ») : le
+  comportement d'un outil ne dépend pas du nom de ce qu'il a lu. `kb_propose`
+  refuse d'office une proposition qui cite une base privée du hub ou un terme
+  que son opérateur déclare privé — mais il ne connaît que ceux-là ;
 - le **contenu** des autres bases. Une erreur factuelle dans `produit-x` se
   propose dans `produit-x`. Ici, on parle des outils, pas de ce qu'ils
   retournent ;
@@ -83,6 +90,14 @@ Ces règles sont contraignantes pour le gestionnaire.
 6. **Toute affirmation porte sa version.** Le hub évolue ; un comportement
    constaté hier peut ne plus exister. Un document de cette base indique la
    révision de spec ou la date à laquelle le constat vaut.
+
+7. **Rien de privé, même en citation.** Un nom propre à une installation
+   privée qui aurait passé le filtre de `kb_propose` n'entre pas au corpus : le
+   gestionnaire le remplace par un nom neutre à l'intégration, et le signale à
+   l'humain. La proposition, elle, est publique dès que la base est poussée —
+   le texte entre dans l'historique au dépôt, pas à la revue. C'est pourquoi le
+   filtre est au dépôt, et pourquoi un signalement appelle une expurgation de
+   l'historique avant la poussée suivante.
 
 ## Organisation du corpus
 

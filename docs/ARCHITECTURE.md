@@ -66,9 +66,13 @@ src/okf_hub/
 ├── gitops.py       Index temporaire depuis HEAD, identité explicite, trailers,
 │                   synchronisation de l'index partagé.
 ├── search.py       ripgrep, ET strict puis repli OU, déclassement des sommaires.
-├── review.py       Moteur du rôle gestionnaire : réconciliation, plan, résolution,
-│                   et `verify` : plans rejoués sur une copie jetable du hub,
-│                   puis contrôles déclarés par la base (rév. 4.3).
+├── review.py       Moteur du rôle gestionnaire : réconciliation, plan, résolution
+│                   d'une suite de plans (reprenable, `--checks`, rév. 4.4), et
+│                   `verify` : plans rejoués sur une copie jetable du hub, puis
+│                   contrôles déclarés par la base (rév. 4.3).
+├── confidentialite.py  Termes privés et dépôts publics (rév. 4.4) : un calcul,
+│                   trois usages — refus de kb_propose, hooks .githooks/, test
+│                   de neutralité.
 ├── resolve.py      CLI name → chemin, pour les scripts shell.
 └── tools/          Un module par outil : SCHEMA, description(), run().
 ```
@@ -781,6 +785,25 @@ périmètre le plus étroit : spec rév. 4.3.
 
 ---
 
+## 6 octies. Décisions d'implémentation de la rév. 4.4 — dépôts publics et après-résolution
+
+| Point | Décision | Motif |
+|---|---|---|
+| Où arrêter une fuite vers une base publique | Au dépôt : `kb_propose` refuse, rien n'est écrit | Le commit de soumission fait entrer le texte dans l'historique ; rejeter à la revue le garderait dans `rejected/`, et la poussée suivante le publierait. C'est par là que des noms d'objets étaient entrés dans la base de retours. |
+| Refuser ou expurger | Refuser, en citant les termes trouvés | Expurger modifierait le texte d'une session à son insu ; refuser lui dit quoi reformuler. |
+| Quelles bases sont publiques | Livrées **et** clonées d'un dépôt canonique, plus `public-bases` | Le catalogue (`upstreams.yaml`) peut lister d'autres bases ; seules celles que le hub livre sont publiques par construction. |
+| Quels termes | Nom, répertoire et répertoire de corpus de chaque base installée non livrée, plus `private-terms` | Déduits de la machine : une liste versionnée publierait ce qu'elle protège. Le nom de corpus compte : le test de neutralité étendu a trouvé, dès son premier passage, un nom de corpus privé que la réécriture d'historique avait laissé. |
+| Correspondance | Insensible à la casse ; seuls une lettre ou un chiffre accolés l'empêchent | Un terme collé par un tiret ou un souligné (`cowork-<terme>`, `<terme>_vw`) est publié tout autant : c'était la forme d'un `submitted_by` passé. |
+| Hooks git | `pre-commit` (ajouts et chemins indexés), `commit-msg`, `pre-push` (ajouts, messages, auteurs de chaque commit poussé) ; activés par `okf-hub setup` et à l'installation d'une base publique | Un test ne protège que si on le lance ; un hook protège à chaque fois. Le `pre-push` examine une branche nouvelle sur tout ce qu'aucun remote ne connaît : une vieille branche locale d'avant nettoyage ne repasse pas. Il a bloqué, à son premier usage, un commit dont l'auteur portait une adresse personnelle. |
+| Les commits du hub | Inchangés : `--no-verify` et `core.hooksPath=/dev/null` | Les hooks d'un bundle ne doivent jamais tourner sur l'initiative d'une session (§ 3.2) ; le refus au dépôt couvre ce que le hub écrit. |
+| `resolve` sur une suite de plans | Un commit par plan, dans l'ordre ; un plan dont toutes les propositions sont résolues est sauté ; à moitié résolu, refusé | « Une résolution = un plan = un commit » tient ; la reprise remplace les scripts reprenables écrits à la main. Un état à moitié résolu ne correspond à aucune exécution du plan : on ne le devine pas. |
+| `--checks` | Contrôles hors verrou, puis commit des chemins modifiés hors `proposals/` (et hors `__pycache__`), sous le verrou, en un commit `regen:` portant un trailer `Checks:` par commande | Un `check_all` de six minutes sous verrou ferait échouer tout `kb_propose` en `BASE_BUSY` ; `kb_propose` n'écrit que dans `proposals/`. Le répertoire de travail doit être propre au départ : sinon on commiterait les brouillons de l'opérateur avec les vues. |
+| Refus de `--checks` | Approbation, contrôles déclarés et arbre propre vérifiés avant la première résolution ; `--dry-run --checks` refusé (c'est `verify`) | Une commande refusée ne doit rien avoir fait. |
+
+**Aucun écart assumé** : rév. 4.4 de la spec.
+
+---
+
 ## 6 quinquies. Décisions d'implémentation de la navigation dans `kb_read`
 
 Origine : un diagnostic architectural externe (propriétaire du projet, retour
@@ -951,6 +974,20 @@ pour vérifier la couverture sans relire la suite.
 | `--each` : plan fautif désigné, vues remises à HEAD | `test_each_designe_le_plan_fautif_et_restaure_les_vues` |
 | Lot sur plusieurs bases ; voisines clonées, **jamais écrites** | `test_lot_multi_bases_et_voisines_clonees` |
 
+### rév. 4.4 — dépôts publics et après-résolution
+
+| Exigence | Test |
+|---|---|
+| § 4.1 — termes privés déduits de la machine, bases publiques | `test_confidentialite.py::test_termes_prives_deduits_des_bases_installees` |
+| Correspondance : séparateurs oui, mot englobant non | `test_le_motif_voit_un_terme_colle_par_un_separateur`, `test_le_motif_ignore_un_terme_pris_dans_un_mot` |
+| § 5.5 — base publique : refus sans rien déposer, dans chaque champ | `test_base_publique_refuse_un_terme_prive_sans_rien_deposer` |
+| § 5.5 — texte neutre accepté ; base privée non concernée ; description | `test_base_publique_accepte_un_texte_neutre`, `test_base_privee_accepte_ses_propres_noms`, `test_la_description_annonce_les_bases_publiques` |
+| § 8 — hooks : index, chemins, message, poussée (vieille branche, suppression) | `test_hook_index_refuse_un_ajout_prive`, `test_hook_index_voit_un_nom_de_fichier`, `test_hook_message_ignore_les_commentaires`, `test_hook_poussee_examine_messages_auteurs_et_contenus`, `test_le_vrai_hook_bloque_le_commit` |
+| § 8 — activation des hooks | `test_setup_active_les_hooks_du_hub_et_des_bases_publiques`, `test_bootstrap.py::test_une_base_clonee_d_un_amont_recoit_les_hooks_de_confidentialite` |
+| Neutralité du hub **et des bases publiques** (commits non poussés compris) | `test_neutralite.py` |
+| § 7.1 — suite de plans, un commit chacun, reprenable ; reprise après échec ; plan à moitié résolu | `test_review.py::test_plusieurs_plans_executes_dans_l_ordre_un_commit_chacun`, `test_un_echec_en_cours_de_suite_dit_comment_reprendre`, `test_un_plan_a_moitie_resolu_est_refuse` |
+| § 7.1 — `--checks` : vues commitées à part, échec sans commit, refus préalables, reprise | `test_resolve_checks.py` |
+
 Exécution :
 
 ```sh
@@ -981,7 +1018,10 @@ Aucun nom de base privée, d'objet, de serveur ou de personne n'entre dans un
 fichier versionné du hub : ni dans un exemple, ni dans un test, ni dans une
 leçon de revue. Une règle propre à une base s'écrit dans la base (son
 `AGENTS.md`), un nom propre à l'opérateur dans `hub-config.local.yaml`.
-`tests/test_neutralite.py` le vérifie contre les bases installées localement.
+Trois gardes, sur les termes que `confidentialite.py` déduit de la machine :
+`kb_propose` refuse de les déposer dans une base publique, les hooks de
+`.githooks/` refusent de les commiter ou de les pousser, `tests/test_neutralite.py`
+les cherche dans les fichiers versionnés du hub et des bases publiques.
 
 **Une nouvelle capacité d'écriture ne va pas dans `tools/`.** La surface MCP
 exposée aux sessions consommatrices se limite à `kb_propose`, confiné à

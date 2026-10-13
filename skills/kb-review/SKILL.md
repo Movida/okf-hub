@@ -217,10 +217,20 @@ d'exécuter).
 inventer une ; des formes concurrentes pour un même humain rendent l'audit
 inexploitable.
 
-**Après chaque résolution réelle**, lance depuis la racine de la base, dans
-l'ordre, les commandes de son `governance.checks` (elles régénèrent les vues
-dérivées et doivent sortir 0), puis commite les vues régénérées sous le verrou
-(`kb-review-lot`, § 4).
+**Exécuter, puis régénérer, en une commande.** Une fois le lot confirmé :
+
+```
+okf-review resolve <base> --plan 01.json --plan 02.json --plan 03.json --checks
+```
+
+Les plans s'exécutent dans l'ordre, un commit chacun ; un plan dont les
+propositions sont déjà résolues est sauté, donc une commande interrompue se
+relance telle quelle. `--checks` lance ensuite dans la base les contrôles
+approuvés de son manifeste et commite ce qu'ils ont régénéré dans un commit
+`regen:` à part. Il exige un répertoire de travail propre hors `proposals/`, et
+refuse tout avant la première résolution s'il ne peut pas aller au bout. Une base
+sans `governance.checks` se résout sans `--checks` ; ses vues, s'il y en a, se
+régénèrent selon son `AGENTS.md`.
 
 **Permissions, avant de lancer l'exécution.** En mode auto, le classifieur de
 Claude Code refuse `okf-review resolve` et les commits dans `bases/` sans règle

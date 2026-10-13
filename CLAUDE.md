@@ -55,14 +55,22 @@ leçon de revue propre à une base s'écrit dans la section « Revue des
 propositions par le hub » de son `AGENTS.md` ; un exemple prend un nom neutre
 (`produit-x`, `installation-x`, `referentiel-x`). Vu le 2026-10-13 : six
 semaines de leçons avaient fait des skills le manuel de bases privées, publié ;
-il a fallu réécrire l'historique. `tests/test_neutralite.py` le garde, à partir
-des bases installées et de `private-terms` (`hub-config.local.yaml`, jamais
-versionné) : sauté en CI, il ne protège que sur le poste — d'où la règle.
+il a fallu réécrire l'historique. Trois gardes, sur les termes que
+`confidentialite.py` déduit des bases installées et de `private-terms`
+(`hub-config.local.yaml`, jamais versionné) : `kb_propose` refuse de les déposer
+dans une base publique (`okf-hub-feedback`), les hooks de `.githooks/` refusent
+de les commiter ou de les pousser, `tests/test_neutralite.py` les cherche. Ne
+jamais contourner un hook par `--no-verify` : expurger, puis recommiter. Les
+hooks ne valent qu'activés (`okf-hub setup`), et l'identité git de ce dépôt
+est l'adresse noreply — une adresse personnelle dans un auteur de commit est
+une fuite comme une autre (le `pre-push` l'a attrapée le jour même).
 
-**Le code d'une base ne se lance que par `okf-review verify`.** Ses
-`governance.checks`, sur une copie jetable de tout le hub, pour une base que
-l'opérateur a inscrite dans `trusted-checks` (spec rév. 4.3, § 8). Jamais depuis
-le serveur MCP, jamais sur l'initiative d'une session consommatrice.
+**Le code d'une base ne se lance que par `okf-review`.** Ses
+`governance.checks`, par `verify` sur une copie jetable de tout le hub, ou par
+`resolve --checks` dans la base après les résolutions, pour une base que
+l'opérateur a inscrite dans `trusted-checks` (spec rév. 4.3 et 4.4, § 8).
+Jamais depuis le serveur MCP, jamais sur l'initiative d'une session
+consommatrice.
 
 **Une nouvelle capacité d'écriture ne va pas dans `tools/`.** La surface MCP
 exposée aux sessions consommatrices se limite à `kb_propose`, confiné à
@@ -119,7 +127,7 @@ de l'instance.
 ## Vérifier avant de conclure
 
 ```sh
-uv run pytest -q                 # 460 tests, dont la boucle de stress
+uv run pytest -q                 # 490 tests, dont la boucle de stress
 uv run pytest -q -m "not slow"   # sans le test deux processus × 25 itérations
 ```
 

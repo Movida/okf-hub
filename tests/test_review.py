@@ -424,15 +424,53 @@ def test_dry_run_signale_une_section_en_double(base, registry, tmp_path, capsys)
     assert "seule la première" in capsys.readouterr().out
 
 
-def test_plusieurs_plans_refuses_hors_dry_run(base, registry, tmp_path, capsys):
+def test_plusieurs_plans_executes_dans_l_ordre_un_commit_chacun(base, registry, tmp_path, capsys):
+    """Rév. 4.4 : une suite de plans s'exécute en une commande, sans renoncer à
+    « une résolution = un plan = un commit » (§ 6.2)."""
     p1, p2 = depose(registry), depose(registry, concerns="autre sujet")
     argv = ["--hub-root", str(registry.config.hub_root), "resolve", "ma-base",
             "--plan", str(_plan(tmp_path, "1.json", p1, [])),
-            "--plan", str(_plan(tmp_path, "2.json", p2, []))]
+            "--plan", str(_plan(tmp_path, "2.json", p2, [], resolution="rejected"))]
     avant = git(base.root, "rev-parse", "HEAD").strip()
+
+    assert review.main(argv) == 0
+    sujets = git(base.root, "log", "--format=%s", f"{avant}..HEAD").splitlines()
+    assert [s.split(":")[0] for s in sujets] == ["reject", "integrate"]
+    assert "(1.json)" in capsys.readouterr().out
+
+    # Relancée, la même commande ne refait rien : elle est reprenable.
+    tete = git(base.root, "rev-parse", "HEAD").strip()
+    assert review.main(argv) == 0
+    assert git(base.root, "rev-parse", "HEAD").strip() == tete
+    assert capsys.readouterr().out.count("Déjà résolu, sauté") == 2
+
+
+def test_un_echec_en_cours_de_suite_dit_comment_reprendre(base, registry, tmp_path, capsys):
+    p1 = depose(registry)
+    argv = ["--hub-root", str(registry.config.hub_root), "resolve", "ma-base",
+            "--plan", str(_plan(tmp_path, "1.json", p1, [])),
+            "--plan", str(_plan(tmp_path, "2.json", "prop-2026-01-01-0000", []))]
     assert review.main(argv) == 4
-    assert "un plan = un commit" in capsys.readouterr().err
-    assert git(base.root, "rev-parse", "HEAD").strip() == avant
+    err = capsys.readouterr().err
+    assert "2.json" in err and "1 plan(s) déjà commité(s)" in err and "reprend" in err
+
+
+def test_un_plan_a_moitie_resolu_est_refuse(base, registry, tmp_path, capsys):
+    p1, p2 = depose(registry), depose(registry, concerns="autre sujet")
+    hub = str(registry.config.hub_root)
+    assert review.main(["--hub-root", hub, "resolve", "ma-base",
+                        "--plan", str(_plan(tmp_path, "1.json", p1, []))]) == 0
+    mixte = tmp_path / "mixte.json"
+    mixte.write_text(json.dumps({
+        "summary": "mixte", "reviewed_by": "human:morva",
+        "resolutions": [{"id": p1, "resolution": "rejected", "reason": "x"},
+                        {"id": p2, "resolution": "rejected", "reason": "x"}],
+        "edits": [],
+    }), encoding="utf-8")
+    tete = git(base.root, "rev-parse", "HEAD").strip()
+    assert review.main(["--hub-root", hub, "resolve", "ma-base", "--plan", str(mixte)]) == 4
+    assert "à moitié résolu" in capsys.readouterr().err
+    assert git(base.root, "rev-parse", "HEAD").strip() == tete
 
 
 def test_cli_inventory_et_context(base, registry, capsys):

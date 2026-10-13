@@ -11,7 +11,7 @@ Usage :
     python -m okf_hub.review context   <base>
     python -m okf_hub.review inventory <base> [--full]
     python -m okf_hub.review reconcile <base> [--apply]
-    python -m okf_hub.review resolve   <base> --plan <plan.json> [--dry-run]
+    python -m okf_hub.review resolve   <base> --plan <plan.json>... [--dry-run | --checks]
     python -m okf_hub.review verify    <base> --plan <plan.json>... [--each] [--keep]
 """
 
@@ -647,6 +647,130 @@ def _rejouer(copie: Registry, etapes: list[Etape], chaque: bool, journaux: Path)
     return ok
 
 
+# --- suite de plans, puis contrôles sur la vraie base (rév. 4.4) ---------------
+
+
+def _deja_resolu(base: Base, plan: Plan) -> bool:
+    """Le plan a-t-il déjà été exécuté ? Ce qui rend une suite reprenable.
+
+    Toutes ses propositions ont quitté `pending/` pour `accepted/` ou
+    `rejected/` : sauté. Aucune n'en est sortie : à exécuter. Entre les deux,
+    l'état ne correspond à aucune exécution du plan — refusé plutôt que deviné.
+    """
+    en_attente = {p.id for p in load_pending(base)}
+    ids = [r.id for r in plan.resolutions]
+    restantes = [i for i in ids if i in en_attente]
+    if len(restantes) == len(ids):
+        return False
+    if restantes:
+        raise ToolError(
+            INVALID_INPUT,
+            f"plan à moitié résolu : {', '.join(restantes)} encore en attente, "
+            f"{', '.join(i for i in ids if i not in en_attente)} déjà sorties — "
+            "à régénérer contre l'état actuel",
+        )
+    resolues = {
+        f.stem for sous in (ACCEPTED_SUBDIR, REJECTED_SUBDIR)
+        if (base.root / sous).is_dir() for f in (base.root / sous).glob("*.md")
+    }
+    absentes = [i for i in ids if i not in resolues]
+    if absentes:
+        raise ToolError(NOT_FOUND, f"propositions introuvables : {', '.join(absentes)}")
+    return True
+
+
+def _modifications(base: Base) -> list[str]:
+    """Chemins modifiés, supprimés ou non suivis, hors `proposals/` — où
+    `kb_propose` peut écrire à tout moment sans rien devoir aux contrôles."""
+    sortie = gitops.git_output(base.root, ["status", "--porcelain=v1", "-z", "--untracked-files=all"])
+    entrees = sortie.split("\0")
+    chemins: list[str] = []
+    i = 0
+    while i < len(entrees):
+        entree = entrees[i]
+        i += 1
+        if len(entree) < 4:
+            continue
+        etat, chemin = entree[:2], entree[3:]
+        if "R" in etat or "C" in etat:
+            i += 1                              # le chemin d'origine suit
+        # Un .pyc laissé par un script de contrôle n'est jamais une vue, même
+        # dans une base qui oublierait de l'ignorer.
+        if chemin.startswith("proposals/") or "__pycache__/" in chemin or chemin.endswith(".pyc"):
+            continue
+        chemins.append(chemin)
+    return chemins
+
+
+def _regenerer(base: Base, executes: int) -> int:
+    """Lance les contrôles approuvés dans la vraie base, puis commite ce qu'ils
+    ont régénéré, sous le verrou, en un commit distinct des résolutions.
+
+    Les contrôles tournent hors verrou : ils peuvent durer des minutes, et
+    `kb_propose` n'écrit que dans `proposals/`, que rien ici ne lit ni ne commite.
+    """
+    journaux = Path(tempfile.mkdtemp(prefix="okf-checks-"))
+    print(f"Contrôles de {base.name}, dans la base :", flush=True)
+    if not _controler(base, journaux, "base"):
+        print(
+            "ÉCHEC des contrôles : rien n'est commité au-delà des résolutions. Les "
+            "fichiers régénérés sont laissés en place pour examen.", file=sys.stderr,
+        )
+        return 1
+    shutil.rmtree(journaux, ignore_errors=True)
+    chemins = _modifications(base)
+    if not chemins:
+        print("Contrôles réussis ; aucune vue à recommiter.")
+        return 0
+    message = gitops.build_message(
+        f"regen: vues régénérées après {executes} résolution(s)",
+        [("Checks", shlex.join(argv)) for argv in base.manifest.checks],
+    )
+    with base_lock(base.root):
+        ensure_git_exclude(base.root)
+        sha = gitops.commit_paths(base.root, [base.root / c for c in chemins], message)
+    print(f"Contrôles réussis ; vues régénérées commitées : {sha} ({len(chemins)} fichier(s))")
+    return 0
+
+
+def cmd_resolve(base: Base, registry: Registry, fichiers: list[Path], plans: list[Plan],
+                checks: bool) -> int:
+    """Exécute les plans dans l'ordre, un commit chacun (§ 6.2), en sautant ceux
+    qui l'ont déjà été ; avec `checks`, lance ensuite les contrôles approuvés."""
+    if checks:
+        # Tout ce qui peut refuser refuse avant la première résolution.
+        _exiger_approbation(registry, [base.name], registry.config.trusted_checks)
+        if not base.manifest.checks:
+            raise ToolError(INVALID_INPUT, f"la base '{base.name}' ne déclare aucun contrôle")
+        sales = _modifications(base)
+        if sales:
+            raise ToolError(
+                INVALID_INPUT,
+                "--checks commite ce que les contrôles régénèrent : le répertoire de "
+                "travail doit être propre hors proposals/, ce qui n'est pas le cas "
+                f"({', '.join(sales[:5])}{' …' if len(sales) > 5 else ''})",
+            )
+    executes = 0
+    for fichier, plan in zip(fichiers, plans):
+        try:
+            if _deja_resolu(base, plan):
+                print(f"Déjà résolu, sauté : {fichier.name}")
+                continue
+            sha = apply_plan(base, plan)
+        except ToolError as exc:
+            if executes:
+                raise ToolError(
+                    exc.code,
+                    f"{fichier.name} : {exc.message} — {executes} plan(s) déjà commité(s) ; "
+                    "relancer la même commande reprend après eux",
+                ) from exc
+            raise
+        executes += 1
+        suffixe = f" ({fichier.name})" if len(plans) > 1 else ""
+        print(f"Résolution commitée : {sha}{suffixe}", flush=True)
+    return _regenerer(base, executes) if checks else 0
+
+
 # --- CLI ----------------------------------------------------------------------
 
 
@@ -764,9 +888,15 @@ def main(argv: list[str] | None = None) -> int:
     p_resolve.add_argument("base")
     p_resolve.add_argument(
         "--plan", type=Path, required=True, action="append",
-        help="répétable avec --dry-run seulement : vérifie une cascade de plans",
+        help="répétable : une cascade de plans, exécutés dans l'ordre, un commit "
+        "chacun ; un plan déjà résolu est sauté",
     )
     p_resolve.add_argument("--dry-run", action="store_true")
+    p_resolve.add_argument(
+        "--checks", action="store_true",
+        help="après le dernier plan, lancer les contrôles approuvés de la base et "
+        "commiter les vues régénérées",
+    )
 
     p_verify = sub.add_parser("verify")
     p_verify.add_argument(
@@ -806,6 +936,12 @@ def main(argv: list[str] | None = None) -> int:
             plans = [
                 parse_plan(json.loads(f.read_text(encoding="utf-8"))) for f in args.plan
             ]
+            if args.dry_run and args.checks:
+                raise ToolError(
+                    INVALID_INPUT,
+                    "--checks ne se combine pas à --dry-run : `okf-review verify` "
+                    "rejoue les plans et lance les contrôles sur une copie",
+                )
             if args.dry_run:
                 _, avertissements = verify_plans(base, plans)
                 for fichier, plan in zip(args.plan, plans):
@@ -825,15 +961,7 @@ def main(argv: list[str] | None = None) -> int:
                 for message in avertissements:
                     print(f"AVERTISSEMENT : {message}")
                 return 0
-            if len(plans) > 1:
-                raise ToolError(
-                    INVALID_INPUT,
-                    "une résolution = un plan = un commit : plusieurs --plan "
-                    "ne s'acceptent qu'avec --dry-run",
-                )
-            plan = plans[0]
-            sha = apply_plan(base, plan)
-            print(f"Résolution commitée : {sha}")
+            return cmd_resolve(base, registry, args.plan, plans, args.checks)
     except ToolError as exc:
         print(f"ERROR: {exc.code}: {exc.message}", file=sys.stderr)
         return 4

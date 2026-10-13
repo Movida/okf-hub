@@ -30,6 +30,9 @@ le classifieur du mode auto le refuse.
      produit veut le fait générique et anonymisé, une base d'installation le
      motif et la règle qu'on en tire, un inventaire le fait rattaché à son
      objet) ;
+   - dans une base **publique** (`okf-hub-feedback`), aucun nom de base,
+     d'objet, de serveur ou d'organisation privés, ni dans `sources`, ni dans
+     `submitted_by` : `kb_propose` refuse la proposition entière sinon ;
    - première entrée de `sources` : `redépôt depuis <base>:<id>, instruction du
      <date>` — la proposition doit dire d'où elle vient, sinon le gestionnaire
      de la base cible peut la renvoyer (`kb-review`, étape 3.d, « déjà

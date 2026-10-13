@@ -10,7 +10,7 @@
 > sont recensés dans [`ARCHITECTURE.md`](ARCHITECTURE.md), section « Écarts
 > assumés » — nulle part ailleurs.
 >
-> **Révision courante : 4.3.** L'amendement rév. 4.1 (premier retour d'usage
+> **Révision courante : 4.4.** L'amendement rév. 4.1 (premier retour d'usage
 > réel d'une session consommatrice, post-J5) a été intégré dans le corps du
 > texte, section par section, plutôt qu'annexé : les renvois « § x.y » du code
 > restent ainsi la seule adresse d'une exigence. Les passages issus de
@@ -22,7 +22,9 @@
 > Les passages qui en sont issus portent la mention **(rév. 4.2)**. La
 > **rév. 4.3** (§ 3.3, § 4.1, § 7.1, § 8) ouvre l'exécution des contrôles
 > qu'une base déclare, sous approbation de l'opérateur ; ses passages portent
-> la mention **(rév. 4.3)**.
+> la mention **(rév. 4.3)**. La **rév. 4.4** (§ 4.1, § 5.5, § 7.1, § 8) ferme les
+> fuites vers les dépôts publics et outille l'après-résolution ; mention
+> **(rév. 4.4)**.
 
 Document d'implémentation, révision 4.1 — révision 4 (version finale pour
 implémentation, intégrant les retours des trois relectures croisées), amendée
@@ -316,7 +318,17 @@ jamais y être nommée.
 
 ```yaml
 trusted-checks: [ma-base, mon-autre-base]
+private-terms: [MonOrganisation, NOM_DE_PROJET]   # rév. 4.4
+public-bases: [une-base-publique]                  # rév. 4.4, facultatif
 ```
+
+**Dépôts publics (rév. 4.4).** Sont publics le dépôt du hub et les bases livrées
+avec lui qui ont un dépôt canonique (`bundles/upstreams.yaml`), plus
+`public-bases`. Sont **termes privés** les noms, répertoires et répertoires de
+corpus des bases installées qui ne sont pas livrées avec le hub, plus
+`private-terms`. La liste n'est jamais écrite dans un fichier versionné : elle se
+déduit de la machine. Elle sert au § 5.5 (dépôt), au § 8 (hooks) et au test de
+neutralité.
 
 **Journalisation multi-instances :** `hub.log` est partagé entre toutes les
 instances du serveur. Exigences : ouverture en `O_APPEND`, écritures ligne par
@@ -643,6 +655,17 @@ guillemets...) sont neutralisés par échappement standard, jamais par filtrage
 manuel. `content` n'a pas de restriction de caractères (il vit dans le corps du
 fichier, après le frontmatter sérialisé).
 
+**Base publique (rév. 4.4, normatif) :** si la base visée est publique
+(§ 4.1), `concerns`, `content`, `sources` et `submitted_by` ne doivent citer aucun
+terme privé — correspondance insensible à la casse, que seuls une lettre ou un
+chiffre accolés empêchent. Sinon `INVALID_INPUT`, citant les termes trouvés,
+**sans rien écrire**. **Motif :** le commit de soumission fait entrer le texte
+dans l'historique ; une revue qui le rejetterait le garderait dans
+`rejected/`, et la poussée suivante le publierait. Le filtre ne connaît que les
+termes de la machine : la gouvernance de la base publique demande en plus des
+noms neutres, et le gestionnaire expurge à l'intégration ce qui aurait passé.
+La description de l'outil marque les bases publiques.
+
 **Comportement** (sous verrou `flock()` + index temporaire initialisé depuis
 HEAD, § 4.4.b) :
 
@@ -883,6 +906,16 @@ qui échoue silencieusement.
 5. **Mode `review: human` (v0)** : présenter le lot de recommandations à
    l'humain, **n'exécuter les commits qu'après confirmation explicite**, par
    élément ou en lot. Exécution via `okf-lock`, une résolution = une acquisition.
+   **(rév. 4.4)** `okf-review resolve` accepte la suite des plans d'un lot : il les
+   exécute dans l'ordre, **un commit par plan**, et saute ceux dont toutes les
+   propositions sont déjà résolues — la commande se relance après une
+   interruption. Avec `--checks`, il lance ensuite dans la base les contrôles
+   approuvés (§ 3.3, § 8) et commite ce qu'ils ont régénéré, **dans un commit
+   distinct** (`regen:`), sous le verrou ; les contrôles eux-mêmes tournent hors
+   verrou, `kb_propose` n'écrivant que dans `proposals/`. Tout refus
+   (approbation, répertoire de travail non propre hors `proposals/`) précède la
+   première résolution ; un contrôle en échec ne commite rien de plus et laisse
+   les fichiers en place pour examen.
 6. Chaque intégration met à jour les champs de fraîcheur du corpus si le schéma
    en définit (ex. `last-verified`).
 
@@ -911,7 +944,8 @@ dans ce cadre ; ce qui n'y résiste pas est marqué.
 | Contenu de proposition malveillant/erroné | Une proposition est **inerte** : texte jamais exécuté, jamais intégré sans revue. Double barrière : règle « données non fiables » (§ 7.1.4) + confirmation humaine. |
 | Injection de prompt via un bundle importé | **Risque réel et partiellement couvert en v0.** Trois vecteurs : (1) `title`/`description` du manifeste, injectés dans les descriptions d'outils MCP donc dans le contexte de toutes les sessions connectées, sans même ouvrir le bundle — atténué par la validation § 3.3, qui limite la surface sans l'éliminer ; (2) `GOVERNANCE.md`, injecté dans le contexte du gestionnaire ; (3) `CLAUDE.md`, dans celui de toute session ouvrant le dépôt. Importer un bundle v0 est sans risque d'**exécution**, mais pas sans risque d'**influence**. **Consigne v0 (README + template) : n'importer que des bundles de confiance, et relire manifeste, `GOVERNANCE.md` et `CLAUDE.md` avant le premier usage de tout bundle tiers.** [v1+] : revue d'import outillée, éventuellement bundles signés. |
 | Usurpation `submitted-by` | Non authentifié, documenté comme tel. [v1+] : jetons par contributeur ou signatures. |
-| Bundles tiers → exécution de code | `tools`/`skills` non chargés en v0 ; [v1+] : approbation explicite par outil + sous-processus confiné. **(rév. 4.3)** Les `governance.checks` d'une base (§ 3.3) sont du code de la base : jamais lancés par le serveur MCP, ni à la découverte, ni par une session consommatrice ; seulement par `okf-review verify`, invoqué par l'opérateur ou le gestionnaire, pour une base inscrite dans `trusted-checks` (§ 4.1). L'approbation porte sur la base, pas sur chaque commande : c'est le code de ses scripts qu'on approuve, et figer leurs lignes de commande ne figerait pas leur contenu. Le confinement est celui d'une copie jetable : aucune vraie base n'est atteignable par chemin relatif ; ce n'est pas un bac à sable contre un script malveillant, hors du modèle de menace v0. |
+| Bundles tiers → exécution de code | `tools`/`skills` non chargés en v0 ; [v1+] : approbation explicite par outil + sous-processus confiné. **(rév. 4.3)** Les `governance.checks` d'une base (§ 3.3) sont du code de la base : jamais lancés par le serveur MCP, ni à la découverte, ni par une session consommatrice ; seulement par `okf-review verify` (sur une copie) et, **(rév. 4.4)** après des résolutions réelles, par `okf-review resolve --checks` (dans la base), invoqués par l'opérateur ou le gestionnaire, pour une base inscrite dans `trusted-checks` (§ 4.1). L'approbation porte sur la base, pas sur chaque commande : c'est le code de ses scripts qu'on approuve, et figer leurs lignes de commande ne figerait pas leur contenu. Le confinement est celui d'une copie jetable : aucune vraie base n'est atteignable par chemin relatif ; ce n'est pas un bac à sable contre un script malveillant, hors du modèle de menace v0. |
+| Fuite vers un dépôt public **(rév. 4.4)** | Trois couches, sur les termes privés du § 4.1 : refus au dépôt par `kb_propose` dans une base publique (§ 5.5) ; hooks git `pre-commit`, `commit-msg` et `pre-push` sur le hub et ses bases publiques (contenus ajoutés, chemins, messages, auteurs ; une branche inconnue du remote est examinée sur tout ce qu'aucun remote ne connaît) ; test de neutralité des fichiers versionnés. Les hooks ne valent qu'activés : `okf-hub setup` les active, l'installation d'une base publique aussi. Les commits du hub lui-même passent `--no-verify` : c'est le refus au dépôt qui les couvre. |
 | Corruption par écritures concurrentes | `flock()` (auto-libéré à la mort du processus, fd frais par acquisition — § 4.4.b) + index git temporaire initialisé depuis HEAD + écriture atomique par `rename`. Fenêtre de crash résiduelle rattrapée par réconciliation (§ 7.1.0). **Tests de concurrence obligatoires (J2).** |
 | Déni par inflation | `content` ≤ 16 Ko, `sources` ≤ 20 × 300 car., `concerns` ≤ 200 car., `submitted_by` ≤ 100 car. → `INVALID_INPUT` au-delà. `description` de manifeste plafonnée (§ 3.3). Sorties d'outils plafonnées (§ 5). Re-scan silencieux sous cooldown 5 s (§ 4.4.c). |
 
@@ -1169,9 +1203,32 @@ consommatrice) ; approbation commande par commande (fausse sécurité, voir § 8
 liens symboliques vers les bases voisines dans la copie (un contrôle aurait pu y
 écrire).
 
+### rév. 4.4 — dépôts publics et après-résolution (post-J5-quater)
+
+Origine : la rév. 4.3 nettoyée, deux trous restaient. (1) La base de retours
+d'usage est publique, et des sessions travaillant sur des bases privées y
+déposaient des noms d'objets et de bases : le texte entre dans l'historique au
+dépôt, la revue arrive trop tard. Les messages et les auteurs de commit, eux,
+n'étaient vérifiés par rien. (2) Après les résolutions réelles, régénérer les
+vues et les commiter restait une procédure à la main, interrompue chaque fois
+que le mode auto refusait une boucle, et reprise par des scripts écrits pour
+l'occasion.
+
+| § amendé | Objet |
+|---|---|
+| § 4.1 | Dépôts publics et termes privés ; `private-terms`, `public-bases` |
+| § 5.5 | Refus au dépôt de tout terme privé dans une base publique ; bases publiques marquées dans la description |
+| § 7.1 | `resolve` : suite de plans, un commit chacun, reprenable ; `--checks` |
+| § 8 | Fuite vers un dépôt public : refus au dépôt, hooks, test de neutralité ; contrôles sur la vraie base par `resolve --checks` seulement |
+
+Non retenu : expurger une proposition au lieu de la refuser (le texte de la
+session serait modifié à son insu) ; une liste de termes versionnée (elle
+publierait ce qu'elle protège) ; tenir le verrou pendant les contrôles (un
+contrôle de plusieurs minutes ferait échouer tout `kb_propose` en `BASE_BUSY`).
+
 ---
 
-*Fin de spécification (rév. 4.3).* **Toute déviation par rapport aux principes du
+*Fin de spécification (rév. 4.4).* **Toute déviation par rapport aux principes du
 § 1 ou aux mécanismes du § 4.4.b doit être remontée au propriétaire du projet
 avant implémentation.** En cas de conflit non identifié entre deux révisions,
 **la plus ancienne prévaut** et le conflit est remonté.

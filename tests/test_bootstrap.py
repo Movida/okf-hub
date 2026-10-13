@@ -400,3 +400,16 @@ def test_cli_list_montre_l_origine(hub_avec_bundles, amont):
     _declarer_amont(hub_avec_bundles, amont)
     sortie = _bootstrap_cli(hub_avec_bundles, "--list")
     assert "clone de" in sortie.stdout
+
+
+def test_une_base_clonee_d_un_amont_recoit_les_hooks_de_confidentialite(hub_avec_bundles, amont):
+    """Livrée avec un dépôt canonique, la base est publique comme le hub
+    (rév. 4.4) : ses poussées passent par les mêmes hooks."""
+    (hub_avec_bundles / ".githooks").mkdir()
+    _declarer_amont(hub_avec_bundles, amont)
+    config = HubConfig.load(hub_avec_bundles)
+
+    bootstrap.deploy_missing(config)
+
+    cible = config.bases_dir / "livree"
+    assert git(cible, "config", "core.hooksPath").strip() == str(hub_avec_bundles / ".githooks")

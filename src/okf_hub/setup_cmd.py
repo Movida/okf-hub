@@ -5,7 +5,8 @@ clone du dépôt à un hub opérationnel : préparer l'identité git du conteneu
 générer/enregistrer une clé SSH par dépôt, configurer le client MCP utilisé
 (quatre variantes selon Claude Code CLI, `.mcp.json`, Claude Desktop, ou un
 hub dans un devcontainer), puis installer les bases livrées. Ce module les
-enchaîne en une seule commande.
+enchaîne en une seule commande, et y ajoute l'activation des hooks de
+confidentialité (spec rév. 4.4), qu'aucun clone ne fait de lui-même.
 
 **Ce module ne remplace aucune des procédures manuelles déjà documentées au
 README** — il ne fait qu'automatiser les cas qu'il peut détecter sans deviner
@@ -29,7 +30,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
-from . import bootstrap
+from . import bootstrap, confidentialite
 from .config import HubConfig
 
 GIT_IDENTITY_ENV = Path(".devcontainer/git-identity.env")
@@ -281,6 +282,40 @@ def bootstrap_bases(hub_root: Path) -> StepResult:
     return StepResult("bases livrées", "ok", "déjà toutes installées")
 
 
+# --- 5. Hooks de confidentialité (spec rév. 4.4) -------------------------------
+
+
+def activate_hooks(hub_root: Path, *, runner: Runner = subprocess.run) -> StepResult:
+    """`core.hooksPath` vers `.githooks/` pour le hub et ses bases publiques.
+
+    Les hooks refusent un commit ou une poussée qui publierait un terme privé.
+    Ils ne valent que là où ils sont activés, et un clone ne les active pas de
+    lui-même : d'où cette étape, idempotente.
+    """
+    nom = "hooks de confidentialité"
+    hooks = hub_root / ".githooks"
+    if not hooks.is_dir():
+        return StepResult(nom, "skip", ".githooks/ absent de ce hub")
+    try:
+        config = HubConfig.load(hub_root)
+    except (OSError, ValueError) as exc:
+        return StepResult(nom, "fail", f"configuration invalide : {exc}")
+    publiques = [
+        config.bases_dir / n for n in sorted(confidentialite.bases_publiques(config))
+        if (config.bases_dir / n / ".git").exists()
+    ]
+    try:
+        for depot in [hub_root, *publiques]:
+            runner(
+                ["git", "-C", str(depot), "config", "core.hooksPath", str(hooks)],
+                check=True, capture_output=True,
+            )
+    except (OSError, subprocess.CalledProcessError) as exc:
+        return StepResult(nom, "fail", f"git config impossible : {exc}")
+    detail = ", ".join(p.name for p in publiques) or "aucune base publique installée"
+    return StepResult(nom, "ok", f"actifs sur le hub et : {detail}")
+
+
 # --- Orchestration -------------------------------------------------------------
 
 
@@ -294,7 +329,7 @@ def run_setup(
     home: Path | None = None,
     out: Callable[[str], None] = print,
 ) -> int:
-    """Enchaîne les quatre étapes et affiche un rapport. Code de sortie non nul
+    """Enchaîne les cinq étapes et affiche un rapport. Code de sortie non nul
     si au moins une étape a échoué (`fail`) — une étape `skip` n'est pas un
     échec, c'est un repli documenté."""
     etapes: list[StepResult] = []
@@ -303,6 +338,7 @@ def run_setup(
     etapes.append(run_ssh_keys(hub_root, runner=runner))
     etapes.extend(configure_mcp_clients(hub_root, runner=runner, which=which, home=home))
     etapes.append(bootstrap_bases(hub_root))
+    etapes.append(activate_hooks(hub_root, runner=runner))
 
     out("Installation okf-hub — rapport :")
     for etape in etapes:

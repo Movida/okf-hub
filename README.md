@@ -36,7 +36,7 @@ les manifestes : `bundle-spec: "0.1"`).
 ### Tout en une commande
 
 Une fois les dépendances installées (`uv sync`, déjà fait par le
-`post-create` du devcontainer), `okf-hub setup` enchaîne les quatre étapes
+`post-create` du devcontainer), `okf-hub setup` enchaîne les cinq étapes
 détaillées plus bas — sans en remplacer aucune : c'est le même résultat,
 automatisé pour les cas qu'il peut détecter sans deviner un identifiant ou un
 secret externe.
@@ -56,6 +56,9 @@ uv run okf-hub setup
 4. **Bases livrées** — installe ce qui manque dans `bases/` (déjà fait
    automatiquement au premier démarrage du serveur ; utile ici pour une
    confirmation immédiate, sans attendre une connexion cliente).
+5. **Hooks de confidentialité** — active `.githooks/` sur le hub et ses bases
+   publiques : un commit ou une poussée qui publierait un terme privé est
+   refusé (voir « Configuration locale, jamais versionnée »).
 
 Chaque étape sans objet dans l'environnement courant (pas de devcontainer,
 aucun client MCP détecté, Claude Desktop absent, `bootstrap-bundles: false`)
@@ -446,6 +449,7 @@ bin/okf-review resolve   <base> --plan plan.json --dry-run
 bin/okf-review resolve   <base> --plan 01.json --plan 02.json --dry-run
 bin/okf-review verify    <base> --plan 01.json --plan 02.json   # sur une copie
 bin/okf-review resolve   <base> --plan plan.json
+bin/okf-review resolve   <base> --plan 01.json --plan 02.json --checks
 ```
 
 `--dry-run` fait tous les contrôles de l'exécution sans rien écrire :
@@ -474,6 +478,13 @@ contrôles tournent après le dernier plan ; `--each` les lance après chaque pl
 pour désigner le fautif ; `--plan <base>:<chemin>` vérifie un lot qui touche
 plusieurs bases, dans l'ordre d'exécution. En cas d'échec, la copie est
 conservée avec un journal par commande.
+
+`resolve` exécute ensuite la même suite pour de vrai : **un commit par plan**,
+dans l'ordre, en sautant ceux dont les propositions sont déjà résolues — après
+une interruption, on relance la même commande. Avec `--checks`, les contrôles
+approuvés tournent ensuite dans la base, et ce qu'ils ont régénéré est commité
+à part (`regen:`), sous le verrou. Le répertoire de travail doit être propre
+hors `proposals/` ; un contrôle en échec ne commite rien de plus.
 
 `resolve` et `reconcile --apply` prennent eux-mêmes le verrou, à la granularité
 imposée : **une résolution complète = une acquisition**. Ne pas les envelopper
@@ -671,10 +682,19 @@ le dépôt public du hub :
 # Bases dont `okf-review verify` peut lancer les contrôles, après relecture.
 trusted-checks: [ma-base, mon-autre-base]
 
-# Termes que le dépôt du hub ne doit jamais contenir, en plus des noms des bases
-# privées installées (déduits d'office) — vérifiés par tests/test_neutralite.py.
+# Termes qu'aucun dépôt public ne doit contenir, en plus des noms des bases
+# privées installées (déduits d'office).
 private-terms: [MonOrganisation, NOM_DE_PROJET]
+
+# Bases publiques en plus de celles livrées avec le hub (facultatif).
+public-bases: []
 ```
+
+Sont publics le hub et ses bases livrées qui ont un dépôt canonique
+(`okf-hub-feedback`). Trois gardes y tiennent les termes privés à l'écart :
+`kb_propose` refuse de les déposer dans une base publique, les hooks de
+`.githooks/` (activés par `okf-hub setup`) refusent de les commiter ou de les
+pousser, et `tests/test_neutralite.py` les cherche dans les fichiers versionnés.
 
 ## Invariants d'audit
 

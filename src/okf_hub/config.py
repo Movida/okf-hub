@@ -71,7 +71,12 @@ class HubConfig:
     bootstrap_bundles: bool = DEFAULT_BOOTSTRAP_BUNDLES
     sync_on_start: bool = DEFAULT_SYNC_ON_START
     trusted_checks: frozenset[str] = frozenset()
-    """Bases dont `okf-review verify` peut lancer les `governance.checks` (§ 8)."""
+    """Bases dont `okf-review` peut lancer les `governance.checks` (§ 8)."""
+    private_terms: frozenset[str] = frozenset()
+    """Termes qu'aucun dépôt public ne doit contenir, en plus des noms des bases
+    privées installées (`confidentialite`, rév. 4.4)."""
+    public_bases: frozenset[str] = frozenset()
+    """Bases publiques en plus des bases livrées avec un dépôt canonique."""
 
     @staticmethod
     def load(hub_root: Path) -> "HubConfig":
@@ -106,9 +111,7 @@ class HubConfig:
         if not isinstance(sync_on_start, bool):
             raise ValueError(f"{path} : sync-on-start doit être un booléen")
 
-        trusted = raw.get("trusted-checks") or []
-        if not isinstance(trusted, list) or not all(isinstance(n, str) for n in trusted):
-            raise ValueError(f"{path} : trusted-checks doit être une liste de noms de bases")
+        trusted = _liste(raw, "trusted-checks", path)
 
         return HubConfig(
             hub_root=hub_root,
@@ -117,8 +120,17 @@ class HubConfig:
             log_file=log_file,
             bootstrap_bundles=bootstrap,
             sync_on_start=sync_on_start,
-            trusted_checks=frozenset(trusted),
+            trusted_checks=trusted,
+            private_terms=_liste(raw, "private-terms", path),
+            public_bases=_liste(raw, "public-bases", path),
         )
+
+
+def _liste(raw: dict, cle: str, path: Path) -> frozenset[str]:
+    valeur = raw.get(cle) or []
+    if not isinstance(valeur, list) or not all(isinstance(n, str) for n in valeur):
+        raise ValueError(f"{path} : {cle} doit être une liste de chaînes")
+    return frozenset(valeur)
 
 
 def _read(path: Path) -> dict:

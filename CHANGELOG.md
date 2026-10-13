@@ -14,6 +14,23 @@ Le projet suit la version de la spécification qu'il implémente : `bundle-spec 
 
 ### Ajouté
 
+- **Fuites vers les dépôts publics fermées à la source** (spec rév. 4.4).
+  `kb_propose` refuse, sans rien déposer, une proposition qui cite un terme
+  privé dans une base publique (`okf-hub-feedback`) : nom, répertoire ou corpus
+  d'une base privée installée, ou `private-terms`. Sa description marque les
+  bases publiques. Des hooks git (`.githooks/` : `pre-commit`, `commit-msg`,
+  `pre-push`) font le même contrôle sur ce qui est commité et poussé dans le hub
+  et ses bases publiques, auteurs de commit compris ; `okf-hub setup` les active
+  (cinquième étape), l'installation d'une base publique aussi. Le test de
+  neutralité couvre désormais les bases publiques, commits non poussés compris.
+  Un seul calcul des termes : `src/okf_hub/confidentialite.py`.
+
+- **`okf-review resolve` exécute la suite des plans d'un lot**, un commit par
+  plan, en sautant ceux déjà résolus : une commande interrompue se relance
+  telle quelle. **`--checks`** lance ensuite les contrôles approuvés dans la
+  base et commite les vues régénérées à part (`regen:`), sous le verrou — ce qui
+  se faisait à la main, par des scripts « reprenables » écrits pour chaque lot.
+
 - **`okf-review verify` : les plans rejoués sur une copie jetable du hub, puis
   les contrôles que la base déclare** (spec rév. 4.3). Une base liste dans
   `governance.checks` les commandes qui régénèrent ses vues et vérifient ses
