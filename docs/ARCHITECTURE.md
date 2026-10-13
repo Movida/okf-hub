@@ -1031,11 +1031,11 @@ un livrable distinct, publié sur GitHub et non monté dans le devcontainer ; la
 modification qui lui revenait a été livrée en patch, appliquée en amont, puis
 retirée d'ici. C'est la procédure à reprendre pour toute évolution du template.
 
-**En attente d'application en amont (rév. 4.3)** :
-[`docs/patches/okf-bundle-template-governance-checks.patch`](patches/okf-bundle-template-governance-checks.patch)
-documente `governance.checks` dans le manifeste du template et dans
-`INSTANTIATE.md`. Procédure : `git -C <clone d'okf-bundle-template> am <patch>`,
-pousser, puis retirer le patch de ce dépôt.
+La rév. 4.3 a suivi la même procédure : `governance.checks` documenté dans le
+manifeste du template et dans `INSTANTIATE.md`, appliqué en amont
+(`okf-bundle-template` 8b0f5fd), puis le patch retiré d'ici. Le conteneur n'a
+aucune clé pour le template : une clé de déploiement à usage unique a servi au
+push, puis a été supprimée des deux côtés.
 
 **L'index de recherche dérivé mérite un mot** : la spec dit de ne l'ajouter que
 si ripgrep devient *mesurablement* insuffisant. Mesure du 2026-10-13, sept bases
