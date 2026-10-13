@@ -17,7 +17,7 @@ verified:
     at: 2026-09-17T00:00:00Z
     note: >-
       kb_search multi-bases (§ 10.3) déplacée de « Reporté » à « Livré » —
-      livrée le 2026-09-02 (commit 00de954), l'entrée était restée périmée
+      livrée le 2026-09-02 (commit bcd1fbb), l'entrée était restée périmée
 sources:
   - id: retour-j5
     resource: "premier retour d'usage réel d'une session consommatrice, post-J5"

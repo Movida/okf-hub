@@ -88,7 +88,7 @@ Pour une base de `upstreams.yaml` (`okf-hub-feedback`), c'est l'inverse : sa
 copie dans `bundles/` n'est qu'une graine, que personne ne lit. Un changement de
 code qui rend fausse une de ses affirmations se reporte par une proposition
 `correction` déposée dans la base installée, puis résolue (`skills/kb-review`).
-Vu le 2026-09-23 : `b5e1605` avait corrigé la graine, et pendant trois semaines
+Vu le 2026-09-23 : `1871691` avait corrigé la graine, et pendant trois semaines
 la base servie aux sessions a continué d'affirmer que `kb_search` était
 mono-base. `test_bases_meta.py` ne l'aurait pas vu : il lit `bundles/`, et ne
 contrôle que des noms d'outils et de paramètres, pas le sens des phrases.

@@ -21,7 +21,7 @@ verified:
     at: 2026-09-17T00:00:00Z
     note: >-
       « Recherche mono-base » était périmée (multi-bases livré le 2026-09-02,
-      commit 00de954) : remplacée par la vraie limitation résiduelle, la
+      commit bcd1fbb) : remplacée par la vraie limitation résiduelle, la
       troncature par budget de sortie (docs/API.md § kb_search)
 ---
 
