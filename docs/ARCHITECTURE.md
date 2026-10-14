@@ -525,6 +525,16 @@ un contournement : recomposer un frontmatter complet à la main via
 `edits[].content` **recréerait exactement le templating de chaînes que le
 § 1.7 interdit**, et le message d'erreur le dit. Le refus est atomique (§ 4.2).
 
+**Le chapeau d'une fiche a sa cible.** Le texte entre le frontmatter et le
+premier heading n'appartient à aucune section : avant le 14/10, le corriger
+obligeait à réécrire le fichier entier, frontmatter compris — le même
+templating. `edits[].section: "(préambule)"`, le libellé que `kb_search` donne
+déjà à cette zone (§ B3), la remplace en laissant le frontmatter intact octet
+pour octet (`test_preambule_remplace_le_chapeau_sans_toucher_le_frontmatter`).
+`kb_read` ne l'accepte pas encore en `section` : le chaînage `kb_search` →
+`kb_read` que vise § B3 casse sur un extrait de préambule, ce qui relève du
+propriétaire de la spec, pas d'okf-review.
+
 **Portée de la garantie.** « Aucun champ non ciblé ne change » est vérifié, pas
 supposé — mais la méthode ne couvre pas tout : elle refuse là où elle ne peut
 pas conclure. Un frontmatter dont l'indentation ne figure pas dans les

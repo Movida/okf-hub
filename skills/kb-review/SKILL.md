@@ -301,7 +301,7 @@ Champs :
 | `resolutions[].integrated_into` | Chemins des documents modifiés, relatifs au corpus. |
 | `edits[].path` | Chemin relatif au corpus. Le document est créé s'il n'existe pas. |
 | `edits[].content` | Contenu complet du fichier, ou de la section si `section` est fourni. |
-| `edits[].section` | Titre du heading à remplacer, au lieu du fichier entier. **Préfère cette forme** : elle évite de réécrire un gros document en entier. Remplace la **première** section de ce titre, jusqu'au prochain heading de niveau égal ou supérieur. Il n'y a pas d'insertion : pour ajouter une section au milieu d'une fiche, remplace la section qui la précède par elle-même suivie de la nouvelle. |
+| `edits[].section` | Titre du heading à remplacer, au lieu du fichier entier. **Préfère cette forme** : elle évite de réécrire un gros document en entier. Remplace la **première** section de ce titre, jusqu'au prochain heading de niveau égal ou supérieur. Il n'y a pas d'insertion : pour ajouter une section au milieu d'une fiche, remplace la section qui la précède par elle-même suivie de la nouvelle. `"(préambule)"` vise le chapeau, entre le frontmatter et le premier heading, qu'il remplace ou crée. |
 | `edits[].append` | Texte à ajouter en fin de document. Exclusif de `content`. |
 | `edits[].frontmatter` | Champs à fusionner dans le frontmatter du document. Les champs que tu ne cites pas gardent leur écriture exacte. |
 

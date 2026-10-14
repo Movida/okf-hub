@@ -15,6 +15,10 @@ import yaml
 
 FM_DELIM = "---"
 
+#: Libellé de ce qui précède tout heading : section d'un extrait de kb_search
+#: (§ B3), et cible d'une édition de plan d'okf-review.
+PREAMBLE_LABEL = "(préambule)"
+
 
 @dataclass(frozen=True)
 class Document:

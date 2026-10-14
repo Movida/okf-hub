@@ -39,7 +39,7 @@ from .errors import INVALID_INPUT, NOT_FOUND, ToolError
 from .frontmatter import merge_frontmatter
 from .governance import DRAFT, status_of_text
 from .locking import base_lock, ensure_git_exclude
-from .mdutil import extract_section, parse_document
+from .mdutil import PREAMBLE_LABEL, extract_section, parse_document, parse_headings
 from .registry import ACCEPTED_SUBDIR, PENDING_SUBDIR, REJECTED_SUBDIR, Base, Registry
 
 RESOLUTIONS = ("accepted", "rejected")
@@ -197,7 +197,8 @@ class Edit:
     content: str | None = None
     append: str | None = None
     section: str | None = None
-    """Avec `content` : remplace cette section au lieu du fichier entier."""
+    """Avec `content` : remplace cette section au lieu du fichier entier.
+    `(préambule)` vise le texte entre le frontmatter et le premier heading."""
     frontmatter: dict = field(default_factory=dict)
     """Champs à fusionner dans le frontmatter (fraîcheur, § 7.1.7)."""
 
@@ -310,7 +311,22 @@ def _compose_edit(base: Base, edit: Edit, en_cours: dict[Path, str]) -> tuple[Pa
     else:
         existing = target.read_text(encoding="utf-8") if target.is_file() else ""
 
-    if edit.content is not None and edit.section:
+    if edit.content is not None and edit.section == PREAMBLE_LABEL:
+        # Le chapeau d'une fiche n'est sous aucun heading : sans cette cible, le
+        # corriger obligeait à réécrire tout le fichier, frontmatter compris —
+        # le templating que § 1.7 interdit. Le frontmatter reste intact octet
+        # pour octet ; seul ce qui le sépare du premier heading est remplacé.
+        if not existing:
+            raise ToolError(NOT_FOUND, f"préambule d'un document absent : {edit.path}")
+        lines = existing.split("\n")
+        debut = parse_document(existing).body_offset
+        fin = next((h.line for h in parse_headings(existing) if h.line >= debut), len(lines))
+        corps = edit.content.strip().split("\n") if edit.content.strip() else []
+        tete = [""] if debut else []
+        nouveau = "\n".join(
+            lines[:debut] + tete + corps + ([""] if corps else []) + lines[fin:]
+        )
+    elif edit.content is not None and edit.section:
         match = extract_section(existing, edit.section)
         if match is None:
             raise ToolError(
@@ -318,8 +334,6 @@ def _compose_edit(base: Base, edit: Edit, en_cours: dict[Path, str]) -> tuple[Pa
             )
         lines = existing.split("\n")
         fin = len(lines)
-        from .mdutil import parse_headings
-
         for h in parse_headings(existing):
             if h.line > match.heading.line and h.level <= match.heading.level:
                 fin = h.line
@@ -408,7 +422,7 @@ def verify_plans(
         edites: set[str] = set()
         for edit in plan.edits:
             existant = planifie.get((base.corpus_dir / edit.path).resolve())
-            if edit.content is not None and edit.section:
+            if edit.content is not None and edit.section and edit.section != PREAMBLE_LABEL:
                 source = existant
                 cible = base.corpus_dir / edit.path
                 if source is None and cible.is_file():
@@ -572,6 +586,8 @@ def cmd_verify(
     # décision de l'opérateur du hub (§ 8), jamais un effet de son manifeste.
     _exiger_approbation(registry, touchees, registry.config.trusted_checks)
 
+    if workdir is not None:
+        workdir.mkdir(parents=True, exist_ok=True)
     racine = Path(tempfile.mkdtemp(prefix="okf-verify-", dir=workdir))
     print(f"Copie jetable du hub, depuis HEAD de chaque base : {racine}", flush=True)
     journaux = racine / "journaux"

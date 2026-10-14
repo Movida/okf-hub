@@ -176,6 +176,21 @@ def test_plans_rejoues_et_controles_reussis_sans_toucher_la_base(make_bundle, re
     assert "découverte" in journal and "integrate:" not in journal
 
 
+def test_workdir_absent_cree(make_bundle, registry, hub, tmp_path, capsys):
+    """Vu le 14/10 : un `--workdir` qui n'existait pas finissait en FileNotFoundError."""
+    _base(make_bundle, registry, "ma-base", _checks("check.py"), {"check.py": CHECK})
+    pid = _depose(registry, "ma-base")
+    _approuve(hub, "ma-base")
+    workdir = tmp_path / "pas" / "encore" / "la"
+
+    code = review.main(["--hub-root", str(hub[0]), "verify", "ma-base", "--plan",
+                        str(_plan(tmp_path, "p.json", pid, "n.md", "# N\n")),
+                        "--workdir", str(workdir)])
+
+    assert code == 0, capsys.readouterr().out
+    assert workdir.is_dir() and list(workdir.iterdir()) == []
+
+
 def test_controle_en_echec_rapporte_et_copie_conservee(make_bundle, registry, hub, tmp_path, capsys):
     base = _base(make_bundle, registry, "ma-base", _checks("check.py"), {"check.py": CHECK})
     pid = _depose(registry, "ma-base")

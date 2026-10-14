@@ -424,6 +424,53 @@ def test_dry_run_signale_une_section_en_double(base, registry, tmp_path, capsys)
     assert "seule la première" in capsys.readouterr().out
 
 
+def _preambule(base, pid, contenu, frontmatter=None):
+    edit = {"path": "sso.md", "section": "(préambule)", "content": contenu}
+    if frontmatter:
+        edit["frontmatter"] = frontmatter
+    review.apply_plan(base, review.parse_plan({
+        "summary": "chapeau", "reviewed_by": "human:morva",
+        "resolutions": [{"id": pid, "resolution": "accepted", "integrated_into": ["sso.md"]}],
+        "edits": [edit],
+    }))
+    return (base.corpus_dir / "sso.md").read_text(encoding="utf-8")
+
+
+def test_preambule_remplace_le_chapeau_sans_toucher_le_frontmatter(base, registry):
+    """Vu le 14/10 : un chapeau périmé ne se corrigeait qu'en réécrivant tout le
+    fichier, frontmatter compris — le templating que § 1.7 interdit."""
+    (base.corpus_dir / "sso.md").write_text(
+        BASE_DOC.replace("\n\n# Procédure SSO", "\n\n*Version 3.1.*\n\nDeux lignes.\n\n# Procédure SSO"),
+        encoding="utf-8",
+    )
+    git(base.root, "commit", "-qam", "chapeau")
+    avant = parse_document((base.corpus_dir / "sso.md").read_text(encoding="utf-8"))
+
+    doc = _preambule(base, depose(registry), "*Version 3.2.*\n")
+
+    apres = parse_document(doc)
+    assert apres.frontmatter_raw == avant.frontmatter_raw
+    assert apres.body.startswith("\n*Version 3.2.*\n\n# Procédure SSO\n")
+    assert "3.1" not in doc and "Deux lignes" not in doc
+
+
+def test_preambule_cree_entre_frontmatter_et_premier_heading(base, registry):
+    doc = _preambule(base, depose(registry), "Chapeau neuf.", {"last-verified": "2026-10-14"})
+
+    apres = parse_document(doc)
+    assert apres.frontmatter["last-verified"] == "2026-10-14"
+    assert apres.body.startswith("\nChapeau neuf.\n\n# Procédure SSO\n\n## Reconnexion")
+
+
+def test_preambule_d_un_document_absent_refuse(base, registry, tmp_path, capsys):
+    pid = depose(registry)
+    plan = _plan(tmp_path, "p.json", pid,
+                 [{"path": "absent.md", "section": "(préambule)", "content": "x"}])
+    assert _dry_run(registry, plan) == 4
+    assert "préambule" in capsys.readouterr().err
+    assert not (base.corpus_dir / "absent.md").exists()
+
+
 def test_plusieurs_plans_executes_dans_l_ordre_un_commit_chacun(base, registry, tmp_path, capsys):
     """Rév. 4.4 : une suite de plans s'exécute en une commande, sans renoncer à
     « une résolution = un plan = un commit » (§ 6.2)."""

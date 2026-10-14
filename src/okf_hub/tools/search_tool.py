@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from ..errors import INVALID_INPUT, ToolError
-from ..mdutil import heading_at_line, parse_document, parse_headings
+from ..mdutil import PREAMBLE_LABEL, heading_at_line, parse_document, parse_headings
 from ..registry import Base, Registry
 from ..search import DocHits, run_search
 from ..textutil import BudgetedWriter, truncate_chars
@@ -14,8 +14,6 @@ HARD_MAX_RESULTS = 25
 CONTEXT_LINES = 2
 MAX_EXCERPTS_PER_DOC = 3
 
-#: Libellé de section d'un extrait situé avant tout heading (§ B3).
-PREAMBLE_LABEL = "(préambule)"
 SECTION_LABEL_MAX = 120
 
 #: Valeur spéciale de `base` désignant toutes les bases enregistrées (§ 10.3).
