@@ -67,6 +67,14 @@ MAX_DEPTH = 20
 _COMMENTAIRE_OU_VIDE = re.compile(r"^\s*(#.*)?$")
 _COMMENTAIRE = re.compile(r"^\s*#")
 
+_FIN_DE_SCALAIRE_EN_FLOW = ",?[]{}"
+"""Caractères où PyYAML coupe un scalaire nu dans une collection flow.
+
+C'est la liste de son `Scanner.scan_plain`. YAML 1.2 n'y range pas `?` au
+milieu d'une chaîne : ruamel émet donc `members?role=admin` nu, et PyYAML ne
+le relit plus.
+"""
+
 _INDENTATIONS = (
     # (mapping, sequence, offset) — on retient la première configuration qui
     # reproduit le texte d'origine au caractère près (vérifié, pas supposé).
@@ -252,7 +260,7 @@ def _normaliser(bloc: str) -> str:
 # --- préparation des valeurs à écrire -----------------------------------------
 
 
-def _preparer(valeur, existant):
+def _preparer(valeur, existant, flow: bool = False):
     """Valeur prête à émettre : représentation non ambiguë, style conservé.
 
     Deux points :
@@ -263,7 +271,9 @@ def _preparer(valeur, existant):
       1.2) et se relirait `True` (booléen en 1.1). Même chose pour `on`,
       `12:30` (sexagésimal en 1.1) ou `2026-09-16`. La politique ne dépend
       donc pas du corpus : c'est le contrat d'entrée du hub, PyYAML, qui
-      arbitre ;
+      arbitre. Dans une collection flow (`flow`), une chaîne qui contient un
+      caractère de `_FIN_DE_SCALAIRE_EN_FLOW` l'est aussi : relue seule, elle
+      passe, mais PyYAML la couperait à cet endroit ;
     - remplacer une liste écrite en style flow la réécrit en style flow. La
       garantie porte sur les champs non ciblés, mais une revue qui met `tags`
       à jour casserait les lecteurs du corpus exactement comme l'incident
@@ -279,22 +289,25 @@ def _preparer(valeur, existant):
       casse aucun des deux. Une liste plus profonde garde le style bloc.
     """
     if isinstance(valeur, str):
-        return _chaine(valeur)
+        return _chaine(valeur, flow)
     if isinstance(valeur, bool) or valeur is None or isinstance(valeur, (int, float)):
         return valeur
     if isinstance(valeur, (list, tuple)):
-        suite = CommentedSeq([_preparer(v, None) for v in valeur])
-        if _est_flow(existant) or (existant is None and all(_plat(v) for v in valeur)):
+        en_flow = (
+            flow
+            or _est_flow(existant)
+            or (existant is None and all(_plat(v) for v in valeur))
+        )
+        suite = CommentedSeq([_preparer(v, None, en_flow) for v in valeur])
+        if en_flow:
             suite.fa.set_flow_style()
-            for element in suite:
-                if isinstance(element, CommentedMap):
-                    element.fa.set_flow_style()
         return suite
     if isinstance(valeur, dict):
+        en_flow = flow or _est_flow(existant)
         table = CommentedMap()
         for cle, sous in valeur.items():
-            table[cle] = _preparer(sous, None)
-        if _est_flow(existant):
+            table[cle] = _preparer(sous, None, en_flow)
+        if en_flow:
             table.fa.set_flow_style()
         return table
     raise ToolError(
@@ -302,7 +315,7 @@ def _preparer(valeur, existant):
     )
 
 
-def _chaine(valeur: str):
+def _chaine(valeur: str, flow: bool = False):
     if any(c in valeur for c in "\n\r\x85\u2028\u2029"):
         # Émise en style double-quote, donc sur une seule ligne avec des
         # échappements `\n` : un retour à la ligne réel produirait une ligne
@@ -310,6 +323,8 @@ def _chaine(valeur: str):
         # frontmatter en deux pour `mdutil.parse_document`, qui reconnaît le
         # délimiteur sur la ligne *strippée* (§ 3.2).
         return DoubleQuotedScalarString(valeur)
+    if flow and any(c in valeur for c in _FIN_DE_SCALAIRE_EN_FLOW):
+        return SingleQuotedScalarString(valeur)
     try:
         relu = yaml.safe_load(valeur)
     except yaml.YAMLError:
@@ -339,7 +354,7 @@ def _est_flow(existant) -> bool:
 def _verifier_representation(reference: str, obtenu: str, cibles: set[str]) -> None:
     """Refuse si un champ non ciblé, un commentaire ou l'ordre a bougé."""
     avant_preambule, avant = _decouper(reference)
-    apres_preambule, apres = _decouper(obtenu)
+    apres_preambule, apres = _decouper(obtenu, reemis=True)
 
     if avant_preambule != apres_preambule:
         raise _refus("l'en-tête du frontmatter a changé")
@@ -365,7 +380,7 @@ def _verifier_representation(reference: str, obtenu: str, cibles: set[str]) -> N
         raise _refus("les commentaires du frontmatter ont changé")
 
 
-def _decouper(bloc: str) -> tuple[str, list[tuple[str, str, str]]]:
+def _decouper(bloc: str, reemis: bool = False) -> tuple[str, list[tuple[str, str, str]]]:
     """(préambule, [(clé, lignes qui la précèdent, lignes du champ)]).
 
     Le découpage s'appuie sur les marques du composeur, pas sur une regex : un
@@ -375,6 +390,9 @@ def _decouper(bloc: str) -> tuple[str, list[tuple[str, str, str]]]:
     champ ajouté en queue de frontmatter ne soit pas imputé au dernier champ
     d'origine. Tout cas où l'attribution ne serait pas décidable — racine en
     style flow, deux clés sur la même ligne, clé indentée — est refusé.
+
+    `reemis` dit d'où vient un bloc illisible : du document d'origine, ou de
+    l'émission. Le confondre envoie corriger à la source un frontmatter sain.
     """
     lignes = bloc.split("\n")
     if lignes and lignes[-1] == "":
@@ -386,6 +404,10 @@ def _decouper(bloc: str) -> tuple[str, list[tuple[str, str, str]]]:
     try:
         racine = yaml.compose(bloc)
     except yaml.YAMLError as exc:
+        if reemis:
+            raise _refus(
+                f"le frontmatter réémis n'est plus lisible : {_une_ligne(exc)}"
+            ) from exc
         raise _refus(f"frontmatter illisible : {_une_ligne(exc)}") from exc
     if not isinstance(racine, yaml.MappingNode):
         raise _refus("le frontmatter n'est pas un mapping")

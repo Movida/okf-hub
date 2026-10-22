@@ -177,6 +177,52 @@ def test_un_sources_sans_forme_existante_s_ecrit_sur_une_ligne(texte):
     assert yaml.safe_load(obtenu.split("---\n")[1])["sources"] == sources
 
 
+@pytest.mark.parametrize(
+    "valeur", ["https://exemple.org/api/membres?role=admin", "pourquoi?", "a?b?c"]
+)
+@pytest.mark.parametrize(
+    "texte",
+    ["---\ntitle: Existante\n---\n\nCorps.\n", "---\ntags: [a, b]\nsources: [{id: x, resource: y}]\n---\n"],
+    ids=["liste-ajoutee", "liste-flow-remplacee"],
+)
+def test_un_point_d_interrogation_dans_une_liste_flow_est_relu(texte, valeur):
+    """En flow, PyYAML coupe une chaîne nue sur `?` ; ruamel, en 1.2, l'émet nue.
+
+    Vu le 2026-10-21 : une source dont la `resource` était une URL à paramètres
+    faisait refuser la fusion, comme « frontmatter illisible », alors que le
+    frontmatter d'origine était sain. La garde avait raison de refuser ce
+    qu'elle ne relisait pas ; c'est l'émission qui doit le mettre entre quotes.
+    """
+    obtenu = merge_frontmatter(
+        texte, {"tags": ["a", valeur], "sources": [{"id": "x", "resource": valeur}]}
+    )
+    bloc = parse_document(obtenu).frontmatter_raw
+    assert any(l.startswith("tags: [") for l in lignes(bloc)), bloc
+    assert any(l.startswith("sources: [{") for l in lignes(bloc)), bloc
+    relu = yaml.safe_load(obtenu.split("---\n")[1])
+    assert relu["tags"] == ["a", valeur]
+    assert relu["sources"] == [{"id": "x", "resource": valeur}]
+
+
+def test_une_emission_illisible_n_accuse_pas_le_document_d_origine(monkeypatch):
+    """Si l'émission redevenait illisible, le refus doit le dire.
+
+    Le 2026-10-21, le refus disait « frontmatter illisible » : le gestionnaire
+    était envoyé corriger à la source une fiche saine.
+    """
+    from okf_hub import frontmatter
+
+    monkeypatch.setattr(frontmatter, "_FIN_DE_SCALAIRE_EN_FLOW", ",[]{}")
+    with pytest.raises(ToolError, match="frontmatter réémis n'est plus lisible"):
+        merge_frontmatter(FICHE, {"sources": [{"id": "x", "resource": "a?b"}]})
+
+
+def test_un_point_d_interrogation_hors_flow_reste_nu():
+    """Hors d'une collection flow, `?` au milieu d'une chaîne ne gêne aucun lecteur."""
+    obtenu = merge_frontmatter(FICHE, {"note": "a?b"})
+    assert "note: a?b" in lignes(obtenu)
+
+
 def test_un_champ_existant_est_remplace_sans_toucher_ses_voisins():
     obtenu = merge_frontmatter(FICHE, {"statut": "obsolete"})
     assert "statut: obsolete" in lignes(obtenu)

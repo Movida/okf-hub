@@ -513,7 +513,9 @@ sont des données semi-fiables :
 - **YAML 1.1 contre YAML 1.2.** `ruamel` résout en 1.2, PyYAML — le parseur du
   hub — en 1.1. Une chaîne que `safe_load` ne relirait pas à l'identique est
   mise entre quotes à l'émission : `yes`, `on`, `12:30` (sexagésimal en 1.1),
-  `2026-09-16`. C'est le contrat d'entrée du hub qui arbitre.
+  `2026-09-16`. C'est le contrat d'entrée du hub qui arbitre. Dans une
+  collection flow, PyYAML coupe de plus un scalaire nu sur `,?[]{}`, où 1.2
+  admet `?` : une chaîne qui en contient y est aussi mise entre quotes.
 - **Valeurs multilignes.** Émises en style double-quote, donc sur une seule
   ligne avec des échappements. Une ligne de continuation valant `---` clorait
   le frontmatter pour `parse_document`, qui reconnaît le délimiteur sur la
@@ -927,7 +929,7 @@ pour vérifier la couverture sans relire la suite.
 | commits § 6.2, lot multi-trailers | `test_lot_mele_integration_et_rejet_en_un_seul_commit`, `test_lot_uniquement_de_rejets`, `test_integration_simple`, `test_rejet_avec_motif` |
 | § 1.7 — fusion de frontmatter sans dégradation de représentation (§ 5.4) | `tests/test_frontmatter_merge.py` : `test_les_champs_non_cibles_restent_identiques_au_caractere_pres`, `test_le_parseur_mono_ligne_du_corpus_lit_encore_les_tags`, `test_representations_preexistantes_inchangees`, `test_une_liste_flow_ciblee_reste_en_flow` |
 | § 1.7 — refus explicite plutôt que fidélité non garantie | `test_refus_explicite`, `test_refus_sur_frontmatter_trop_volumineux`, `test_refus_sur_frontmatter_trop_imbrique` |
-| § 1.7 — injection neutralisée, scalaires ambigus 1.1/1.2 | `test_injection_dans_une_valeur_neutralisee`, `test_scalaire_ambigu_relu_comme_la_chaine_demandee`, `test_valeurs_non_chaines_relues_avec_leur_type` |
+| § 1.7 — injection neutralisée, scalaires ambigus 1.1/1.2 | `test_injection_dans_une_valeur_neutralisee`, `test_scalaire_ambigu_relu_comme_la_chaine_demandee`, `test_valeurs_non_chaines_relues_avec_leur_type`, `test_un_point_d_interrogation_dans_une_liste_flow_est_relu`, `test_une_emission_illisible_n_accuse_pas_le_document_d_origine` |
 | § 6.2 — **atomicité** d'un refus de fusion dans un plan | `test_le_refus_ne_modifie_rien_du_depot`, `test_deux_editions_du_meme_fichier_s_enchainent` |
 
 ### J5 — critère d'acceptation final

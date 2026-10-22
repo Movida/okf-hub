@@ -142,6 +142,16 @@ Le projet suit la version de la spécification qu'il implémente : `bundle-spec 
 
 ### Corrigé
 
+- **Une valeur contenant `?` dans une liste en ligne ne fait plus refuser la
+  fusion de frontmatter.** `ruamel` (YAML 1.2) émettait nue une chaîne comme
+  `https://exemple.org/api?role=admin` dans `sources: [{…}]`, et PyYAML
+  (YAML 1.1, le lecteur du hub) la coupait sur le `?` : la garde refusait, à
+  raison, ce qu'elle ne relisait pas, mais sous le motif « frontmatter
+  illisible », qui envoyait corriger une fiche saine. Dans une collection flow,
+  une chaîne qui contient `,?[]{}` est désormais mise entre quotes ; un refus
+  dû à l'émission dit « le frontmatter réémis n'est plus lisible ». Vu en revue
+  le 2026-10-21.
+
 - **La date d'une fiche OKF 0.2 remonte dans `kb_search`.** Le résumé de
   frontmatter ne retenait que les clés de premier niveau ; la date d'une fiche qui
   reflète une source vit en 0.2 dans `sources[].last_modified` (§ 5.1). Une base
