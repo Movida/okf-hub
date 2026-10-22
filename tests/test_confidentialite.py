@@ -208,9 +208,13 @@ def test_setup_active_les_hooks_du_hub_et_des_bases_publiques(hub_mixte):
     etape = setup_cmd.activate_hooks(hub_root)
 
     assert etape.status == "ok"
-    attendu = str(hub_root / ".githooks")
-    assert git(hub_root, "config", "core.hooksPath").strip() == attendu
-    assert git(reg.get("retours").root, "config", "core.hooksPath").strip() == attendu
+    # Relatif à chaque dépôt : un chemin absolu posé dans un devcontainer
+    # n'existe pas sur l'hôte qui partage le clone, et git y saute les hooks.
+    assert git(hub_root, "config", "core.hooksPath").strip() == ".githooks"
+    retours = reg.get("retours").root
+    chemin = git(retours, "config", "core.hooksPath").strip()
+    assert not chemin.startswith("/"), chemin
+    assert (retours / chemin).resolve() == (hub_root / ".githooks").resolve()
     proc = subprocess.run(
         ["git", "-C", str(reg.get("base-privee").root), "config", "core.hooksPath"],
         capture_output=True, text=True,

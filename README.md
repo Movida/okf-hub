@@ -58,7 +58,12 @@ uv run okf-hub setup
    confirmation immédiate, sans attendre une connexion cliente).
 5. **Hooks de confidentialité** — active `.githooks/` sur le hub et ses bases
    publiques : un commit ou une poussée qui publierait un terme privé est
-   refusé (voir « Configuration locale, jamais versionnée »).
+   refusé (voir « Configuration locale, jamais versionnée »). Le chemin posé
+   est relatif, donc valable dans un devcontainer comme sur l'hôte qui partage
+   le clone. Les hooks prennent l'interpréteur de `OKF_HUB_PYTHON`, à défaut
+   celui de `.venv/`, à défaut `python3` : sur un hôte dont le `.venv/` est
+   celui du conteneur, poser `OKF_HUB_PYTHON`, sans quoi tout commit est
+   refusé.
 
 Chaque étape sans objet dans l'environnement courant (pas de devcontainer,
 aucun client MCP détecté, Claude Desktop absent, `bootstrap-bundles: false`)

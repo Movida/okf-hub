@@ -291,6 +291,11 @@ def activate_hooks(hub_root: Path, *, runner: Runner = subprocess.run) -> StepRe
     Les hooks refusent un commit ou une poussée qui publierait un terme privé.
     Ils ne valent que là où ils sont activés, et un clone ne les active pas de
     lui-même : d'où cette étape, idempotente.
+
+    Le chemin est relatif à chaque dépôt (git le résout depuis la racine de
+    son arbre de travail). Absolu, il ne vaut que là où `setup` a tourné :
+    posé dans un devcontainer, `/workspaces/<hub>/.githooks` n'existe pas sur
+    l'hôte qui partage le clone, et git y saute alors les hooks sans rien dire.
     """
     nom = "hooks de confidentialité"
     hooks = hub_root / ".githooks"
@@ -307,7 +312,8 @@ def activate_hooks(hub_root: Path, *, runner: Runner = subprocess.run) -> StepRe
     try:
         for depot in [hub_root, *publiques]:
             runner(
-                ["git", "-C", str(depot), "config", "core.hooksPath", str(hooks)],
+                ["git", "-C", str(depot), "config", "core.hooksPath",
+                 os.path.relpath(hooks, depot)],
                 check=True, capture_output=True,
             )
     except (OSError, subprocess.CalledProcessError) as exc:

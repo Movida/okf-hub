@@ -180,7 +180,8 @@ def deploy_missing(config: HubConfig) -> list[str]:
                 if amont and hooks.is_dir():
                     # Livrée et clonée d'un dépôt canonique : publique, comme le
                     # hub (rév. 4.4). Ses poussées passent par les mêmes hooks.
-                    _git(cible, ["config", "core.hooksPath", str(hooks)])
+                    # Chemin relatif, comme `setup_cmd.activate_hooks`.
+                    _git(cible, ["config", "core.hooksPath", os.path.relpath(hooks, cible)])
                 hublog.info(f"base livrée installée : {nom} → {cible} ({origine})")
         except (OSError, subprocess.SubprocessError) as exc:
             if amont:

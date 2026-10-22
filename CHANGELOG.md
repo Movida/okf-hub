@@ -142,6 +142,13 @@ Le projet suit la version de la spécification qu'il implémente : `bundle-spec 
 
 ### Corrigé
 
+- **Les hooks de confidentialité valent aussi hors du devcontainer.**
+  `okf-hub setup` et l'installation d'une base publique posaient
+  `core.hooksPath` en chemin absolu : posé dans le conteneur,
+  `/workspaces/<hub>/.githooks` n'existe pas sur l'hôte qui partage le clone,
+  et git y sautait les hooks sans rien dire — un commit fait sur l'hôte
+  n'était pas contrôlé. Le chemin est désormais relatif à chaque dépôt.
+
 - **Une valeur contenant `?` dans une liste en ligne ne fait plus refuser la
   fusion de frontmatter.** `ruamel` (YAML 1.2) émettait nue une chaîne comme
   `https://exemple.org/api?role=admin` dans `sources: [{…}]`, et PyYAML

@@ -8,6 +8,7 @@ installation neuve exécutent ce code en même temps sur le même répertoire.
 
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 from concurrent.futures import ThreadPoolExecutor
@@ -412,4 +413,6 @@ def test_une_base_clonee_d_un_amont_recoit_les_hooks_de_confidentialite(hub_avec
     bootstrap.deploy_missing(config)
 
     cible = config.bases_dir / "livree"
-    assert git(cible, "config", "core.hooksPath").strip() == str(hub_avec_bundles / ".githooks")
+    chemin = git(cible, "config", "core.hooksPath").strip()
+    assert not os.path.isabs(chemin), chemin
+    assert (cible / chemin).resolve() == (hub_avec_bundles / ".githooks").resolve()
