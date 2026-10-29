@@ -10,7 +10,7 @@
 > sont recensés dans [`ARCHITECTURE.md`](ARCHITECTURE.md), section « Écarts
 > assumés » — nulle part ailleurs.
 >
-> **Révision courante : 4.4.** L'amendement rév. 4.1 (premier retour d'usage
+> **Révision courante : 4.5.** L'amendement rév. 4.1 (premier retour d'usage
 > réel d'une session consommatrice, post-J5) a été intégré dans le corps du
 > texte, section par section, plutôt qu'annexé : les renvois « § x.y » du code
 > restent ainsi la seule adresse d'une exigence. Les passages issus de
@@ -24,7 +24,10 @@
 > qu'une base déclare, sous approbation de l'opérateur ; ses passages portent
 > la mention **(rév. 4.3)**. La **rév. 4.4** (§ 4.1, § 5.5, § 7.1, § 8) ferme les
 > fuites vers les dépôts publics et outille l'après-résolution ; mention
-> **(rév. 4.4)**.
+> **(rév. 4.4)**. La **rév. 4.5** (§ 1.2, § 2, § 3.3, § 3.5, § 3.6, § 4.1,
+> § 5.6, § 5.8, § 5 bis, § 8, § 9) ouvre la consultation : profil de base,
+> références entre bases, `kb_find`, interface web en lecture ; mention
+> **(rév. 4.5)**.
 
 Document d'implémentation, révision 4.1 — révision 4 (version finale pour
 implémentation, intégrant les retours des trois relectures croisées), amendée
@@ -49,7 +52,10 @@ respecter) :
 1. **Git est canonique.** Tout état vit dans les dépôts git des bases. Aucune
    base de données d'état. Tout index ou cache est dérivé et régénérable.
 2. **Aucun protocole inventé.** Uniquement : git, markdown + frontmatter YAML,
-   MCP, conventions de fichiers.
+   MCP, conventions de fichiers. **(rév. 4.5)** S'y ajoutent des pages HTML en
+   lecture, servies aux navigateurs (§ 5 bis) : c'est tout ce qu'exige un
+   humain sans session Claude. **Toute machine passe par MCP** — aucune API
+   HTTP n'est créée, donc aucun contrat d'échange nouveau.
 3. **Frontière de confiance à l'écriture.** Les sessions
    consommatrices/contributrices ne modifient jamais le corpus. Elles déposent
    des propositions. Seul le rôle gestionnaire intègre.
@@ -101,6 +107,9 @@ respecter) :
 | **Proposition** | Fichier markdown déposé dans `proposals/pending/`, exprimant une affirmation à intégrer. |
 | **Gestionnaire** | Rôle Claude invoqué ponctuellement pour passer en revue les propositions d'un bundle et les intégrer ou les rejeter. |
 | **Contributeur** | Toute session (ou humain) qui soumet des propositions via l'outil MCP ou par dépôt de fichier manuel. |
+| **Profil** (rév. 4.5) | Le vocabulaire déclaré d'une base — champs, types, facettes, sections, vues — dans son `schema.yaml` (§ 3.5). |
+| **Référence entre bases** (rév. 4.5) | Lien d'un document vers un document d'une autre base, `<name>:/<chemin>` (§ 3.6). |
+| **Vue** (rév. 4.5) | Une requête `kb_find` enregistrée dans un profil, avec une sorte de rendu (§ 3.5). |
 
 ---
 
@@ -178,10 +187,22 @@ governance:
   checks:                           # optionnel (rév. 4.3) — contrôles de la base,
     - python3 scripts/check.py      # lancés par `okf-review verify` seulement (§ 7.1)
 
+# --- Dépendances — champ OPTIONNEL (rév. 4.5) ---
+cites: [produit-x]                  # bases que celle-ci peut citer (§ 3.6)
+
 # --- Extensions [v1+] — ignorées en v0, le parseur ne doit PAS les rejeter ---
 tools: []
 skills: []
 ```
+
+**Dépendances déclarées (rév. 4.5).** `cites` liste les `name` des bases vers
+lesquelles celle-ci écrit des références (§ 3.6) : « l'amont ignore l'aval ».
+Le hub en tire le graphe des bases et signale, **en avertissement** — jamais en
+invalidant un bundle — un cycle dans les `cites` déclarés, une base citée qui
+n'est pas installée, et une référence vers une base absente de `cites`. Une
+base qui ne déclare pas `cites` ne reçoit aucun avertissement de référence. Un
+champ mal formé est ignoré avec un avertissement ; une base qui se nomme
+elle-même en est retirée.
 
 **Contrôles de la base (rév. 4.3).** `governance.checks` liste, dans l'ordre,
 les commandes qui régénèrent les vues dérivées de la base et vérifient ses
@@ -293,6 +314,105 @@ En v0, ce schéma sert **uniquement de documentation** pour le gestionnaire
 (injecté dans son contexte). Aucune validation automatique.
 **[v1+]** : validation à l'intégration.
 
+**Profil (rév. 4.5).** Le `schema.yaml` est aussi le **profil** de la base :
+il déclare, sans code, ce que ses champs, ses sections et ses tags signifient,
+pour que la consultation (§ 5.8, § 5 bis) les montre et les interroge.
+L'extension est **rétrocompatible** — un `schema.yaml` v0 est un profil sans
+enrichissement — et toutes les clés ajoutées sont optionnelles. Une clé
+inconnue est ignorée : une base peut y ranger ce dont ses propres contrôles ont
+besoin. Une partie mal formée est ignorée avec un avertissement, jamais le
+profil entier. Le profil a trois lecteurs : le gestionnaire, les contrôles de
+la base (§ 3.3), le moteur de lecture du hub ; le hub ne valide toujours rien.
+
+Les **clés et les rôles** sont le vocabulaire du hub, en anglais comme le reste
+du schéma ; **les titres, facettes et valeurs** sont celui de la base, dans sa
+langue :
+
+```yaml
+required:
+  - name: type
+    type: string
+  - name: provenance
+    type: enum
+    role: provenance
+    values:
+      interne:  {label: Miroir d'un document interne, evidence: resource}
+      instance: {label: Relevé sur un système réel, evidence: observation}
+      terrain:  {label: Constaté en usage}
+optional:
+  - name: aliases
+    type: list[string]
+    role: aliases
+
+types:                       # types déclarés : effectifs calculés, nuls compris
+  Procédure: {description: Un mode opératoire, paths: [/exploitation/]}
+  Incident:  {description: Un incident daté, avec sa cause}
+
+facets:                      # sans `separator`, les tags ne sont jamais découpés
+  separator: ":"
+  env: {label: Environnement, values: {prod: Production, test: Test}}
+
+sections:                    # titre de section (normalisé, § 11.4) → rôle
+  Pièges: warnings
+  Amont: upstream
+
+views:                       # une requête kb_find enregistrée + une sorte de rendu
+  - {title: Pièges et limites, kind: list, filter: {section: warnings}, group: {facet: module}}
+  - {title: À re-vérifier, kind: freshness, filter: {older_than_months: 12}}
+```
+
+**Rôles reconnus** — liste fermée, tenue par la présente spec ; une base n'en
+invente pas, elle en demande un par un retour d'usage :
+
+| Porté par | Rôle | Effet |
+|---|---|---|
+| Champ | `provenance` | Badge au libellé de la valeur ; le champ nommé par `evidence` est montré à côté. La vue `freshness` ne retient que les provenances qui déclarent une preuve. |
+| Champ | `aliases` | « Aussi appelé ». |
+| Champ | `start`, `end` | Période du document ; vue `timeline`. |
+| Champ | `version` | « S'applique à partir de ». |
+| Champ | `identifier` | Identifiant externe, affiché. |
+| Section | `warnings` | Section encadrée ; critère `section: warnings`. |
+| Section | `observations` | Section encadrée « constaté » ; critère. |
+| Section | `upstream` | Les références qu'elle contient sont des relations « décline » : les liens entrants les regroupent sous « déclinée par », `kb_find` les marque. |
+| Section | `procedure` | Accès direct en tête du document. |
+
+**Facettes.** Un tag `env:prod` se lit comme la facette `env`, valeur `prod`,
+seulement si le profil déclare `separator` ; sinon les tags restent plats. Les
+valeurs déclarées s'affichent même à effectif nul ; une valeur observée hors du
+vocabulaire déclaré est marquée.
+
+**Vues.** `kind` : `list` (regroupement par `group` : `type`, `{facet: …}` ou
+`{field: …}`), `timeline` (rôles `start` et `end`), `graph` (liens entre les
+documents retenus), `freshness` (les plus anciens d'abord). `filter` prend les
+critères de `kb_find` (§ 5.8). Une table de types écrite à la main dans un
+`index.md`, ou une page générée par un script de la base, peut céder la place à
+une vue quand celle-ci répond la même chose.
+
+### 3.6 Références entre bases (rév. 4.5)
+
+Une référence vers un document d'une autre base s'écrit comme un lien markdown
+dont la cible est `<name>:/<chemin>` :
+
+```markdown
+Ce flux décline le [mécanisme de survivance](produit-x:/mdm/survivance.md).
+```
+
+- `<name>` est le `name` du manifeste de la base visée (§ 3.3), pas le nom de
+  son répertoire ;
+- `<chemin>` part de la **racine du corpus** de la base visée (`corpus-dir`),
+  qui est la racine du bundle au sens d'OKF § 6.1 — comme un lien
+  bundle-relatif `/<chemin>` dans la base elle-même ;
+- un chemin terminé par `/` désigne un répertoire, donc son `index.md` ; un
+  chemin sans `.md` est un identifiant OKF ;
+- un préfixe suivi de `//` est une URL à autorité, pas une référence ; un
+  préfixe qui ne nomme aucune base installée donne une référence vers une base
+  absente, affichée comme telle ;
+- une cible absente n'est pas une erreur (OKF § 6.1) : elle s'affiche comme un
+  lien cassé.
+
+Hors du hub, un outil résout par le même principe : parcourir les manifestes
+des dépôts voisins. La forme reste un texte lisible sans le hub (§ 1.4).
+
 ---
 
 ## 4. Spécification du hub
@@ -321,6 +441,12 @@ trusted-checks: [ma-base, mon-autre-base]
 private-terms: [MonOrganisation, NOM_DE_PROJET]   # rév. 4.4
 public-bases: [une-base-publique]                  # rév. 4.4, facultatif
 ```
+
+**Interface web (rév. 4.5).** La clé `web`, dans `hub-config.local.yaml`
+puisqu'elle nomme des bases, règle `okf-hub web` (§ 5 bis) : `host`, `port`,
+et pour le mode équipe `identity-header`, `groups-header`, `trusted-proxies`,
+`visibility`. Elle n'est lue que par `okf-hub web` : une section mal écrite
+n'empêche pas le serveur MCP de démarrer.
 
 **Dépôts publics (rév. 4.4).** Sont publics le dépôt du hub et les bases livrées
 avec lui qui ont un dépôt canonique (`bundles/upstreams.yaml`), plus
@@ -512,8 +638,9 @@ standard gérées par le SDK.
 **Convention transverse — chemins :** relatifs à `corpus-dir`, séparateur `/`.
 
 **Convention transverse — plafond de sortie** (principe § 1.5) : `kb_search`,
-`kb_list` et `kb_proposal_status` (§ 5.7) plafonnent leur sortie à ~4 000 tokens
-(caractères/4), avec troncature signalée (`[résultats tronqués, ...]`).
+`kb_list`, `kb_proposal_status` (§ 5.7) et `kb_find` (§ 5.8) plafonnent leur
+sortie à ~4 000 tokens (caractères/4), avec troncature signalée
+(`[résultats tronqués, ...]`).
 
 ### 5.1 kb_list
 
@@ -717,6 +844,8 @@ supprimée.
 
 **Sortie :** bases ajoutées/retirées/inchangées, bundles invalides avec motif,
 collisions de `name`, avertissements de compatibilité `bundle-spec`.
+**(rév. 4.5)** Si une base au moins déclare `cites` : les avertissements du
+graphe des bases (§ 3.3). Sans aucune déclaration, aucun corpus n'est lu.
 
 **Description de l'outil :** mentionne explicitement la **portée mono-instance**
 (§ 4.4.c). **(rév. 4.1)** Le re-scan implicite de `kb_list` ne rend pas cet outil
@@ -773,6 +902,128 @@ Fichier au frontmatter illisible → ignoré du résultat, avec mention
 **Description de l'outil :** mentionne que `submitted_by` étant déclaratif
 (§ 8), le filtre retrouve les propositions **déclarées** sous ce nom, sans
 garantie d'identité.
+
+### 5.8 kb_find (rév. 4.5)
+
+Trouve les documents qui répondent à des critères structurés, ou compte leurs
+valeurs. Origine : une session a dû enchaîner sept recherches plein texte pour
+établir qu'une procédure n'existait pas. **Un total de zéro est une réponse.**
+
+**Entrée :**
+
+```json
+{
+  "base": "string | [string] | \"*\" (requis) — comme kb_search",
+  "type": "string — valeur exacte de `type`",
+  "tags": "[string] — tous requis, forme exacte",
+  "fields": "{champ: string | true | false} — valeur exacte (appartenance pour une liste), présence, absence",
+  "section": "string — une section de ce titre (normalisé, § 11.4), ou d'un titre que le profil range sous ce rôle",
+  "without_section": "string — l'inverse",
+  "under": "string — sous-chemin du corpus, lu comme un répertoire",
+  "links_to": "string — documents qui citent `<base>:/<chemin>` (un chemin seul si une seule base)",
+  "older_than_months": "int (1..600) — fraîcheur (§ 5 bis.1) plus ancienne",
+  "count_by": "string — `type`, `tags`, `section`, une facette déclarée, ou un champ",
+  "max_results": "int (défaut 50, max 200) — plafond global réparti, comme kb_search"
+}
+```
+
+Les critères se cumulent (ET). Les noms réservés (`index.md`, `log.md`) ne
+sont pas des concepts (OKF § 3.1) : ni listés, ni comptés.
+
+**Sortie :** par base, le **total exact**, puis les documents (chemin, titre,
+type) — avec la date de fraîcheur et son origine sous `older_than_months`, et la
+mention « amont » d'un lien venu d'une section de rôle `upstream` sous
+`links_to`. Sous `count_by`, les effectifs par valeur, déclarées et nulles
+comprises, valeurs hors vocabulaire marquées. Si un `type` ne trouve rien dans
+aucune base interrogée, les types présents sont rappelés : une faute de frappe
+ne passe pas pour une absence. Plafond transverse, le total restant exact.
+
+**Sortie structurée.** L'outil déclare un `outputSchema` et rend les mêmes
+documents et effectifs en `structuredContent`, pour qu'une autre interface les
+lise sans analyser de texte (§ 5 bis.3). Le texte reste la sortie destinée au
+modèle.
+
+---
+
+## 5 bis. Consultation (rév. 4.5)
+
+Un humain consulte les bases sans session Claude ; un agent prouve une absence
+en un appel ; le tout vaut pour n'importe quel bundle, que son profil améliore
+sans le conditionner.
+
+### 5 bis.1 Moteur de lecture
+
+Un seul moteur sert toutes les surfaces — `kb_find` et l'interface web : ce que
+voit l'humain est ce que lit l'agent. Il tient, par processus, un **modèle en
+mémoire, dérivé, sans persistance** (§ 1.1, § 4.4.a) : manifeste, profil,
+documents (frontmatter, headings, liens, notes), et à la demande les dates de
+dernier commit. Il est invalidé quand un document du corpus ou le profil change
+(chemin, date et taille), vérifié au plus toutes les quelques secondes ; seule
+la base qui a changé est rechargée. La recherche plein texte reste ripgrep
+(§ 5.2) : le modèle ne porte que des métadonnées, ce n'est pas l'index dérivé du
+§ 10.3.
+
+**Fraîcheur d'un document**, toujours disponible, dans l'ordre : la plus
+récente vérification (`verified[].at`), `generated.at`, la plus récente source
+(`sources[].last_modified`), le dernier commit, la date du fichier ; son
+origine est toujours dite. **Confiance** : le palier d'OKF § 5.3 quand
+`verified` est présent (signé `human:` : le plus élevé), sinon la provenance
+déclarée par le profil, sans palier inventé ; `stale_after` dépassé donne
+« périmé », `generated.by: process:…` donne « généré ».
+
+**Rendu** markdown → HTML côté serveur, HTML brut désactivé, imbrication
+relevée et troncature signalée. Liens : `http`, `https`, `mailto`, internes et
+références entre bases seulement, réécrits vers l'interface ; tout autre schéma
+est rendu inerte. Une note `[^id]` sans définition renvoie à l'entrée `id` de
+`sources`. Il n'existe qu'un rendu.
+
+### 5 bis.2 Interface web
+
+`okf-hub web` : processus distinct des instances MCP, qui lit le disque par le
+même registre et réutilise le mécanisme de re-scan du § 4.4.c (un déclencheur de
+plus). **Toutes ses routes sont en GET ; il n'écrit rien**, pas même un verrou
+d'index git. Pages : accueil (bases, documents, propositions en attente et date
+de la plus ancienne, statut de gouvernance, dernière entrée du journal), base,
+répertoire, document (en-tête, corps, sources, liens sortants et entrants),
+trouver, vues déclarées, recherche, propositions, journal, graphe des bases.
+La recherche montre tout le classement de `kb_search`, paginé, en extraits
+lisibles : une ligne touchée dans le frontmatter y devient le champ qui la
+porte. Le graphe donne le total des références qu'aucune déclaration ne couvre
+et les `cites` qu'impliqueraient les références observées, avec le cycle
+qu'elles formeraient le cas échéant ; ce n'est pas l'avertissement par base du
+§ 3.3, qui reste réservé aux bases qui déclarent.
+Les images du corpus sont servies (types d'image seulement, confinées comme un
+document, SVG sous politique `sandbox`) ; aucune autre ressource du corpus.
+
+**Adresses stables**, celles que citent les autres interfaces : `/b/<base>/`,
+`/b/<base>/<chemin>`, `/b/<base>/<dossier>/`, et sous `/b/<base>/-/` les pages
+d'une base (`trouver`, `vues/<n>`, `propositions[/<id>]`, `journal`) ; `/trouver`,
+`/recherche`, `/graphe` pour le hub.
+
+### 5 bis.3 Accès depuis une autre interface
+
+Une autre interface (la vue « Savoir » de HOLARCH la première) accède aux bases
+par deux voies seulement : **les données par MCP** (`kb_list`, `kb_find` et sa
+sortie structurée, `kb_proposal_status`), au besoin à travers une passerelle ;
+**la lecture par un lien** vers la page du hub. Le hub ne dépend de rien chez
+elle.
+
+### 5 bis.4 Accès et confidentialité
+
+- **Mode local** (défaut) : aucune authentification, l'opérateur voit toutes
+  les bases ; l'interface n'écoute donc que sur une adresse de bouclage.
+- **Mode équipe** : l'authentification est déléguée à un proxy inverse qui
+  transmet l'identité dans un en-tête. Cet en-tête n'est cru que sur une
+  connexion venue d'un proxy de `trusted-proxies` (défaut : le bouclage) ;
+  toute autre connexion est refusée.
+- **Visibilité par base** : une base n'est servie que sur une ligne de
+  `visibility` qui nomme `*`, l'identité ou un groupe du visiteur ; une base
+  absente de la liste ne l'est à personne, une base personnelle comprise.
+- Un **lien entrant** n'est montré que si le visiteur peut lire la base qui
+  cite ; un lien vers une base fermée n'est ni suivi ni distingué d'une base
+  absente. Les **propositions** ont la visibilité de leur base.
+- `kb_find`, comme tous les outils MCP, n'applique aucune visibilité : la
+  frontière des sessions MCP reste celle du hub (§ 4.3).
 
 ---
 
@@ -946,6 +1197,9 @@ dans ce cadre ; ce qui n'y résiste pas est marqué.
 | Usurpation `submitted-by` | Non authentifié, documenté comme tel. [v1+] : jetons par contributeur ou signatures. |
 | Bundles tiers → exécution de code | `tools`/`skills` non chargés en v0 ; [v1+] : approbation explicite par outil + sous-processus confiné. **(rév. 4.3)** Les `governance.checks` d'une base (§ 3.3) sont du code de la base : jamais lancés par le serveur MCP, ni à la découverte, ni par une session consommatrice ; seulement par `okf-review verify` (sur une copie) et, **(rév. 4.4)** après des résolutions réelles, par `okf-review resolve --checks` (dans la base), invoqués par l'opérateur ou le gestionnaire, pour une base inscrite dans `trusted-checks` (§ 4.1). L'approbation porte sur la base, pas sur chaque commande : c'est le code de ses scripts qu'on approuve, et figer leurs lignes de commande ne figerait pas leur contenu. Le confinement est celui d'une copie jetable : aucune vraie base n'est atteignable par chemin relatif ; ce n'est pas un bac à sable contre un script malveillant, hors du modèle de menace v0. |
 | Fuite vers un dépôt public **(rév. 4.4)** | Trois couches, sur les termes privés du § 4.1 : refus au dépôt par `kb_propose` dans une base publique (§ 5.5) ; hooks git `pre-commit`, `commit-msg` et `pre-push` sur le hub et ses bases publiques (contenus ajoutés, chemins, messages, auteurs ; une branche inconnue du remote est examinée sur tout ce qu'aucun remote ne connaît) ; test de neutralité des fichiers versionnés. Les hooks ne valent qu'activés : `okf-hub setup` les active, l'installation d'une base publique aussi. Les commits du hub lui-même passent `--no-verify` : c'est le refus au dépôt qui les couvre. |
+| Injection par la surface web **(rév. 4.5)** | Le corps des documents vient en partie de propositions d'agents : HTML brut désactivé, gabarits à échappement automatique, schémas de lien filtrés, politique de contenu stricte (`default-src 'self'`, aucun script, aucune ressource externe), SVG servi sous `sandbox`. |
+| En-tête d'identité usurpé **(rév. 4.5)** | Cru seulement sur une connexion venue d'un proxy de `trusted-proxies`, adresse du pair TCP, jamais `X-Forwarded-For` ; toute autre connexion refusée. Mode local : bouclage seulement. |
+| Fuite par les liens et le graphe **(rév. 4.5)** | Liens entrants filtrés par la visibilité de la base qui cite ; une base fermée et une base absente indiscernables, dans les liens comme dans le graphe. |
 | Corruption par écritures concurrentes | `flock()` (auto-libéré à la mort du processus, fd frais par acquisition — § 4.4.b) + index git temporaire initialisé depuis HEAD + écriture atomique par `rename`. Fenêtre de crash résiduelle rattrapée par réconciliation (§ 7.1.0). **Tests de concurrence obligatoires (J2).** |
 | Déni par inflation | `content` ≤ 16 Ko, `sources` ≤ 20 × 300 car., `concerns` ≤ 200 car., `submitted_by` ≤ 100 car. → `INVALID_INPUT` au-delà. `description` de manifeste plafonnée (§ 3.3). Sorties d'outils plafonnées (§ 5). Re-scan silencieux sous cooldown 5 s (§ 4.4.c). |
 
@@ -967,6 +1221,8 @@ structure § 3.1 avec :
 - `.gitignore` incluant `.okf-hub.lock` (redondant avec le mécanisme
   `.git/info/exclude` du § 4.4.b.1, volontairement) ;
 - un document d'exemple dans `knowledge/` ;
+- **(rév. 4.5)** un `schema.yaml` qui montre le profil (§ 3.5) en commentaire,
+  et `cites` dans le manifeste ;
 - `INSTANTIATE.md` : checklist d'instanciation (renommer, remplir le manifeste,
   écrire les golden rules, **valider la gouvernance et passer `status` à
   `stable`** (rév. 4.1), cloner dans `bases/`, rescan), rédigée pour être
@@ -1226,9 +1482,40 @@ session serait modifié à son insu) ; une liste de termes versionnée (elle
 publierait ce qu'elle protège) ; tenir le verrou pendant les contrôles (un
 contrôle de plusieurs minutes ferait échouer tout `kb_propose` en `BASE_BUSY`).
 
+### rév. 4.5 — consultation (post-J5-quinquies)
+
+Origine : retour d'usage du 26/10/2026 (« À arbitrer » de la roadmap
+d'`okf-hub-feedback`) — une session enchaîne sept appels pour établir qu'une
+procédure n'existe pas, et un humain n'a aucun accès aux bases hors session MCP
+ou lecture des dépôts. Décisions du propriétaire (28/10/2026) : profil en YAML ;
+le hub expose ses vues lui-même ; les autres interfaces y accèdent par MCP pour
+les données et par lien pour la lecture ; lecture seule. Conception :
+`docs/CONCEPTION-consultation.md`.
+
+| § amendé | Objet |
+|---|---|
+| § 1.2 | Pages HTML en lecture pour les navigateurs ; toute machine passe par MCP |
+| § 2 | Profil, référence entre bases, vue |
+| § 3.3 | `cites` et ses avertissements |
+| § 3.5 | Profil : extension rétrocompatible de `schema.yaml`, rôles fermés |
+| § 3.6 (nouveau) | Références entre bases `<name>:/<chemin>` |
+| § 4.1 | Clé `web` |
+| § 5.6 | Avertissements du graphe des bases |
+| § 5.8 (nouveau) | `kb_find`, avec sortie structurée |
+| § 5 bis (nouveau) | Moteur de lecture, interface web, accès depuis une autre interface, accès et confidentialité |
+| § 8 | Injection par la surface web, en-tête usurpé, fuite par les liens |
+| § 9 | Template : profil, `cites` |
+
+Non retenu : API JSON pour les autres interfaces (contrat parallèle à MCP) ;
+index ou base persistants (moins de 3 s pour charger un hub de 3 733 documents) ;
+visualiseur dans le template, générateur de site, wiki (second lecteur, ou
+contournement de `kb_propose`) ; découper les tags sur `:` sans déclaration ;
+dépôt de proposition depuis le web (lecture seule) ; clés de profil en français
+à côté des clés anglaises du schéma v0 (deux langues pour un même vocabulaire).
+
 ---
 
-*Fin de spécification (rév. 4.4).* **Toute déviation par rapport aux principes du
+*Fin de spécification (rév. 4.5).* **Toute déviation par rapport aux principes du
 § 1 ou aux mécanismes du § 4.4.b doit être remontée au propriétaire du projet
 avant implémentation.** En cas de conflit non identifié entre deux révisions,
 **la plus ancienne prévaut** et le conflit est remonté.

@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block titre %}okf-hub{% endblock %} — okf-hub</title>
+<link rel="stylesheet" href="/static/okf.css">
+</head>
+<body>
+<header class="bandeau">
+  <a class="marque" href="/">okf-hub</a>
+  <nav>
+    <a href="/">Bases</a>
+    <a href="/trouver">Trouver</a>
+    <a href="/recherche">Recherche</a>
+    <a href="/graphe">Graphe</a>
+  </nav>
+  <form class="recherche-rapide" action="/recherche" method="get" role="search">
+    <input type="search" name="q" placeholder="Rechercher dans les bases" aria-label="Rechercher dans les bases">
+  </form>
+  <span class="lecture-seule">lecture seule{% if equipe and visiteur.identite %} · {{ visiteur.identite }}{% endif %}</span>
+</header>
+{% block fil %}{% endblock %}
+<div class="cadre">
+{% block contenu %}{% endblock %}
+</div>
+</body>
+</html>

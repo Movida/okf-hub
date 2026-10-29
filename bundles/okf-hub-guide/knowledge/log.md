@@ -3,6 +3,12 @@
 Historique des changements du corpus, groupé par date (convention OKF § 9), le
 plus récent en premier. Le gestionnaire y ajoute une ligne à chaque intégration.
 
+## 2026-10-29
+
+* **Chercher et lire** : mise à jour de suivi, livrée avec le code (rév. 4.5) —
+  `kb_find` pour établir une existence ou une absence par critères, en un
+  appel ; il entre dans la stratégie de repli quand rien ne sort.
+
 ## 2026-09-17
 
 * **Chercher et lire** : mise à jour de suivi, pas de proposition — le corpus

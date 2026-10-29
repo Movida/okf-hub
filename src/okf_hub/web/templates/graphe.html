@@ -1,0 +1,53 @@
+{% extends "page.html" %}
+{% block titre %}Graphe des bases{% endblock %}
+{% block contenu %}
+<main class="principal large">
+  <h1>Graphe des bases</h1>
+  {% if non_declarees %}{% set nd = non_declarees %}
+  <section class="alerte bloc">
+    <h2>{{ nd.references }} références entre bases ne sont couvertes par aucune déclaration</h2>
+    <p>{% if nd.toutes %}Aucune base ne déclare <code>cites</code>{% else %}{{ nd.bases }} base(s) qui en citent d'autres ne déclarent pas <code>cites</code>{% endif %} :
+      pour ces {{ nd.relations }} relations, rien ne vérifie que l'amont ignore l'aval, ni qu'une nouvelle référence est voulue.
+      D'après les références observées, chaque manifeste porterait :</p>
+    <pre>{% for b, cibles in nd.declarations %}{{ b }}/okf-bundle.yaml   cites: [{{ cibles|join(', ') }}]
+{% endfor %}</pre>
+    {% if nd.cycles %}<p><strong>Attention :</strong> ces déclarations formeraient un cycle ({% for c in nd.cycles %}{{ c|join(' ↔ ') }}{% if not loop.last %} ; {% endif %}{% endfor %}) — une des références va contre le sens des dépendances.</p>
+    {% else %}<p class="note">Ces déclarations ne formeraient aucun cycle. Chacune s'écrit dans le dépôt de sa base.</p>{% endif %}
+  </section>
+  {% endif %}
+  {% if analyse.avertissements %}
+  <section class="alerte bloc">
+    <h2>Avertissements des déclarations</h2>
+    <ul>{% for a in analyse.avertissements %}<li>{{ a }}</li>{% endfor %}</ul>
+  </section>
+  {% endif %}
+  <p class="note legende"><span class="trait-plein"></span> déclarée dans <code>cites</code> · <span class="trait-pointille"></span> observée sans déclaration · épaisseur et pastille : nombre de références · survol : détail.</p>
+  {% set f = figure %}
+  <svg class="graphe" viewBox="0 0 {{ f.largeur }} {{ f.hauteur }}" role="img" aria-label="Bases et références entre elles">
+    <defs><marker id="fleche" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="9" markerHeight="9" markerUnits="userSpaceOnUse" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" class="pointe"/></marker></defs>
+    {% for a in f.arcs %}{% set d = a.donnees %}{% set texte = d.references|string %}
+    <g class="arc{% if not d.declaree %} observee{% endif %}{% if d.declaree and not d.references %} inutilisee{% endif %}">
+      <title>{{ a.source }} → {{ a.cible }} : {{ d.references }} référence(s){% if not d.declaree %}, non déclarée{% endif %}</title>
+      <path d="{{ a.chemin }}" stroke-width="{{ a.epaisseur }}" marker-end="url(#fleche)"/>
+      {% if d.references %}<rect x="{{ (a.etiquette_x - 5 - 3.8 * texte|length)|round(1) }}" y="{{ (a.etiquette_y - 10)|round(1) }}" width="{{ (10 + 7.6 * texte|length)|round(1) }}" height="20" rx="10" class="pastille"/>
+      <text x="{{ a.etiquette_x }}" y="{{ (a.etiquette_y + 4.5)|round(1) }}" class="compte">{{ texte }}</text>{% endif %}
+    </g>
+    {% endfor %}
+    {% for n in f.noeuds %}
+    <a href="{{ url_base(n.cle) }}"><circle cx="{{ n.x }}" cy="{{ n.y }}" r="{{ f.rayon }}" class="noeud{% if n.isole %} isole{% endif %}"><title>{{ titres[n.cle] }}</title></circle>
+    <text x="{{ n.etiquette_x }}" y="{{ n.etiquette_y }}" text-anchor="{{ n.ancrage }}" class="etiquette">{{ n.cle }}</text></a>
+    {% endfor %}
+    {% if f.isoles_y is not none %}<text x="{{ f.largeur / 2 }}" y="{{ f.isoles_y }}" class="legende-isoles">sans référence vers ni depuis une autre base</text>{% endif %}
+  </svg>
+  <h2>Références entre bases</h2>
+  <table>
+    <thead><tr><th>Base</th><th>Cite</th><th>Références</th><th>Déclarée dans <code>cites</code></th></tr></thead>
+    <tbody>{% for a in analyse.aretes|sort(attribute='references', reverse=true) %}<tr{% if not a.declaree %} class="non-declaree"{% endif %}><td><a href="{{ url_base(a.source) }}">{{ a.source }}</a></td><td><a href="{{ url_base(a.cible) }}">{{ a.cible }}</a></td><td class="nombre">{{ a.references }}</td><td>{{ 'oui' if a.declaree else 'non' }}</td></tr>{% endfor %}
+    {% for b, c, n in analyse.hors_perimetre %}<tr><td>{{ b }}</td><td>{{ c }} <em class="hors">hors de ce hub ou de votre vue</em></td><td class="nombre">{{ n }}</td><td>—</td></tr>{% endfor %}</tbody>
+  </table>
+  {% if analyse.cassees %}
+  <h2>Liens cassés</h2>
+  <ul>{% for b, n in analyse.cassees|dictsort %}<li><a href="{{ url_base(b) }}">{{ b }}</a> : {{ n }}</li>{% endfor %}</ul>
+  {% endif %}
+</main>
+{% endblock %}

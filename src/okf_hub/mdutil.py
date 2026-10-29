@@ -9,6 +9,7 @@ par la même fonction).
 from __future__ import annotations
 
 import re
+from collections.abc import Iterator
 from dataclasses import dataclass
 
 import yaml
@@ -45,13 +46,17 @@ class Document:
         return None
 
 
-def parse_document(text: str) -> Document:
+def parse_document(text: str, loader: type | None = None) -> Document:
     """Découpe frontmatter et corps.
 
     Le frontmatter n'est reconnu que délimité par `---` en *première* ligne
     (§ 3.2). Un frontmatter non parseable n'invalide pas le document : il est
     conservé en brut et `frontmatter` vaut None — un document du corpus reste
     lisible même mal formé (principe § 1.4).
+
+    `loader` : un chargeur *sûr* de PyYAML à la place de `safe_load`. Le moteur
+    de lecture passe `CSafeLoader`, qui lit tous les frontmatters d'un hub sept
+    fois plus vite, sans divergence mesurée (`lecture/modele.py`).
     """
     lines = text.split("\n")
     if not lines or lines[0].strip() != FM_DELIM:
@@ -63,7 +68,7 @@ def parse_document(text: str) -> Document:
             inner = "\n".join(lines[1:i])
             body = "\n".join(lines[i + 1 :])
             try:
-                data = yaml.safe_load(inner)
+                data = yaml.safe_load(inner) if loader is None else yaml.load(inner, Loader=loader)
             except yaml.YAMLError:
                 data = None
             if not isinstance(data, dict):
@@ -92,13 +97,14 @@ class Heading:
     """Index (base 0) de la ligne du heading dans le texte analysé."""
 
 
-def parse_headings(text: str) -> list[Heading]:
-    """Extrait les headings ATX, en ignorant ceux des blocs de code clôturés.
+def lines_outside_fences(text: str) -> Iterator[tuple[int, str]]:
+    """(index base 0, ligne) de chaque ligne hors bloc de code clôturé.
 
-    Sans cette exclusion, un `# Schema` à l'intérieur d'un bloc ``` serait pris
-    pour une section — cas fréquent dans un corpus technique.
+    Les lignes de clôture elles-mêmes sont omises. Seul endroit qui reconnaît
+    les blocs : les headings et les liens du moteur de lecture en dépendent
+    tous deux, et un exemple de syntaxe dans un bloc ``` n'est ni l'un ni
+    l'autre.
     """
-    headings: list[Heading] = []
     fence: str | None = None
     for idx, line in enumerate(text.split("\n")):
         m_fence = _FENCE.match(line)
@@ -112,6 +118,17 @@ def parse_headings(text: str) -> list[Heading]:
             continue
         if fence is not None:
             continue
+        yield idx, line
+
+
+def parse_headings(text: str) -> list[Heading]:
+    """Extrait les headings ATX, en ignorant ceux des blocs de code clôturés.
+
+    Sans cette exclusion, un `# Schema` à l'intérieur d'un bloc ``` serait pris
+    pour une section — cas fréquent dans un corpus technique.
+    """
+    headings: list[Heading] = []
+    for idx, line in lines_outside_fences(text):
         m = _ATX.match(line)
         if not m:
             continue

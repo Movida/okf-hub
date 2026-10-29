@@ -1,0 +1,24 @@
+{% extends "page.html" %}
+{% block titre %}Bases{% endblock %}
+{% block contenu %}
+<main class="principal large">
+  <h1>Bases de connaissance</h1>
+  {% if not bases %}
+  <p>Aucune base ne vous est ouverte sur ce hub.</p>
+  {% else %}
+  <ul class="bases">
+    {% for b in bases %}
+    <li>
+      <h2><a href="{{ url_base(b.nom) }}">{{ b.titre }}</a> <code>{{ b.nom }}</code>{% if b.gouvernance == 'draft' %} <span class="badge brouillon">gouvernance en brouillon</span>{% endif %}</h2>
+      <p>{{ b.description }}</p>
+      <p class="chiffres">
+        <span>{{ b.documents }} document(s)</span>
+        <a href="{{ url_page(b.nom, 'propositions', statut='pending') }}">{{ b.en_attente }} proposition(s) en attente</a>{% if b.plus_ancienne %}, la plus ancienne du {{ b.plus_ancienne|date }}{% endif %}
+        {% if b.journal %}<a href="{{ url_page(b.nom, 'journal') }}">journal : {{ b.journal }}</a>{% endif %}
+      </p>
+    </li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+</main>
+{% endblock %}

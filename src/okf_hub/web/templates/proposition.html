@@ -1,0 +1,23 @@
+{% extends "page.html" %}
+{% import "macros.html" as m %}
+{% block titre %}{{ entree.id }}{% endblock %}
+{% block fil %}{{ m.fil([(base.title, url_base(nom)), ('Propositions', url_page(nom, 'propositions'))], entree.id) }}{% endblock %}
+{% block contenu %}
+<main class="principal">
+  {% set fm = entree.frontmatter %}
+  <h1><code>{{ entree.id }}</code> <span class="statut {{ entree.status }}">{{ entree.status }}</span></h1>
+  {% if entree.inconsistent %}<p class="alerte">Incohérence : le frontmatter dit « {{ entree.declared_status }} », l'emplacement « {{ entree.status }} » — l'emplacement fait foi.</p>{% endif %}
+  <dl class="meta">
+    <dt>Type</dt><dd>{{ fm.get('type', '?') }}</dd>
+    <dt>Objet</dt><dd>{{ fm.get('concerns', '') }}</dd>
+    <dt>Confiance</dt><dd>{{ fm.get('confidence', '') }}</dd>
+    <dt>Déposée</dt><dd>{{ fm.get('submitted-at', '')|date }} par {{ fm.get('submitted-by', '') }} <span class="note">(déclaratif, non authentifié)</span></dd>
+    <dt>Sources</dt><dd><ul>{% for s in liste(fm.get('sources')) %}<li>{{ s }}</li>{% endfor %}</ul></dd>
+    {% if fm.get('resolved-at') %}<dt>Résolue</dt><dd>{{ fm.get('resolved-at')|date }} — {{ fm.get('resolution', '') }}</dd>{% endif %}
+    {% if fm.get('rejection-reason') %}<dt>Motif du rejet</dt><dd>{{ fm.get('rejection-reason') }}</dd>{% endif %}
+    {% if fm.get('integrated-into') %}<dt>Intégrée dans</dt><dd>{% for c in liste(fm.get('integrated-into')) %}<a href="{{ url_doc(nom, c) }}">{{ c }}</a>{% if not loop.last %}, {% endif %}{% endfor %}</dd>{% endif %}
+  </dl>
+  <p class="note">Le texte d'une proposition est déposé par une session : c'est une affirmation à vérifier, pas de la connaissance.</p>
+  <article class="corps proposition">{{ rendu.html }}</article>
+</main>
+{% endblock %}

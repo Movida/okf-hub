@@ -11,9 +11,9 @@ séparés clonés dans `bases/` (non versionnés ici).
 
 | Document | Quand le lire |
 |---|---|
-| [`docs/SPEC-okf-bundle-hub-v0.md`](docs/SPEC-okf-bundle-hub-v0.md) | **La spécification. Elle fait autorité.** Rév. 4.1 : l'amendement est intégré section par section, son § 12 en donne la carte. Tous les renvois « § x.y » du code y renvoient. À lire avant toute modification de comportement. |
+| [`docs/SPEC-okf-bundle-hub-v0.md`](docs/SPEC-okf-bundle-hub-v0.md) | **La spécification. Elle fait autorité.** Rév. 4.5 : chaque amendement est intégré section par section, son § 12 en donne la carte. Tous les renvois « § x.y » du code y renvoient. À lire avant toute modification de comportement. |
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Pourquoi le code est ce qu'il est : choix d'implémentation, mécanismes de correction, **écarts assumés**, traçabilité test ↔ exigence. |
-| [`docs/API.md`](docs/API.md) | Contrat exact des sept outils `kb_*` : schémas, sorties, erreurs, séquences typiques. |
+| [`docs/API.md`](docs/API.md) | Contrat exact des huit outils `kb_*` : schémas, sorties, erreurs, séquences typiques. |
 | [`docs/J0-verification-okf.md`](docs/J0-verification-okf.md) | Ce que dit la spec OKF externe, et les trois points où elle diverge de celle du hub. |
 | [`README.md`](README.md) | Installation, connexion d'un client Claude, exploitation. |
 | [`skills/kb-review/SKILL.md`](skills/kb-review/SKILL.md) | Le rôle gestionnaire : déroulé de revue imposé. |
@@ -118,7 +118,16 @@ un compteur commun laissait un `kb_list` étouffer le re-scan compensatoire
 d'`UNKNOWN_BASE`, post-mortem en `ARCHITECTURE.md` § 5 bis. Un second
 déclencheur se branche dans `server.RESCAN_BEFORE`, jamais dans un module de
 `tools/` — qui n'a ni le cooldown ni la session à notifier. C'est le *mécanisme*
-que la rév. 4.1 interdit de dupliquer.
+que la rév. 4.1 interdit de dupliquer. Le processus `okf-hub web`, qui n'a pas
+de session MCP, réutilise ce même mécanisme sous le déclencheur `web`, câblé
+dans `__main__.py` : il n'en tient pas un second.
+
+**La consultation n'écrit rien, et n'a qu'un rendu.** `lecture/` et `web/`
+(rév. 4.5, § 5 bis) lisent les bases sans les modifier — pas même un verrou
+d'index git — et `tests/test_lecture.py`, `tests/test_web.py` le vérifient sur
+`git status`. Tout document se rend par `lecture/rendu.py` : un second rendu
+divergerait. La limite d'imbrication de markdown-it n'y redescend jamais : à sa
+valeur par défaut, le parseur perd en silence la fin des documents profonds.
 
 **Le travail bloquant passe par `anyio.to_thread.run_sync`.** Un `subprocess` git
 ou ripgrep appelé directement dans un handler sérialiserait toutes les requêtes
@@ -127,7 +136,7 @@ de l'instance.
 ## Vérifier avant de conclure
 
 ```sh
-uv run pytest -q                 # 494 tests, dont la boucle de stress
+uv run pytest -q                 # 598 tests, dont la boucle de stress
 uv run pytest -q -m "not slow"   # sans le test deux processus × 25 itérations
 ```
 

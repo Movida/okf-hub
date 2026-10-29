@@ -1,0 +1,35 @@
+{% extends "page.html" %}
+{% import "macros.html" as m %}
+{% block titre %}{{ dossier or base.title }}{% endblock %}
+{% block fil %}{{ m.fil(fil[:-1] if dossier else [], fil[-1][0] if dossier else base.title) }}{% endblock %}
+{% block contenu %}
+<main class="principal">
+  <header class="tete-base">
+    <h1>{% if dossier %}{{ dossier }}/{% else %}{{ base.title }}{% endif %}</h1>
+    {% if not dossier %}<p class="description">{{ base.description }}</p>{% endif %}
+    {{ m.onglets(nom, 'base') }}
+    {% if not dossier and en_attente %}<p class="note"><a href="{{ url_page(nom, 'propositions', statut='pending') }}">{{ en_attente }} proposition(s) en attente</a></p>{% endif %}
+  </header>
+  {% if rendu %}
+  {% if rendu.tronque %}<p class="alerte">Rendu possiblement incomplet : le document dépasse l'imbrication que le moteur rend. Sa source suit le rendu.</p>{% endif %}
+  <article class="corps">{{ rendu.html }}</article>
+  {% if rendu.tronque %}<pre class="source">{{ rendu.source }}</pre>{% endif %}
+  {% endif %}
+  {% if sous or docs %}
+  <section class="contenu-repertoire">
+    <h2>{% if rendu %}Contenu du répertoire{% else %}Contenu{% endif %}</h2>
+    {% if sous %}
+    <ul class="dossiers">
+      {% for chemin, libelle, n in sous %}<li><a href="{{ url_rep(nom, chemin) }}">{{ libelle }}/</a> <span class="note">{{ n }} document(s)</span></li>{% endfor %}
+    </ul>
+    {% endif %}
+    {% if docs %}
+    <ul class="documents">
+      {% for d in docs %}{{ m.doc_ligne(nom, d, '(sans type)') }}{% endfor %}
+    </ul>
+    {% endif %}
+  </section>
+  {% endif %}
+</main>
+{{ m.panneau(nom, panneau) }}
+{% endblock %}

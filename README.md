@@ -13,7 +13,7 @@ les manifestes : `bundle-spec: "0.1"`).
 |---|---|
 | [`docs/SPEC-okf-bundle-hub-v0.md`](docs/SPEC-okf-bundle-hub-v0.md) | **La spécification.** Elle fait autorité ; tous les renvois « § x.y » du code y renvoient. |
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Conception : choix d'implémentation, mécanismes de correction, écarts assumés, traçabilité test ↔ exigence. |
-| [`docs/API.md`](docs/API.md) | Contrat des sept outils `kb_*` : schémas, sorties, codes d'erreur, séquences typiques. |
+| [`docs/API.md`](docs/API.md) | Contrat des huit outils `kb_*` : schémas, sorties, codes d'erreur, séquences typiques. |
 | [`docs/J0-verification-okf.md`](docs/J0-verification-okf.md) | La spec OKF externe et ses trois divergences avec celle du hub. |
 | [`CLAUDE.md`](CLAUDE.md) | Orientation pour une session ouvrant ce dépôt. |
 | [`skills/kb-review/SKILL.md`](skills/kb-review/SKILL.md) | Déroulé de revue du rôle gestionnaire. |
@@ -213,6 +213,7 @@ uv run pytest -q
 | `kb_list` | Bases disponibles, avec titre, objet, nombre de documents et de propositions en attente. `include_pending_concerns` ajoute les sujets en attente. |
 | `kb_search` | Recherche plein texte dans une base. Mode `keyword` (ET strict, repli automatique en OU signalé) ou `regex` (dialecte ripgrep). Chaque extrait porte le heading de sa section, après `§`, à reporter tel quel dans `kb_read`. |
 | `kb_read` | Lecture d'un document, ou d'une seule section. Au-delà du seuil, retourne la table des headings — `force: true` pour passer outre. |
+| `kb_find` | Documents par critères structurés — type, tags, champs, présence ou absence d'une section, sous-chemin, documents qui en citent un autre, ancienneté — ou effectifs par valeur (`count_by`). Total exact par base : zéro est une réponse. Sortie structurée en plus du texte. |
 | `kb_governance` | Golden rules et schéma de frontmatter d'une base. Signale par un bandeau une gouvernance en `status: draft`. |
 | `kb_propose` | Dépose une proposition dans `proposals/pending/`. Seul outil d'écriture, et il ne touche jamais au corpus. |
 | `kb_proposal_status` | État et résolution des propositions : intégrée (avec les documents modifiés) ou rejetée (avec le motif). Lecture pure. `id` ou `submitted_by` requis. |
@@ -225,6 +226,75 @@ répertoire dans `bases/` — les deux diffèrent dès qu'un clone est renommé.
 propositions.** Une proposition n'a pas à s'y conformer : soumettez
 l'information, sa mise en forme conforme au schéma relève du gestionnaire à
 l'intégration. Les champs de `kb_propose` sont le seul format requis.
+
+## Consulter les bases dans un navigateur
+
+```sh
+uv run okf-hub web              # http://127.0.0.1:8077/, lecture seule
+uv run okf-hub web --port 9000
+```
+
+Un processus à part des instances MCP, sur le même moteur de lecture que
+`kb_find` : liste des bases, navigation dans le corpus, documents rendus avec
+leurs sources et leurs liens entrants et sortants — entre bases compris —,
+recherche plein texte, `kb_find` en formulaire avec effectifs par facette, vues
+déclarées par le profil d'une base, propositions, journal, graphe des bases.
+Toutes les routes sont en `GET`, rien n'est jamais écrit. Les adresses
+(`/b/<base>/<chemin>`, `/b/<base>/-/propositions`…) sont stables : une autre
+interface y renvoie pour la lecture et passe par MCP pour les données
+(spec § 5 bis).
+
+**Mode local** (défaut) : pas d'authentification, toutes les bases visibles,
+écoute sur une adresse de bouclage seulement. **Mode équipe** : un proxy inverse
+authentifie (SSO) et transmet l'identité dans un en-tête ; dans
+`hub-config.local.yaml` :
+
+```yaml
+web:
+  host: 0.0.0.0                       # hors bouclage : mode équipe seulement
+  identity-header: X-Forwarded-User
+  groups-header: X-Forwarded-Groups   # facultatif
+  trusted-proxies: [172.18.0.5]       # défaut : le bouclage
+  visibility:                         # une base absente n'est servie à personne
+    ma-base: ["*"]
+    mon-autre-base: [equipe-a]
+```
+
+L'en-tête n'est cru que sur une connexion venue d'un proxy de
+`trusted-proxies` ; toute autre connexion est refusée. Un lien entrant n'est
+montré que si le visiteur peut lire la base qui cite.
+
+**Au démarrage de la session**, par un service systemd utilisateur — à adapter
+aux chemins de la machine :
+
+```ini
+# ~/.config/systemd/user/okf-hub-web.service
+[Unit]
+Description=okf-hub : consultation web des bases (lecture seule)
+
+[Service]
+# ripgrep doit être dans ce PATH : celui des services utilisateur est minimal.
+Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=<venv du hub>/bin/okf-hub --hub-root <racine du hub> web
+Restart=on-failure
+RestartPreventExitStatus=2     # configuration invalide : relancer n'y change rien
+
+[Install]
+WantedBy=default.target
+```
+
+```sh
+systemctl --user enable --now okf-hub-web
+```
+
+Le processus lit la copie de travail du hub : après une mise à jour, le
+relancer. Sous WSL, une écoute sur `127.0.0.1` est joignable depuis Windows par
+`http://localhost:<port>/`.
+
+Une base améliore son affichage en déclarant un **profil** dans son
+`schema.yaml` — provenance et sa preuve, facettes de tags, sections à rôle,
+vues (spec § 3.5) — et ses dépendances dans `cites` (§ 3.3). Sans profil, tout
+s'affiche quand même.
 
 ## Connecter un client Claude
 
@@ -775,7 +845,10 @@ des chemins et symlinks sortants, repli ET→OU, headings dupliqués et formaté
 plafonnement des sorties, non-destruction du tree, worktree sale, dépôt sans
 HEAD, collision d'identifiant, tentatives d'injection de trailers, exclusion
 mutuelle entre `okf-lock` et le serveur, et deux instances proposant en
-parallèle.
+parallèle. Pour la consultation (rév. 4.5) : classement et extraction des liens,
+profil, invalidation du cache, liens entrants entre bases, `kb_find`, rendu
+sans HTML ni lien dangereux, images confinées, mode équipe (connexion directe,
+identité, visibilité, liens masqués), et lecture seule de bout en bout.
 
 `tests/test_boucle_contribution.py` déroule le **critère d'acceptation** de la
 rév. 4.1 : dépôt d'une proposition par un vrai client MCP en stdio, résolution

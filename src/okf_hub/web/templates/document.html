@@ -1,0 +1,76 @@
+{% extends "page.html" %}
+{% import "macros.html" as m %}
+{% block titre %}{{ doc.titre }}{% endblock %}
+{% block fil %}{{ m.fil(fil, doc.chemin.split('/')[-1]) }}{% endblock %}
+{% block contenu %}
+<main class="principal">
+  <header class="tete-doc">
+    <p class="surtitre"><span class="type">{{ doc.type or sans_type }}</span>{% if not en_tete.type_declare %} <em class="hors">type hors vocabulaire</em>{% endif %}
+      {% set c = en_tete.confiance %}
+      {% if c.palier == 'humain' %}<span class="badge verifie">vérifié par un humain</span>{% elif c.palier == 'machine' %}<span class="badge">vérifié par un agent</span>{% endif %}
+      {% if c.genere %}<span class="badge genere">généré</span>{% endif %}
+      {% if c.perime %}<span class="badge perime">périmé depuis le {{ c.stale_after|date }}</span>{% endif %}
+      {% if c.statut %}<span class="badge brouillon">{{ c.statut }}</span>{% endif %}
+      {% if doc.fm_illisible %}<span class="badge perime">frontmatter illisible</span>{% endif %}
+    </p>
+    <h1>{{ doc.titre }}</h1>
+    {% if description %}<p class="description">{{ description }}</p>{% endif %}
+    {% if en_tete.synonymes %}<p class="note">Aussi appelé : {{ en_tete.synonymes|join(', ') }}</p>{% endif %}
+    <dl class="meta">
+      {% if en_tete.provenance %}{% set p = en_tete.provenance %}
+      <dt>Provenance</dt><dd><span class="badge provenance">{{ p.libelle }}</span>{% if p.hors_vocabulaire %} <em class="hors">hors vocabulaire</em>{% endif %}
+        {% if p.preuve_nom %}<br><span class="preuve">{{ p.preuve_nom }} : {% if p.preuve %}{{ p.preuve }}{% else %}<em class="hors">absent</em>{% endif %}</span>{% endif %}</dd>
+      {% endif %}
+      {% if en_tete.debut or en_tete.fin %}<dt>Période</dt><dd>{{ en_tete.debut|date if en_tete.debut else '…' }} → {{ en_tete.fin|date if en_tete.fin else '…' }}</dd>{% endif %}
+      {% if en_tete.version %}<dt>S'applique à partir de</dt><dd>{{ en_tete.version }}</dd>{% endif %}
+      {% if en_tete.identifiant %}<dt>Identifiant</dt><dd><code>{{ en_tete.identifiant }}</code></dd>{% endif %}
+      <dt>Fraîcheur</dt><dd>{{ fraicheur.date|date }} <span class="note">({{ {'verified': 'dernière vérification', 'generated': 'production du contenu', 'sources': 'date de la source', 'commit': 'dernier commit', 'fichier': 'date du fichier'}[fraicheur.origine] }})</span></dd>
+      {% for f in en_tete.facettes %}
+      <dt>{{ f.libelle }}</dt><dd>{% for v in f.valeurs %}<a class="tag" href="{{ url_page(nom, 'trouver', tag=v.tag) }}">{{ v.libelle }}</a>{% if v.hors_vocabulaire %} <em class="hors">hors vocabulaire</em>{% endif %} {% endfor %}</dd>
+      {% endfor %}
+      {% if en_tete.tags_libres %}<dt>Tags</dt><dd>{% for t in en_tete.tags_libres %}<a class="tag" href="{{ url_page(nom, 'trouver', tag=t) }}">{{ t }}</a> {% endfor %}</dd>{% endif %}
+    </dl>
+    {% if mode_operatoire %}<p><a class="saut" href="#{{ mode_operatoire }}">Aller au mode opératoire</a></p>{% endif %}
+    <p class="lire-mcp">MCP : <code>kb_read(base="{{ nom }}", path="{{ doc.chemin }}")</code></p>
+  </header>
+  {% if rendu.tronque %}<p class="alerte">Rendu possiblement incomplet : le document dépasse l'imbrication que le moteur rend. Sa source suit le rendu.</p>{% endif %}
+  <article class="corps">{{ rendu.html }}</article>
+  {% if rendu.tronque %}<pre class="source">{{ rendu.source }}</pre>{% endif %}
+  {% if sources %}
+  <section class="sources">
+    <h2>Sources</h2>
+    <ol>
+      {% for s in sources %}
+      <li{% if s.ancre %} id="{{ s.ancre }}"{% endif %}>{% if s.id %}<strong>[{{ s.id }}]</strong> {% endif %}{% if s.titre %}{{ s.titre }} — {% endif %}{% if s.url %}<a href="{{ s.url }}" rel="noopener noreferrer nofollow">{{ s.ressource }}</a>{% else %}{{ s.ressource }}{% endif %}{% if s.date %} <span class="note">({{ s.date|date }})</span>{% endif %}</li>
+      {% endfor %}
+    </ol>
+  </section>
+  {% endif %}
+  {% if en_tete.autres %}
+  <details class="frontmatter"><summary>Autres champs du frontmatter</summary><pre>{{ en_tete.autres }}</pre></details>
+  {% endif %}
+</main>
+<aside class="panneau">
+  {% if rendu.sommaire %}
+  <h2>Sommaire</h2>
+  <ul class="sommaire">{% for niveau, texte, id in rendu.sommaire %}<li class="n{{ niveau }}"><a href="#{{ id }}">{{ texte }}</a></li>{% endfor %}</ul>
+  {% endif %}
+  <h2>Liens entrants <span class="note">{{ entrants.total }}</span></h2>
+  {% if entrants.declinee %}
+  <h3>Déclinée par</h3>
+  <ul>{% for e in entrants.declinee %}<li><a href="{{ url_doc(e.base, e.chemin) }}">{{ e.titre }}</a>{% if e.base != nom %} <code>{{ e.base }}</code>{% endif %}</li>{% endfor %}</ul>
+  {% endif %}
+  {% for base_source, liste in entrants.citee %}
+  <h3>Citée {% if base_source == nom %}dans cette base{% else %}par <code>{{ base_source }}</code>{% endif %}</h3>
+  <ul>{% for e in liste %}<li><a href="{{ url_doc(e.base, e.chemin) }}">{{ e.titre }}</a></li>{% endfor %}</ul>
+  {% endfor %}
+  {% if entrants.total == 0 %}<p class="note">Aucun document ne cite celui-ci.</p>{% endif %}
+  <h2>Liens sortants</h2>
+  {% for cle, titre in [('internes', 'Dans cette base'), ('interbases', 'Vers d\'autres bases'), ('externes', 'Externes'), ('casses', 'Cassés ou non suivis')] %}
+  {% if sortants[cle] %}
+  <h3>{{ titre }}</h3>
+  <ul>{% for l in sortants[cle] %}<li>{% if l.href %}<a href="{{ l.href }}"{% if cle == 'externes' %} rel="noopener noreferrer nofollow"{% endif %}>{{ l.titre }}</a>{% else %}<span class="casse" title="{{ l.motif or '' }}">{{ l.brut }}</span>{% endif %}</li>{% endfor %}</ul>
+  {% endif %}
+  {% endfor %}
+</aside>
+{% endblock %}

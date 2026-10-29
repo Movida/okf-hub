@@ -1,0 +1,18 @@
+{% extends "page.html" %}
+{% import "macros.html" as m %}
+{% block titre %}Journal — {{ base.title }}{% endblock %}
+{% block fil %}{{ m.fil([(base.title, url_base(nom))], 'Journal') }}{% endblock %}
+{% block contenu %}
+<main class="principal">
+  <h1>Journal</h1>
+  {{ m.onglets(nom, 'journal') }}
+  {% if rendu %}<article class="corps">{{ rendu.html }}</article>{% else %}<p class="note">La base n'a pas de <code>log.md</code>.</p>{% endif %}
+</main>
+<aside class="panneau">
+  <h2>Historique git</h2>
+  {% if commits %}
+  <ol class="commits">{% for c in commits %}<li><span class="note">{{ c.date|date }} · <code>{{ c.court }}</code></span><br>{{ c.sujet }}</li>{% endfor %}</ol>
+  <p class="note">Les {{ historique }} derniers commits.</p>
+  {% else %}<p class="note">Aucun historique lisible.</p>{% endif %}
+</aside>
+{% endblock %}

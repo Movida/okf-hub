@@ -1,13 +1,18 @@
 [project]
 name = "okf-hub"
-version = "0.2.8"
+version = "0.3.0"
 description = "OKF Bundle Hub — serveur MCP de lecture et de proposition sur des bases de connaissance markdown versionnées en git"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
+    "jinja2>=3.1",
+    "markdown-it-py>=3.0",
     "mcp>=1.2.0",
+    "mdit-py-plugins>=0.4",
     "PyYAML>=6.0",
     "ruamel-yaml>=0.18",
+    "starlette>=0.48",
+    "uvicorn>=0.31",
     "watchdog>=6.0.0",
 ]
 

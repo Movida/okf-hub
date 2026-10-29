@@ -1,0 +1,42 @@
+{% extends "page.html" %}
+{% import "macros.html" as m %}
+{% block titre %}Propositions — {{ base.title }}{% endblock %}
+{% block fil %}{{ m.fil([(base.title, url_base(nom))], 'Propositions') }}{% endblock %}
+{% block contenu %}
+<main class="principal large">
+  <h1>Propositions</h1>
+  {{ m.onglets(nom, 'propositions') }}
+  <nav class="filtres">
+    <a href="{{ url_page(nom, 'propositions') }}"{% if not statut %} class="actif"{% endif %}>toutes ({{ comptes.values()|sum }})</a>
+    {% for s in statuts %}<a href="{{ url_page(nom, 'propositions', statut=s) }}"{% if statut == s %} class="actif"{% endif %}>{{ {'pending': 'en attente', 'accepted': 'intégrées', 'rejected': 'rejetées'}[s] }} ({{ comptes[s] }})</a>{% endfor %}
+  </nav>
+  {% if pages > 1 %}<p class="note">Les plus récentes d'abord — {{ (page - 1) * par_page + 1 }} à {{ [page * par_page, total]|min }} sur {{ total }}.</p>{% endif %}
+  {% if illisibles %}<p class="alerte">{{ illisibles }} fichier(s) au frontmatter illisible ignoré(s).</p>{% endif %}
+  {% if not entrees %}<p>Aucune proposition.</p>{% else %}
+  <table class="propositions">
+    <thead><tr><th>Proposition</th><th>Statut</th><th>Type</th><th>Objet</th><th>Déposée</th><th>Résolution</th></tr></thead>
+    <tbody>
+    {% for e in entrees %}{% set fm = e.frontmatter %}
+    <tr>
+      <td><a href="{{ url_page(nom, 'propositions/' ~ e.id) }}"><code>{{ e.id }}</code></a></td>
+      <td><span class="statut {{ e.status }}">{{ e.status }}</span>{% if e.inconsistent %} <em class="hors">incohérence status/emplacement</em>{% endif %}</td>
+      <td>{{ fm.get('type', '?') }}</td>
+      <td>{{ fm.get('concerns', '') }}</td>
+      <td>{{ fm.get('submitted-at', '')|date }}<br><span class="note">{{ fm.get('submitted-by', '') }}</span></td>
+      <td>{% if fm.get('resolved-at') %}{{ fm.get('resolved-at')|date }}{% endif %}
+        {% if fm.get('rejection-reason') %}<br>{{ fm.get('rejection-reason')|string|truncate(240) }}{% endif %}
+        {% set into = fm.get('integrated-into') %}{% if into %}{% set into = into if into is not string else [into] %}<br>{% for c in into[:3] %}<a href="{{ url_doc(nom, c) }}">{{ c }}</a>{% if not loop.last %}, {% endif %}{% endfor %}{% if into|length > 3 %} <span class="note">et {{ into|length - 3 }} autre(s)</span>{% endif %}{% endif %}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% if pages > 1 %}
+  <nav class="pages">
+    {% if page > 1 %}<a href="{{ url_page(nom, 'propositions', statut=statut, page=page - 1) }}">← plus récentes</a>{% endif %}
+    <span>page {{ page }} sur {{ pages }}</span>
+    {% if page < pages %}<a href="{{ url_page(nom, 'propositions', statut=statut, page=page + 1) }}">plus anciennes →</a>{% endif %}
+  </nav>
+  {% endif %}
+  {% endif %}
+</main>
+{% endblock %}

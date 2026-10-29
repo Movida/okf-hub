@@ -7,7 +7,9 @@ from ..mdutil import PREAMBLE_LABEL, heading_at_line, parse_document, parse_head
 from ..registry import Base, Registry
 from ..search import DocHits, run_search
 from ..textutil import BudgetedWriter, truncate_chars
-from .common import frontmatter_digest, optional_int, read_text, require_str
+from .common import ALL_BASES, frontmatter_digest, optional_int, read_text, require_str
+from .common import allocate_quota as _allocate_quota
+from .common import resolve_base_names as _resolve_base_names
 
 DEFAULT_MAX_RESULTS = 8
 HARD_MAX_RESULTS = 25
@@ -15,9 +17,6 @@ CONTEXT_LINES = 2
 MAX_EXCERPTS_PER_DOC = 3
 
 SECTION_LABEL_MAX = 120
-
-#: Valeur spéciale de `base` désignant toutes les bases enregistrées (§ 10.3).
-ALL_BASES = "*"
 
 SCHEMA = {
     "type": "object",
@@ -136,59 +135,6 @@ def _render(base: Base, doc: DocHits) -> str:
         parts.append(f"frontmatter : {digest}")
     parts.extend(_excerpts(text, doc.lines))
     return "\n".join(parts)
-
-
-def _resolve_base_names(registry: Registry, arguments: dict) -> list[str]:
-    """Normalise `base` : nom unique, liste de noms, ou `"*"` (§ 10.3).
-
-    Valide l'existence de chaque nom explicite *avant* toute recherche — un nom
-    inconnu dans une liste échoue tout l'appel, comme le ferait déjà un nom
-    unique inconnu ; pas de repli silencieux qui ignorerait une faute de frappe.
-    """
-    value = arguments.get("base")
-    if isinstance(value, str):
-        value = value.strip()
-        if not value:
-            raise ToolError(INVALID_INPUT, "paramètre 'base' requis (nom, liste, ou \"*\")")
-        names = registry.names() if value == ALL_BASES else [value]
-    elif isinstance(value, list):
-        if not value or not all(isinstance(v, str) and v.strip() for v in value):
-            raise ToolError(
-                INVALID_INPUT, "paramètre 'base' : liste de noms non vides attendue"
-            )
-        seen: dict[str, None] = {}
-        for v in value:
-            seen.setdefault(v.strip(), None)
-        names = list(seen)
-    else:
-        raise ToolError(INVALID_INPUT, "paramètre 'base' requis (nom, liste, ou \"*\")")
-
-    for name in names:
-        registry.get(name)  # lève UNKNOWN_BASE si absent — validé avant toute recherche.
-    return names
-
-
-def _allocate_quota(available: list[int], total: int) -> list[int]:
-    """Répartit `total` entre positions selon leur disponibilité (§ 10.3) :
-    parts égales entre bases encore actives, sans jamais allouer à une base plus
-    qu'elle n'a de résultats — le reliquat profite aux autres bases plutôt que
-    d'être perdu. C'est un plafond global unique, pas un plafond par base.
-    """
-    alloc = [0] * len(available)
-    active = [i for i, n in enumerate(available) if n > 0]
-    remaining = total
-    while remaining > 0 and active:
-        share, extra = divmod(remaining, len(active))
-        still_active = []
-        for idx, pos in enumerate(active):
-            want = share + (1 if idx < extra else 0)
-            take = min(want, available[pos] - alloc[pos])
-            alloc[pos] += take
-            remaining -= take
-            if alloc[pos] < available[pos]:
-                still_active.append(pos)
-        active = still_active
-    return alloc
 
 
 def run(registry: Registry, arguments: dict) -> str:

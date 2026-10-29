@@ -22,7 +22,9 @@ from . import hublog
 from .config import HubConfig
 from .errors import IO_ERROR, UNKNOWN_BASE, ToolError
 from .registry import Registry
+from .tools.common import Sortie
 from .tools import (
+    find_tool,
     governance_tool,
     list_tool,
     proposal_status_tool,
@@ -95,11 +97,16 @@ class ToolSpec:
         self.module = module
         self.schema = schema
         self.annotations = annotations
+        #: Schéma de sortie MCP, si l'outil rend aussi des données structurées
+        #: (`run_structured`, qui retourne une `Sortie`). Rév. 4.5, § 5 bis.3.
+        self.output_schema = getattr(module, "OUTPUT_SCHEMA", None)
 
     def describe(self, registry: Registry) -> str:
         return self.module.description(registry)
 
-    def run(self, registry: Registry, arguments: dict) -> str:
+    def run(self, registry: Registry, arguments: dict) -> str | Sortie:
+        if self.output_schema is not None:
+            return self.module.run_structured(registry, arguments)
         return self.module.run(registry, arguments)
 
 
@@ -107,6 +114,7 @@ TOOLS: list[ToolSpec] = [
     ToolSpec("kb_list", list_tool, list_tool.SCHEMA),
     ToolSpec("kb_search", search_tool, search_tool.SCHEMA),
     ToolSpec("kb_read", read_tool, read_tool.SCHEMA),
+    ToolSpec("kb_find", find_tool, find_tool.SCHEMA),
     ToolSpec("kb_governance", governance_tool, governance_tool.SCHEMA),
     ToolSpec("kb_propose", propose_tool, propose_tool.SCHEMA, PROPOSE),
     ToolSpec(
@@ -162,7 +170,8 @@ class HubServer:
         #: Dernier re-scan silencieux **par déclencheur** (§ 4.4.c). Les clés
         #: sont bornées : les noms de `RESCAN_BEFORE`, plus `UNKNOWN_BASE`, plus
         #: `filesystem_watcher` (re-scan automatique par instance, sans état
-        #: partagé).
+        #: partagé), plus `web` (pages de `okf-hub web`, § 5 bis.2 : le processus
+        #: web n'a pas de session MCP, mais réutilise ce même mécanisme).
         self._last_silent_rescan: dict[str, float] = {}
         #: Changement de la liste des bases vu par l'observateur et pas encore
         #: notifié. Son re-scan tourne hors de toute requête, sans session à
@@ -224,6 +233,7 @@ class HubServer:
                 name=spec.name,
                 description=spec.describe(self.registry),
                 input_schema=spec.schema,
+                output_schema=spec.output_schema,
                 annotations=spec.annotations,
             )
             for spec in TOOLS
@@ -326,7 +336,9 @@ def _instructions(registry: Registry) -> str:
     """
     base = (
         "Ce hub expose des bases de connaissance markdown versionnées en git. "
-        "Lecture : kb_list, kb_search, kb_read, kb_governance. "
+        "Lecture : kb_list, kb_search, kb_read, kb_find, kb_governance. "
+        "kb_find répond aux questions structurées (« quels documents de tel type, "
+        "avec telle section ? ») par un total exact : zéro établit une absence. "
         "Contribution : kb_propose dépose une proposition dans "
         "proposals/pending/ — le corpus n'est jamais modifié directement, seul le "
         "rôle gestionnaire intègre — et kb_proposal_status en restitue le verdict "
@@ -354,8 +366,13 @@ async def _maybe_notify(ctx: ServerRequestContext, changed: bool) -> None:
         hublog.warning(f"notification tools/list_changed non délivrée : {exc!r}")
 
 
-def _ok(text: str) -> types.CallToolResult:
-    return types.CallToolResult(content=[types.TextContent(type="text", text=text)])
+def _ok(sortie: str | Sortie) -> types.CallToolResult:
+    if isinstance(sortie, Sortie):
+        return types.CallToolResult(
+            content=[types.TextContent(type="text", text=sortie.texte)],
+            structured_content=sortie.donnees,
+        )
+    return types.CallToolResult(content=[types.TextContent(type="text", text=sortie)])
 
 
 def _error(exc: ToolError) -> types.CallToolResult:

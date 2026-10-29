@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import os
 import sys
+import threading
 from pathlib import Path
 
 import anyio
@@ -67,6 +68,15 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "« catalog », comme pour « setup ».",
     )
     catalog_parser.add_argument("catalog_argv", nargs=argparse.REMAINDER)
+    web_parser = sous_commandes.add_parser(
+        "web",
+        help="Interface web de consultation des bases, en lecture seule (§ 5 bis). "
+        "Écoute sur une adresse de bouclage seulement ; réglages dans la clé "
+        "`web` de hub-config.local.yaml. Les options globales se placent avant "
+        "« web », comme pour « setup ».",
+    )
+    web_parser.add_argument("--host", default=None, help="Adresse de bouclage (défaut : 127.0.0.1).")
+    web_parser.add_argument("--port", type=int, default=None, help="Port (défaut : 8077).")
     return parser.parse_args(argv)
 
 
@@ -132,6 +142,10 @@ def main(argv: list[str] | None = None) -> int:
         return 2
 
     hublog.configure(config.log_file, echo_stderr=args.verbose)
+
+    if getattr(args, "command", None) == "web":
+        return _web(config, args)
+
     hublog.info(
         f"démarrage — hub_root={config.hub_root} bases_dir={config.bases_dir} "
         f"read_toc_threshold={config.read_toc_threshold}"
@@ -161,6 +175,48 @@ def main(argv: list[str] | None = None) -> int:
     finally:
         hub.stop()
         hublog.info("arrêt")
+        hublog.close()
+    return 0
+
+
+def _web(config: HubConfig, args: argparse.Namespace) -> int:
+    """`okf-hub web` : un processus distinct des instances MCP (§ 5 bis.2).
+
+    Ni installation de bases livrées, ni synchronisation remote : ce processus
+    n'écrit rien. Il réutilise le mécanisme de re-scan de `HubServer` — un seul
+    mécanisme, un compteur par déclencheur (§ 4.4.c) —, sans session MCP.
+    """
+    import uvicorn
+
+    from .web.acces import ConfigWebInvalide, WebConfig
+    from .web.app import Hub, creer_app
+
+    try:
+        web = WebConfig.depuis(config.web, host=args.host, port=args.port)
+    except ConfigWebInvalide as exc:
+        print(f"okf-hub web : configuration invalide : {exc}", file=sys.stderr)
+        return 2
+    hub = HubServer(config)
+    application = Hub(hub.registry, web, lambda: hub._silent_rescan("web"))
+    # Charge les modèles en arrière-plan : la première page ne paie pas les
+    # quelques secondes d'un hub de plusieurs milliers de documents.
+    threading.Thread(target=application.lecteur.modeles, name="prechauffage", daemon=True).start()
+    mode = "équipe" if web.equipe else "local"
+    hublog.info(f"web : démarrage en mode {mode} sur http://{web.host}:{web.port}/")
+    print(f"okf-hub web — mode {mode} — http://{web.host}:{web.port}/", file=sys.stderr)
+    try:
+        uvicorn.run(
+            creer_app(application),
+            host=web.host,
+            port=web.port,
+            log_level="info" if args.verbose else "warning",
+            # L'en-tête d'identité ne vient que du proxy local : uvicorn ne doit
+            # pas réécrire l'adresse du client depuis X-Forwarded-For.
+            proxy_headers=False,
+        )
+    finally:
+        hub.stop()
+        hublog.info("web : arrêt")
         hublog.close()
     return 0
 

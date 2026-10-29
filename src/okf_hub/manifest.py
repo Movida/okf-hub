@@ -45,6 +45,9 @@ class Manifest:
     """`governance.checks`, chaque commande découpée en argv (rév. 4.3, § 3.3).
     Lues ici, lancées par `okf-review verify` seul, et seulement si l'opérateur
     a approuvé la base (§ 8)."""
+    cites: tuple[str, ...] | None = None
+    """Bases que celle-ci peut citer (§ 3.3, rév. 4.5). None : le manifeste n'en
+    déclare pas — aucune référence n'est alors signalée hors déclaration."""
     warnings: list[str] = field(default_factory=list)
     """Avertissements non bloquants, journalisés et remontés par kb_hub_rescan."""
 
@@ -149,6 +152,7 @@ def load_manifest(bundle_root: Path) -> Manifest:
         review = "human"
 
     checks = _parse_checks(governance.get("checks"), warnings)
+    cites = _parse_cites(data.get("cites"), name, warnings)
 
     # --- bundle-spec : tolérance de compatibilité (§ 3.3) ---
     if bundle_spec != SUPPORTED_BUNDLE_SPEC:
@@ -174,8 +178,30 @@ def load_manifest(bundle_root: Path) -> Manifest:
         frontmatter_schema=frontmatter_schema,
         review=review,
         checks=checks,
+        cites=cites,
         warnings=warnings,
     )
+
+
+def _parse_cites(raw, name: str, warnings: list[str]) -> tuple[str, ...] | None:
+    """`cites` : les `name` des bases que celle-ci peut citer (§ 3.3, rév. 4.5).
+
+    Comme `governance.checks`, un champ mal formé n'invalide pas le bundle : il
+    ne sert qu'aux avertissements du graphe des bases, et il est ignoré avec un
+    avertissement.
+    """
+    if raw is None:
+        return None
+    if not isinstance(raw, list) or not all(isinstance(n, str) for n in raw):
+        warnings.append("cites doit être une liste de noms de bases — ignoré")
+        return None
+    fautifs = [n for n in raw if not NAME_PATTERN.match(n)]
+    if fautifs:
+        warnings.append(f"cites : noms non conformes à [a-z0-9-]+ ({', '.join(fautifs)}) — ignoré")
+        return None
+    if name in raw:
+        warnings.append("cites : une base ne se cite pas elle-même — entrée retirée")
+    return tuple(dict.fromkeys(n for n in raw if n != name))
 
 
 def _parse_checks(raw, warnings: list[str]) -> tuple[tuple[str, ...], ...]:

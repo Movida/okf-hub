@@ -1,0 +1,17 @@
+{% extends "page.html" %}
+{% block titre %}{{ titre }}{% endblock %}
+{% block contenu %}
+<main class="principal">
+  <h1>{{ titre }}</h1>
+  <p>{{ message }}</p>
+  {% if proches is defined and proches %}
+  <p>Vouliez-vous dire {% for b in proches %}<a href="{{ url_base(b) }}">{{ url_base(b) }}</a>{% if not loop.last %} ou {% endif %}{% endfor %} ?</p>
+  {% endif %}
+  {% if bases is defined and bases %}
+  <p class="note">Une base s'ouvre à l'adresse <code>/b/&lt;nom&gt;/</code>, un document à <code>/b/&lt;nom&gt;/&lt;chemin&gt;.md</code>, et ses pages (trouver, propositions, journal) sous <code>/b/&lt;nom&gt;/-/</code>.</p>
+  <ul class="dossiers">{% for b in bases %}<li><a href="{{ url_base(b) }}">{{ b }}</a></li>{% endfor %}</ul>
+  {% else %}
+  <p><a href="/">Retour aux bases</a></p>
+  {% endif %}
+</main>
+{% endblock %}

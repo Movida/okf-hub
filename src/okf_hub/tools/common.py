@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import datetime as _dt
 import re
+from dataclasses import dataclass
 
 import yaml
 
 from ..errors import INVALID_INPUT, ToolError
+from ..registry import Registry
 
 #: Clés de frontmatter retenues par kb_search (§ 5.2 : « frontmatter limité à
 #: title, dates, tags »). Le motif couvre les familles de dates d'OKF v0.2
@@ -71,6 +73,16 @@ def frontmatter_digest(frontmatter: dict | None) -> str | None:
         kept, allow_unicode=True, default_flow_style=True, sort_keys=False, width=10_000
     ).strip()
     return text
+
+
+@dataclass(frozen=True)
+class Sortie:
+    """Sortie d'un outil qui déclare un `output_schema` : le texte, destiné au
+    modèle, et les mêmes données en `structuredContent`, destinées à un
+    programme. Un outil sans schéma de sortie rend une simple chaîne."""
+
+    texte: str
+    donnees: dict
 
 
 def received_keys(arguments: dict) -> str:
@@ -137,3 +149,64 @@ def optional_int(arguments: dict, key: str, default: int, minimum: int, maximum:
 def read_text(path) -> str:
     """Lecture UTF-8 (§ 1.6), tolérante aux octets invalides isolés."""
     return path.read_text(encoding="utf-8", errors="replace")
+
+
+# --- plusieurs bases -----------------------------------------------------------
+# Partagé par kb_search et kb_find : même paramètre `base`, même plafond global
+# réparti (§ 10.3).
+
+#: Valeur spéciale de `base` désignant toutes les bases enregistrées (§ 10.3).
+ALL_BASES = "*"
+
+
+def resolve_base_names(registry: Registry, arguments: dict) -> list[str]:
+    """Normalise `base` : nom unique, liste de noms, ou `"*"` (§ 10.3).
+
+    Valide l'existence de chaque nom explicite *avant* toute recherche — un nom
+    inconnu dans une liste échoue tout l'appel, comme le ferait déjà un nom
+    unique inconnu ; pas de repli silencieux qui ignorerait une faute de frappe.
+    """
+    value = arguments.get("base")
+    if isinstance(value, str):
+        value = value.strip()
+        if not value:
+            raise ToolError(INVALID_INPUT, "paramètre 'base' requis (nom, liste, ou \"*\")")
+        names = registry.names() if value == ALL_BASES else [value]
+    elif isinstance(value, list):
+        if not value or not all(isinstance(v, str) and v.strip() for v in value):
+            raise ToolError(
+                INVALID_INPUT, "paramètre 'base' : liste de noms non vides attendue"
+            )
+        seen: dict[str, None] = {}
+        for v in value:
+            seen.setdefault(v.strip(), None)
+        names = list(seen)
+    else:
+        raise ToolError(INVALID_INPUT, "paramètre 'base' requis (nom, liste, ou \"*\")")
+
+    for name in names:
+        registry.get(name)  # lève UNKNOWN_BASE si absent — validé avant toute recherche.
+    return names
+
+
+def allocate_quota(available: list[int], total: int) -> list[int]:
+    """Répartit `total` entre positions selon leur disponibilité (§ 10.3) :
+    parts égales entre bases encore actives, sans jamais allouer à une base plus
+    qu'elle n'a de résultats — le reliquat profite aux autres bases plutôt que
+    d'être perdu. C'est un plafond global unique, pas un plafond par base.
+    """
+    alloc = [0] * len(available)
+    active = [i for i, n in enumerate(available) if n > 0]
+    remaining = total
+    while remaining > 0 and active:
+        share, extra = divmod(remaining, len(active))
+        still_active = []
+        for idx, pos in enumerate(active):
+            want = share + (1 if idx < extra else 0)
+            take = min(want, available[pos] - alloc[pos])
+            alloc[pos] += take
+            remaining -= take
+            if alloc[pos] < available[pos]:
+                still_active.append(pos)
+        active = still_active
+    return alloc

@@ -119,13 +119,16 @@ class Collected:
     unreadable: int
 
 
-def _collect(base: Base, statuses: tuple[str, ...]) -> Collected:
+def collect(base: Base, statuses: tuple[str, ...], loader: type | None = None) -> Collected:
+    """`loader` : chargeur YAML sûr à la place de `safe_load` (cf.
+    `mdutil.parse_document`) — l'interface web lit ainsi des centaines de
+    propositions sans attendre ; l'outil MCP garde `safe_load`."""
     entries: list[Entry] = []
     unreadable = 0
     for status in statuses:
         for path in base.proposal_files(status):
             try:
-                doc = parse_document(read_text(path))
+                doc = parse_document(read_text(path), loader=loader)
             except OSError as exc:
                 unreadable += 1
                 hublog.warning(f"proposition illisible ignorée : {path} ({exc})")
@@ -240,7 +243,7 @@ def run(registry: Registry, arguments: dict) -> str:
         )
 
     statuses = (status,) if status else STATUSES
-    collected = _collect(base, statuses)
+    collected = collect(base, statuses)
 
     entries = collected.entries
     if prop_id is not None:

@@ -5,6 +5,33 @@ Le projet suit la version de la spécification qu'il implémente : `bundle-spec 
 
 ## [Non publié]
 
+### Ajouté — consultation (spec rév. 4.5)
+
+- **`kb_find`** : les documents d'une ou plusieurs bases par critères
+  structurés — type, tags, champs (valeur, présence, absence), présence ou
+  absence d'une section par titre ou par rôle, sous-chemin, documents qui en
+  citent un autre (entre bases compris), ancienneté — ou leurs effectifs
+  (`count_by`). Le total par base est toujours exact : **zéro est une réponse**,
+  qui établit une absence en un appel ; un `type` introuvable partout rappelle
+  les types présents. Sortie structurée (`structuredContent`) en plus du texte.
+- **`okf-hub web`** : interface de consultation dans un navigateur, en lecture
+  seule (toutes les routes en `GET`, aucune écriture). Bases, corpus, documents
+  rendus avec sources et liens entrants et sortants, recherche, `kb_find` en
+  formulaire avec effectifs, vues déclarées, propositions, journal, graphe des
+  bases. Mode local (bouclage) ou mode équipe derrière un proxy inverse
+  (`identity-header`, `trusted-proxies`, `visibility`).
+- Interface : graphe sans croisement (disposition cherchée, arcs étiquetés),
+  alerte sur les références qu'aucun `cites` ne couvre avec la déclaration à
+  écrire ; recherche en extraits lisibles, paginée, avec total ; formulaire
+  Trouver aidé (suggestions, exemples) ; recherche dans l'en-tête ; 404 qui
+  suggère la bonne adresse ; propositions paginées.
+- **Profil de base** : le `schema.yaml` étendu, rétrocompatible — rôles de
+  champ et de section, types, facettes, vues (spec § 3.5).
+- **`cites`** dans le manifeste et références entre bases `<name>:/<chemin>`
+  (§ 3.3, § 3.6) ; `kb_hub_rescan` signale cycles et références non déclarées.
+- Dépendances : `markdown-it-py`, `mdit-py-plugins`, `jinja2` ; `starlette` et
+  `uvicorn`, déjà verrouillés par `mcp`, deviennent directes.
+
 ### Sécurité
 
 - **pyjwt 2.13.0 → 2.15.1** (dépendance de `mcp`, verrou seul) : corrige quatorze avis de failles connues, dont

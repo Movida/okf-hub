@@ -1,0 +1,51 @@
+{% macro fil(elements, dernier=none) %}
+<nav class="fil">
+  {% for libelle, adresse in elements %}<a href="{{ adresse }}">{{ libelle }}</a>{% if not loop.last or dernier %} › {% endif %}{% endfor %}
+  {% if dernier %}<span>{{ dernier }}</span>{% endif %}
+</nav>
+{% endmacro %}
+
+{% macro onglets(nom, actif) %}
+<nav class="onglets">
+  <a href="{{ url_base(nom) }}"{% if actif == 'base' %} class="actif"{% endif %}>Corpus</a>
+  <a href="{{ url_page(nom, 'trouver') }}"{% if actif == 'trouver' %} class="actif"{% endif %}>Trouver</a>
+  <a href="{{ url_page(nom, 'propositions') }}"{% if actif == 'propositions' %} class="actif"{% endif %}>Propositions</a>
+  <a href="{{ url_page(nom, 'journal') }}"{% if actif == 'journal' %} class="actif"{% endif %}>Journal</a>
+</nav>
+{% endmacro %}
+
+{% macro doc_ligne(nom, doc, sans_type, extra=none) %}
+<li><a href="{{ url_doc(nom, doc.chemin) }}">{{ doc.titre }}</a>
+  <span class="type">{{ doc.type or sans_type }}</span>
+  <span class="chemin">{{ doc.chemin }}</span>{% if extra %} <span class="note">{{ extra }}</span>{% endif %}</li>
+{% endmacro %}
+
+{% macro panneau(nom, p) %}
+<aside class="panneau">
+  <h2>Types</h2>
+  {% if p.types %}
+  <ul class="effectifs">
+    {% for e in p.types %}
+    <li{% if e.nombre == 0 %} class="vide"{% endif %}><a href="{{ url_page(nom, 'trouver', type=e.valeur) }}">{{ e.valeur }}</a> <span>{{ e.nombre }}</span>{% if e.declare is false %} <em class="hors">hors vocabulaire</em>{% endif %}</li>
+    {% endfor %}
+  </ul>
+  {% else %}<p class="note">Aucun document.</p>{% endif %}
+  {% if p.roles %}
+  <h2>Sections</h2>
+  <ul class="effectifs">
+    {% for role, n in p.roles %}<li><a href="{{ url_page(nom, 'trouver', section=role) }}">{{ role }}</a> <span>{{ n }}</span></li>{% endfor %}
+  </ul>
+  {% endif %}
+  {% if p.vues %}
+  <h2>Vues</h2>
+  <ul>
+    {% for i, v in p.vues %}<li><a href="{{ url_page(nom, 'vues/' ~ i) }}">{{ v.titre }}</a> <span class="note">{{ v.sorte }}</span></li>{% endfor %}
+  </ul>
+  {% endif %}
+  {% if p.avertissements %}
+  <h2>Profil</h2>
+  <ul class="avertissements">{% for a in p.avertissements %}<li>{{ a }}</li>{% endfor %}</ul>
+  {% endif %}
+</aside>
+{% endmacro %}
+

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import yaml
@@ -77,6 +77,10 @@ class HubConfig:
     privées installées (`confidentialite`, rév. 4.4)."""
     public_bases: frozenset[str] = frozenset()
     """Bases publiques en plus des bases livrées avec un dépôt canonique."""
+    web: object = field(default=None, hash=False, compare=False)
+    """Clé `web` telle quelle (§ 4.1, rév. 4.5) : validée par `okf-hub web` seul
+    (`web.acces.WebConfig`), pour qu'une section mal écrite n'empêche pas le
+    serveur MCP de démarrer."""
 
     @staticmethod
     def load(hub_root: Path) -> "HubConfig":
@@ -123,6 +127,7 @@ class HubConfig:
             trusted_checks=trusted,
             private_terms=_liste(raw, "private-terms", path),
             public_bases=_liste(raw, "public-bases", path),
+            web=raw.get("web"),
         )
 
 

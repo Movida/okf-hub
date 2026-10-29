@@ -107,7 +107,7 @@ def test_cycle_mcp_complet(hub_avec_base):
         outils = await session.list_tools()
         noms = {t.name for t in outils.tools}
         assert noms == {
-            "kb_list", "kb_search", "kb_read", "kb_governance", "kb_propose",
+            "kb_list", "kb_search", "kb_read", "kb_find", "kb_governance", "kb_propose",
             "kb_proposal_status", "kb_hub_rescan",
         }
         # La description énumère les bases connues : c'est ce qui permet le
@@ -137,6 +137,13 @@ def test_cycle_mcp_complet(hub_avec_base):
                 },
             )
         )
+        resultats["find"] = _texte(
+            await session.call_tool("kb_find", {"base": "base-demo", "type": "Procédure"})
+        )
+        # Un total de zéro est une réponse (§ 5.8), avec les types présents.
+        resultats["find_vide"] = _texte(
+            await session.call_tool("kb_find", {"base": "base-demo", "type": "Procedure"})
+        )
         resultats["propose"] = _texte(
             await session.call_tool(
                 "kb_propose",
@@ -163,6 +170,9 @@ def test_cycle_mcp_complet(hub_avec_base):
     assert "Golden rules" in r["gov"] and "schema.yaml" in r["gov"]
     assert "exemple-document.md" in r["search"]
     assert "réauthentifier" in r["read"] and "Notes de rédaction" not in r["read"]
+    assert r["find"].startswith("1 document(s) dans 'base-demo'")
+    assert "exemple-document.md" in r["find"]
+    assert r["find_vide"].startswith("0 document(s)") and "Procédure (1)" in r["find_vide"]
     assert "Proposition déposée" in r["propose"]
     assert r["erreur"].startswith("ERROR: UNKNOWN_BASE:")
     assert "base-demo" in r["erreur"]  # la liste des bases valides est rendue

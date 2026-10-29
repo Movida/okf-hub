@@ -74,12 +74,29 @@ src/okf_hub/
 │                   trois usages — refus de kb_propose, hooks .githooks/, test
 │                   de neutralité.
 ├── resolve.py      CLI name → chemin, pour les scripts shell.
-└── tools/          Un module par outil : SCHEMA, description(), run().
+│
+├── lecture/        Moteur de lecture (rév. 4.5, § 5 bis.1), commun à kb_find et
+│   │               à l'interface web. Lecture seule, sans persistance.
+│   ├── liens.py      Extraction des liens, classement des cibles (§ 3.6).
+│   ├── profil.py     Le schema.yaml lu comme profil (§ 3.5), tolérant.
+│   ├── confiance.py  Fraîcheur et confiance, du seul frontmatter.
+│   ├── modele.py     Modèle par base, cache invalidé par stat, liens
+│   │                 entrants, dates de commit, historique (Lecteur).
+│   ├── requete.py    Critères de kb_find et des vues, effectifs.
+│   ├── graphe.py     cites déclarés et références observées (§ 3.3).
+│   └── rendu.py      markdown → HTML, liens réécrits, sections à rôle.
+├── web/            `okf-hub web` (§ 5 bis.2) : Starlette, gabarits Jinja2,
+│                   feuille de style locale ; acces.py porte les deux modes.
+└── tools/          Un module par outil : SCHEMA, description(), run() ; et pour
+                    un outil à sortie structurée, OUTPUT_SCHEMA et
+                    run_structured() → Sortie.
 ```
 
 **Règle de dépendance :** `tools/` dépend de tout le reste ; `registry` dépend de
-`manifest` et `config` ; `search` dépend de `registry` ; **rien ne dépend de
-`server`**. On peut donc exercer chaque outil dans un test sans lancer de serveur
+`manifest` et `config` ; `search` dépend de `registry` ; `lecture/` dépend de
+`registry` et `mdutil`, jamais de `tools/` ; `web/` dépend de `lecture/` et de
+deux modules de `tools/` qu'il lit sans les appeler en outils ; **rien ne dépend
+de `server`** — `okf-hub web` le câble dans `__main__.py`. On peut donc exercer chaque outil dans un test sans lancer de serveur
 MCP — ce que fait la majorité de la suite.
 
 **`review.py` n'est pas un outil MCP.** C'est délibéré : le gestionnaire écrit
@@ -847,6 +864,42 @@ hors-corpus ».
 
 ---
 
+## 6 nonies. Décisions d'implémentation de la consultation (rév. 4.5)
+
+Conçue sous-ensemble par sous-ensemble contre le code et les 8 bases réelles du
+poste de développement (3 733 documents, 32 356 liens) le 2026-10-29 ; les
+mesures ci-dessous en viennent. Le « pourquoi » d'ensemble est dans
+`CONCEPTION-consultation.md`.
+
+| Point | Décision | Motif |
+|---|---|---|
+| Invalidation du modèle | Signature = parcours `stat` du corpus (chemin, `mtime_ns`, taille) + profil, vérifiée au plus toutes les 2 s | 80 ms pour tout le hub. `git status` ne voit pas un fichier déjà modifié qui l'est une seconde fois (vérifié) ; il ne verrait pas non plus un fichier ignoré. |
+| Lecture des frontmatters | `CSafeLoader` (chargeur sûr compilé) via `parse_document(loader=)` | 0,41 s au lieu de 2,79 s, aucune divergence sur les 3 733 frontmatters. Les outils existants gardent `safe_load` : leur sortie ne change pas d'un octet. |
+| Extraction des liens | Expression régulière, par paragraphe, hors code ; liens automatiques compris | 1,8 s contre 17,4 s par le parseur du rendu. Les deux trouvent exactement les mêmes 32 356 liens, une fois relevée la limite d'imbrication du parseur. Le classement des cibles est une seule fonction (`liens.classer`), pour l'index comme pour la page. |
+| Imbrication du rendu | `maxNesting` 200 ; atteinte détectée au niveau des jetons, source montrée | À 20 (défaut), markdown-it abandonne en silence la suite d'un document : une fiche réelle aux listes sur 12 niveaux était rendue à 14 Ko sur 154 Ko. La carte des jetons ne le révèle pas (le bloc englobant s'étend jusqu'à la fin) ; le niveau, si. |
+| Dates de commit | Un `git log --name-only` par base, à la demande, en cache par HEAD ; `git log -1` pour une seule page | Jusqu'à 1,6 s sur un gros historique : seuls `older_than_months` et les vues de fraîcheur en ont besoin. |
+| Liens entrants | Index unique, toutes bases, reconstruit quand une génération change | 0,14 s. Le filtrage par visibilité est l'affaire de l'appelant. |
+| Lecteur partagé | `Lecteur.de(registry)`, attaché au registre | Les outils gardent l'interface `run(registry, arguments)` ; un test qui fabrique son registre a son lecteur. |
+| Profil | Clés et rôles en anglais, vocabulaire de la base dans sa langue | Le schéma v0, le manifeste, OKF et les paramètres d'outils sont en anglais ; deux langues pour un même vocabulaire étaient une friction. Changer coûtait un module avant que les bases écrivent leur profil. |
+| `kb_find` | Total exact toujours forcé hors budget ; types rappelés si un `type` ne trouve rien dans aucune base interrogée ; sortie structurée | Une absence doit être prouvable en un appel ; une faute de frappe ne doit pas passer pour une absence ; une autre interface ne doit pas analyser du texte. |
+| Fraîcheur des vues | La vue `freshness` ne retient que les provenances qui déclarent une preuve, et sépare celles dont aucune date de source n'existe | Reprend la sémantique des outils de ré-audit des bases : un constat de terrain n'a pas de source à confronter, et « dernier commit » n'est pas « dernière confrontation ». `kb_find` dit l'origine de chaque date. |
+| Gabarits | Jinja2, échappement automatique, `StrictUndefined` | § 1.7 en esprit : un format structuré ne se produit pas par concaténation. Les morceaux surlignés d'un extrait sont échappés par le gabarit, jamais par le moteur. |
+| Points d'entrée web | Synchrones | Starlette les exécute dans son pool de fils : git et ripgrep restent hors de la boucle d'événements. |
+| Re-scan du processus web | `HubServer._silent_rescan("web")`, câblé par `__main__` | Un seul mécanisme (§ 4.4.c) ; l'observateur seul ne voit pas un manifeste modifié. `web/` n'importe pas `server`. |
+| Mode équipe | `trusted-proxies` (défaut : bouclage), adresse du pair TCP ; `proxy_headers=False` | Le proxy peut vivre dans un autre conteneur sans qu'un client direct puisse choisir son identité. |
+| Images | Types d'image seulement, confinées comme un document, SVG sous `sandbox` | La généricité l'exige, même si aucun corpus installé n'en contient ; la politique `sandbox` empêche un SVG d'exécuter quoi que ce soit, même ouvert seul. |
+| Vue `graph` | Figure SVG en cercle jusqu'à 40 documents, liste d'adjacence toujours | Aucun script ; au-delà, une figure ne se lit plus. |
+| Disposition des figures (`web/figure.py`) | Ordre sur le cercle qui croise le moins d'arêtes, cherché exhaustivement jusqu'à 8 nœuds ; nœuds isolés sous le cercle ; arcs courbés vers leur gauche, épaisseur logarithmique, étiquette en pastille sur l'arc ; noms vers l'extérieur, avec halo | Relecture du 2026-10-29 : sur le hub réel, l'ordre alphabétique croisait 7 arêtes et deux étiquettes tombaient au même milieu ; l'ordre cherché n'en croise aucune. Vérifié par capture d'écran, pas seulement par le HTML. |
+| Alerte du graphe | Total des références des bases qui ne déclarent pas `cites`, et la déclaration qu'impliqueraient les références observées, cycle éventuel compris | Le § 3.3 se tait sur une base qui ne déclare rien ; l'alerte d'ensemble dit ce que rien ne contrôle sans déroger à cette règle, et donne la ligne à écrire. |
+| Extraits de recherche | Ligne du frontmatter → le champ et sa valeur (`title`, déjà l'intitulé, omis) ; corps débarrassé de sa syntaxe markdown, lignes repliées | Le YAML brut et le défilement horizontal des extraits masquaient l'information. |
+| Pagination | Recherche : tout le classement (25 par page sur une base, aperçu de 8 et lien sur plusieurs) ; propositions : 50 par page, effectifs par statut, lues par `CSafeLoader` | 360 propositions faisaient une page de 230 Ko, ressentie comme un clic sans effet. `collect(loader=)` : l'outil MCP garde `safe_load`. |
+| Formulaire Trouver | `<datalist>` des valeurs présentes (types, tags, sections, dossiers), une ligne d'aide par champ, exemples cliquables tirés des données | Saisie assistée sans script ; un exemple montre un critère mieux qu'une explication. |
+| 404 | Suggère `/b/<base>/` quand l'URL nomme une base ouverte au visiteur, et rappelle le schéma d'adresses | `/b/` ne se devine pas ; une base fermée n'est jamais suggérée. |
+
+**Aucun écart assumé** : la rév. 4.5 de la spec décrit ce qui est fait.
+
+---
+
 ## 6 sexies. Message de troncature de `kb_search` — ce que relever `max_results` ne fait pas
 
 Origine : constat 4 du banc d'essai externe du 2026-09-09
@@ -1000,6 +1053,29 @@ pour vérifier la couverture sans relire la suite.
 | § 7.1 — suite de plans, un commit chacun, reprenable ; reprise après échec ; plan à moitié résolu | `test_review.py::test_plusieurs_plans_executes_dans_l_ordre_un_commit_chacun`, `test_un_echec_en_cours_de_suite_dit_comment_reprendre`, `test_un_plan_a_moitie_resolu_est_refuse` |
 | § 7.1 — `--checks` : vues commitées à part, échec sans commit, refus préalables, reprise | `test_resolve_checks.py` |
 
+### rév. 4.5 — consultation
+
+| Exigence | Test |
+|---|---|
+| § 3.6 — classement des cibles, évasions et schémas refusés | `test_lecture.py::test_classement_des_cibles_du_corpus`, `test_cibles_hors_corpus_et_schemas` |
+| § 3.6 — extraction hors code, sur deux lignes, liens automatiques, notes | `test_extraction_ignore_le_code_et_les_images`, `test_extraction_libelle_sur_deux_lignes_et_liens_automatiques`, `test_extraction_definitions_de_liens_et_notes` |
+| § 3.5 — profil lu, rôles, tolérance, schéma v0 | `test_profil_lu_avec_ses_roles`, `test_un_schema_v0_est_un_profil_sans_enrichissement`, `test_un_profil_illisible_ne_leve_jamais` |
+| § 5 bis.1 — cache : seconde modification vue, modèle gardé, vérification espacée | `test_cache_invalide_par_une_seconde_modification`, `test_cache_garde_le_modele_tant_que_rien_ne_change`, `test_cache_espace_ses_verifications` |
+| § 5 bis.1 — liens entrants entre bases, base installée après coup | `test_resolution_et_liens_entrants_entre_bases`, `test_une_base_installee_apres_coup_resout_les_references` |
+| § 5 bis.1 — fraîcheur et confiance | `test_fraicheur_dans_l_ordre_declare`, `test_fraicheur_retombe_sur_le_dernier_commit`, `test_confiance_palier_statut_peremption` |
+| § 3.3 — `cites` : cycles, hors cites, périmètre, champ mal formé | `test_cycles_des_cites`, `test_graphe_signale_ce_qui_sort_des_cites`, `test_graphe_ne_revele_pas_une_base_hors_du_perimetre`, `test_cites_mal_forme_ignore_avec_avertissement` |
+| Lecture seule du moteur et de l'interface | `test_le_moteur_ne_cree_rien_dans_les_depots`, `test_web.py::test_l_interface_n_ecrit_rien`, `test_toute_ecriture_est_refusee` |
+| § 5.8 — total exact, zéro, rappel des types, critères, rôles, sous-chemin | `test_find.py` |
+| § 5.8 — sortie structurée validée par le vrai client | `test_end_to_end.py::test_cycle_mcp_complet` |
+| § 5.6 — rescan : avertissements de `cites`, aucun corpus lu sans déclaration | `test_rescan_rapporte_les_dependances_declarees`, `test_rescan_sans_cites_ne_charge_aucun_corpus` |
+| § 5 bis.1 — rendu : HTML brut, schémas, références, notes, sections à rôle, troncature | `test_web.py::test_document_rendu_sans_html_ni_lien_dangereux`, `test_rendu_tronque_signale_avec_sa_source` |
+| § 5 bis.2 — images confinées, SVG sandboxé | `test_images_servies_confinees_et_svg_sandboxe` |
+| § 5 bis.4 — connexion directe, identité, visibilité, liens masqués, proxy distant | `test_equipe_refuse_la_connexion_directe`, `test_equipe_exige_l_identite`, `test_equipe_ne_sert_que_les_bases_ouvertes`, `test_equipe_masque_les_liens_vers_et_depuis_une_base_fermee`, `test_equipe_derriere_un_proxy_distant_nomme` |
+| § 4.1 — clé `web` validée | `test_configuration_web_invalide`, `test_configuration_web_par_defaut` |
+| § 5 bis.2 — figure : ordre sans croisement, isolés, arcs opposés distincts ; alerte et cycle | `test_figure_ordre_sans_croisement_et_noeuds_isoles`, `test_graphe_alerte_les_references_sans_declaration` |
+| § 5 bis.2 — extraits lisibles, pagination de la recherche et des propositions | `test_recherche_extraits_lisibles`, `test_recherche_pagine_une_base_et_resume_plusieurs`, `test_propositions_paginees_avec_effectifs` |
+| § 5 bis.2 — aide du formulaire, 404 qui suggère sans révéler | `test_trouver_aide_suggestions_et_exemples`, `test_introuvable_suggere_l_adresse_d_une_base_ouverte` |
+
 Exécution :
 
 ```sh
@@ -1040,13 +1116,22 @@ exposée aux sessions consommatrices se limite à `kb_propose`, confiné à
 `proposals/pending/`. Tout ce qui touche au corpus vit dans `review.py`, appelé
 en ligne de commande par un humain ou le gestionnaire.
 
+**Le rendu d'un document passe par `lecture/rendu.py`, et seulement par lui.**
+Un second rendu — un export, une autre interface — divergerait du premier ;
+une autre interface renvoie vers la page du hub (§ 5 bis.3). Et la limite
+d'imbrication de markdown-it ne se redescend pas : à sa valeur par défaut, le
+parseur perd en silence la fin des documents profonds.
+
 **Le travail bloquant passe par `anyio.to_thread.run_sync`.** Un appel git ou
 ripgrep exécuté directement dans le handler bloquerait la boucle d'événements et
 sérialiserait toutes les requêtes de l'instance.
 
 **Ajouter un outil** : créer `tools/<nom>_tool.py` exposant `SCHEMA`,
 `description(registry) -> str` et `run(registry, arguments) -> str`, puis
-l'inscrire dans `server.TOOLS`. La conversion des erreurs, le re-scan silencieux
+l'inscrire dans `server.TOOLS`. Un outil qui rend aussi des données expose
+`OUTPUT_SCHEMA` et `run_structured() -> Sortie` (texte + `structuredContent`) :
+le client MCP valide ces données contre le schéma, et refuse un résultat sans
+erreur qui n'en porterait pas. La conversion des erreurs, le re-scan silencieux
 et les notifications sont pris en charge par `server.py`.
 
 ---

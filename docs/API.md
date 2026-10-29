@@ -1,6 +1,6 @@
 # Référence d'API — outils MCP `kb_*`
 
-Contrat exact des sept outils du noyau. Vérifié contre les schémas réels du code
+Contrat exact des huit outils du noyau. Vérifié contre les schémas réels du code
 (`src/okf_hub/tools/*.py`, constante `SCHEMA`) : si ce document et le code
 divergent, **le code fait foi** et ce fichier est en dette.
 
@@ -59,7 +59,7 @@ jamais la contribution elle-même (`ARCHITECTURE.md` § 5 ter).
 
 ### Plafond de sortie
 
-`kb_search`, `kb_list` et `kb_proposal_status` plafonnent leur sortie à
+`kb_search`, `kb_list`, `kb_proposal_status` et `kb_find` plafonnent leur sortie à
 **~4 000 tokens**
 (approximation caractères/4, soit 16 000 caractères). La troncature s'arrête sur
 un résultat entier — jamais au milieu — et est signalée par une ligne
@@ -70,7 +70,7 @@ rôle. `kb_governance` ne l'est pas non plus, conformément à la spec.
 
 ### Descriptions dynamiques
 
-Les descriptions de `kb_list`, `kb_search`, `kb_read`, `kb_governance`,
+Les descriptions de `kb_list`, `kb_search`, `kb_read`, `kb_find`, `kb_governance`,
 `kb_propose` et `kb_proposal_status` **énumèrent les bases connues** avec leur titre et leur objet, et
 sont recalculées à chaque `tools/list`. C'est ce qui permet à une session de
 router sa requête vers la bonne base **sans appel préalable**.
@@ -304,6 +304,79 @@ sort de `corpus-dir` par ce biais garde exactement le refus d'aujourd'hui.
 
 ---
 
+## kb_find
+
+Trouve les documents qui répondent à des critères structurés, ou compte leurs
+valeurs (spec § 5.8). Là où `kb_search` dit *où l'on parle* d'un sujet,
+`kb_find` dit *ce qui existe* — et **un total de zéro est une réponse** : il
+établit une absence en un appel.
+
+| Paramètre | Type | Défaut | Rôle |
+|---|---|---|---|
+| `base` | `string` ou `string[]` | **requis** | Comme `kb_search` : un nom, une liste, ou `"*"`. |
+| `type` | `string` | — | Valeur exacte du champ `type`. |
+| `tags` | `string[]` | — | Tous requis, forme exacte (`env:prod`). |
+| `fields` | `{champ: string \| boolean}` | — | Valeur exacte (appartenance si le champ est une liste) ; `true` : présent ; `false` : absent. |
+| `section` | `string` | — | Le document a une section de ce titre (même normalisation que `kb_read`), ou d'un titre que le profil range sous ce rôle (`warnings`, `observations`, `upstream`, `procedure`). |
+| `without_section` | `string` | — | L'inverse. |
+| `under` | `string` | — | Sous-chemin du corpus, lu comme un répertoire : `exploitation` ne couvre pas `exploitation-ancien/`. |
+| `links_to` | `string` | — | Documents qui citent `<base>:/<chemin>` ; un chemin seul si une seule base est interrogée. |
+| `older_than_months` | `integer` | — | 1 à 600 : fraîcheur plus ancienne, les plus anciens d'abord. |
+| `count_by` | `string` | — | `type`, `tags`, `section`, une facette déclarée par le profil, ou un champ : effectifs au lieu de la liste. |
+| `max_results` | `integer` | 50 | 1 à 200, toutes bases confondues, réparti comme `kb_search`. |
+
+Les critères se cumulent (ET). `index.md` et `log.md` ne sont ni listés ni
+comptés : ce sont des sommaires et des journaux, pas des concepts (OKF § 3.1).
+
+**Sortie — liste**
+
+```
+3 document(s) dans 'installation-x' — critères : type=Procédure ; section=warnings
+- exploitation/reprise.md — Reprise après coupure [Procédure]
+- exploitation/sauvegarde.md — Sauvegarde nocturne [Procédure]
+- support/arrivee.md — Arrivée d'un collaborateur [Procédure]
+```
+
+Le total est **toujours exact**, même quand la liste est tronquée
+(`[liste incomplète : N document(s) non affiché(s) — les totaux ci-dessus sont exacts …]`).
+Sous `older_than_months`, chaque ligne porte la date et son origine
+(`verified`, `generated`, `sources`, `commit`, `fichier`) ; sous `links_to`, un
+lien venu d'une section de rôle `upstream` est marqué `— amont`.
+
+**Zéro, et pas une faute de frappe**
+
+```
+0 document(s) dans 'installation-x' — critères : type=Procedure
+[aucun document de type « Procedure » ; types présents : Procédure (14), Référence (9), …]
+```
+
+Les types présents ne sont rappelés que si le type ne se trouve dans **aucune**
+des bases interrogées.
+
+**Sortie — effectifs**
+
+```
+38 document(s) dans 'installation-x', par type — critères : aucun critère (tous les documents)
+- Procédure : 14
+- Référence : 9
+- Décision : 0
+```
+
+Une valeur déclarée par le profil s'affiche même à effectif nul ; une valeur
+observée hors du vocabulaire déclaré porte `(hors vocabulaire déclaré)`.
+
+**Sortie structurée.** L'outil déclare un `outputSchema` : le résultat porte
+aussi, en `structuredContent`, les mêmes documents et effectifs
+(`{criteria, count_by, bases: [{base, total, documents | counts}]}`). C'est la
+voie des programmes — une autre interface lit les données sans analyser le
+texte. Le client MCP officiel valide ces données contre le schéma.
+
+**Erreurs** — `INVALID_INPUT` (critère mal formé ; `links_to` sans préfixe sur
+plusieurs bases), `NOT_FOUND` (`links_to` vers un document absent),
+`UNKNOWN_BASE` (base, ou préfixe de `links_to`, inconnu).
+
+---
+
 ## kb_governance
 
 Retourne les règles d'une base.
@@ -515,7 +588,16 @@ Leurs cooldowns sont comptés séparément : un `kb_list` ne prive pas l'appel
 suivant du re-scan compensatoire sur `UNKNOWN_BASE`.
 
 Ce qui reste propre à `kb_hub_rescan` : le **rapport** ci-dessus — bundles
-rejetés avec leur motif, collisions de `name`, avertissements de compatibilité.
+rejetés avec leur motif, collisions de `name`, avertissements de compatibilité,
+et, si une base au moins déclare `cites` (spec § 3.3), les avertissements du
+graphe des bases :
+
+```
+Dépendances entre bases (cites) :
+- cycle dans les cites déclarés : produit-x → installation-x → produit-x
+- installation-x cite referentiel-x (12 référence(s)) sans le déclarer dans cites
+```
+
 C'est un outil de diagnostic d'import, pas de rafraîchissement.
 
 ---
@@ -530,6 +612,14 @@ kb_list                                  → quelle base ?  (souvent inutile :
                                             déjà les bases)
 kb_search  base=… query="termes"         → quels documents ?
 kb_read    base=… path=… section=…       → le contenu utile, pas le fichier entier
+```
+
+**Établir qu'une chose existe, ou non**
+
+```
+kb_find  base=… count_by=type                 → quels types existent ici ?
+kb_find  base=… type=Procédure under=…        → total exact ; zéro est une réponse
+kb_find  base=… links_to="produit-x:/…"       → qui, chez nous, décline ce concept ?
 ```
 
 **Contribuer un fait nouveau**

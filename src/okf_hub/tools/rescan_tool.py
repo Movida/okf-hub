@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from ..lecture.graphe import analyser, declarations
+from ..lecture.modele import Lecteur
 from ..registry import RescanReport, Registry
 
 SCHEMA = {"type": "object", "properties": {}, "additionalProperties": False}
@@ -46,6 +48,26 @@ def render_report(report: RescanReport, total: int) -> str:
     return "\n".join(lines)
 
 
+def render_dependencies(registry: Registry) -> str | None:
+    """Avertissements du graphe des bases (§ 3.3, rév. 4.5), ou None.
+
+    Les références ne sont lues — donc les corpus chargés — que si une base au
+    moins déclare `cites` : la déclaration est volontaire, et un hub qui n'en a
+    aucune ne paie rien de plus qu'avant à chaque rescan.
+    """
+    noms = registry.names()
+    if not declarations(registry, noms):
+        return None
+    graphe = analyser(Lecteur.de(registry), noms)
+    if not graphe.avertissements:
+        return "Dépendances entre bases (cites) : aucun avertissement."
+    lignes = ["Dépendances entre bases (cites) :"]
+    lignes += [f"- {a}" for a in graphe.avertissements]
+    return "\n".join(lignes)
+
+
 def run(registry: Registry, arguments: dict) -> str:
     report = registry.scan()
-    return render_report(report, len(registry.bases))
+    texte = render_report(report, len(registry.bases))
+    dependances = render_dependencies(registry)
+    return texte if dependances is None else texte + "\n\n" + dependances

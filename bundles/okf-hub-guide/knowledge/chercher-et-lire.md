@@ -4,7 +4,7 @@ title: Chercher et lire dans une base, sans gaspiller de contexte
 description: >
   Les séquences d'appels, le choix d'une base, et les mécanismes de recherche et
   de lecture qu'il faut comprendre pour ne pas rapatrier des documents entiers.
-tags: [kb_list, kb_search, kb_read]
+tags: [kb_list, kb_search, kb_read, kb_find]
 applies-to: "rév. 4.1"
 generated:
   by: "claude-code/opus-5"
@@ -16,6 +16,11 @@ verified:
       ajout des liens interbase dans kb_read, de kb_search multi-bases et de
       la troncature par volume (livrés 2026-09-02 et 2026-09-10, non
       répercutés ici avant cette relecture)
+  - by: claude-code/opus-5.5
+    at: 2026-10-29T00:00:00Z
+    note: >-
+      ajout de kb_find (rév. 4.5) : établir une existence ou une absence par
+      critères, en un appel, au lieu de reformuler des recherches
 ---
 
 # Chercher et lire, sans gaspiller de contexte
@@ -107,6 +112,26 @@ légitime : tu as besoin du document **en entier**, et tu sais pourquoi. L'utili
 parce que la table des headings est apparue est un contresens — tu viens de
 transformer une économie en dépense.
 
+## Établir qu'une chose existe — ou qu'elle n'existe pas
+
+`kb_search` dit **où l'on parle** d'un sujet ; il ne prouve jamais une absence :
+zéro résultat peut venir de tes mots, pas du corpus. Quand ta question porte sur
+ce qui existe — « y a-t-il une procédure pour cela ? », « quels incidents sous
+ce dossier ? », « quels types de documents cette base contient-elle ? » —,
+c'est `kb_find` qu'il faut appeler :
+
+```
+kb_find  count_by: "type"                          → quels types existent ici
+kb_find  type: "Procédure", under: "exploitation"   → total exact ; zéro est une réponse
+kb_find  links_to: "<base>:/<chemin>"               → qui cite ce document, entre bases compris
+```
+
+Son total par base est **exact**, même quand la liste est tronquée. Si un type
+ne trouve rien nulle part, l'outil rappelle les types présents : vérifie
+l'orthographe avant de conclure. Un zéro obtenu sur le bon type, le bon
+sous-chemin, est la preuve d'absence que plusieurs recherches plein texte ne
+donnent jamais.
+
 ## Si tu ne trouves rien
 
 Dans l'ordre :
@@ -117,6 +142,8 @@ Dans l'ordre :
    « reconnexion ».
 3. **`kb_governance`** — la section « Organisation du corpus » t'indique comment
    la base est rangée, donc par quoi chercher.
-4. **La bonne conclusion est parfois « ce n'est pas documenté ».** C'est un
+4. **`kb_find`** pour trancher : si le type de document que tu cherches n'existe
+   pas à l'endroit attendu, tu le sais en un appel.
+5. **La bonne conclusion est parfois « ce n'est pas documenté ».** C'est un
    résultat utile, et c'est exactement le moment de déposer une proposition de
    `type: question`.

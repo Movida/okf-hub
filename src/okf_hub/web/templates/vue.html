@@ -1,0 +1,51 @@
+{% extends "page.html" %}
+{% import "macros.html" as m %}
+{% block titre %}{{ vue.titre }}{% endblock %}
+{% block fil %}{{ m.fil([(base.title, url_base(nom))], vue.titre) }}{% endblock %}
+{% block contenu %}
+<main class="principal">
+  <h1>{{ vue.titre }}</h1>
+  {{ m.onglets(nom, 'base') }}
+  <p class="criteres-lus">Vue « {{ vue.sorte }} » déclarée par le profil de la base — critères : {{ criteres.decrire() }} ; {{ total }} document(s).</p>
+  {% if inconnues %}<p class="alerte">Clés de filtre inconnues, ignorées : {{ inconnues|join(', ') }}.</p>{% endif %}
+  {% if erreur %}<p class="alerte">{{ erreur }}</p>{% endif %}
+  {% if vue.sorte == 'list' %}
+    {% for cle, trouves in groupes %}
+    {% if cle %}<h2>{{ cle }} <span class="note">{{ trouves|length }}</span></h2>{% endif %}
+    <ul class="documents">{% for t in trouves %}{{ m.doc_ligne(nom, t.doc, '(sans type)') }}{% endfor %}</ul>
+    {% endfor %}
+  {% elif vue.sorte == 'timeline' %}
+    {% for mois, entrees in chronologie %}
+    <h2>{{ mois }}</h2>
+    <ul class="documents">{% for d, f, t in entrees %}{{ m.doc_ligne(nom, t.doc, '(sans type)', d|date ~ (' → ' ~ f|date if f else '')) }}{% endfor %}</ul>
+    {% endfor %}
+    {% if sans_date %}<h2>Sans date de début</h2><ul class="documents">{% for t in sans_date %}{{ m.doc_ligne(nom, t.doc, '(sans type)') }}{% endfor %}</ul>{% endif %}
+  {% elif vue.sorte == 'graph' %}
+    {% if figure %}{% set f = figure %}
+    <svg class="graphe" viewBox="0 0 {{ f.largeur }} {{ f.hauteur }}" role="img" aria-label="Documents et liens entre eux">
+      <defs><marker id="fleche" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="9" markerHeight="9" markerUnits="userSpaceOnUse" orient="auto-start-reverse"><path d="M0 0 L10 5 L0 10 z" class="pointe"/></marker></defs>
+      {% for a in f.arcs %}<g class="arc"><title>{{ etiquettes[a.source] }} → {{ etiquettes[a.cible] }}</title><path d="{{ a.chemin }}" stroke-width="{{ a.epaisseur }}" marker-end="url(#fleche)"/></g>{% endfor %}
+      {% for n in f.noeuds %}<a href="{{ url_doc(nom, n.cle) }}"><circle cx="{{ n.x }}" cy="{{ n.y }}" r="{{ f.rayon }}" class="noeud{% if n.isole %} isole{% endif %}"><title>{{ n.cle }}</title></circle><text x="{{ n.etiquette_x }}" y="{{ n.etiquette_y }}" text-anchor="{{ n.ancrage }}" class="etiquette petite">{{ etiquettes[n.cle] }}</text></a>{% endfor %}
+    </svg>
+    {% endif %}
+    <ul class="graphe-docs">
+      {% for t, voisins in graphe %}
+      <li><a href="{{ url_doc(nom, t.doc.chemin) }}">{{ t.doc.titre }}</a>{% if voisins %} →
+        {% for v in voisins %}<a href="{{ url_doc(nom, v.chemin) }}">{{ v.titre }}</a>{% if not loop.last %}, {% endif %}{% endfor %}{% endif %}</li>
+      {% endfor %}
+    </ul>
+  {% elif vue.sorte == 'freshness' %}
+    <table class="fraicheur">
+      <thead><tr><th>Document</th><th>Date</th><th>Origine</th><th>Âge</th></tr></thead>
+      <tbody>
+      {% for t, f in fraicheur %}
+      <tr><td><a href="{{ url_doc(nom, t.doc.chemin) }}">{{ t.doc.titre }}</a></td><td>{{ f.date|date }}</td><td>{{ f.origine }}</td><td>{{ ((maintenant - f.date).days / 30.44)|round(0)|int }} mois</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% if sans_date %}<h2>Sans date de source</h2><p class="note">Leur provenance exige une preuve, mais aucune vérification, production ni source n'est datée.</p>
+    <ul class="documents">{% for t, f in sans_date %}{{ m.doc_ligne(nom, t.doc, '(sans type)', 'dernier ' ~ f.origine ~ ' : ' ~ f.date|date) }}{% endfor %}</ul>{% endif %}
+  {% endif %}
+</main>
+{{ m.panneau(nom, panneau) }}
+{% endblock %}
