@@ -5,24 +5,37 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{% block titre %}okf-hub{% endblock %} — okf-hub</title>
 <link rel="stylesheet" href="/static/okf.css">
+<script src="/static/okf.js" defer></script>
 </head>
 <body>
 <header class="bandeau">
   <a class="marque" href="/">okf-hub</a>
-  <nav>
-    <a href="/">Bases</a>
-    <a href="/trouver">Trouver</a>
-    <a href="/recherche">Recherche</a>
-    <a href="/graphe">Graphe</a>
+  <nav class="principale">
+    {% for cle, libelle, adresse in [('bases', 'Bases', '/'), ('explorer', 'Explorer', '/explorer'), ('propositions', 'Propositions', '/propositions'), ('chronologie', 'Chronologie', '/chronologie'), ('graphe', 'Graphe', '/graphe')] %}
+    <a href="{{ adresse }}"{% if rubrique == cle %} class="actif" aria-current="page"{% endif %}>{{ libelle }}</a>
+    {% endfor %}
   </nav>
-  <form class="recherche-rapide" action="/recherche" method="get" role="search">
-    <input type="search" name="q" placeholder="Rechercher dans les bases" aria-label="Rechercher dans les bases">
+  <form class="saut" action="/aller" method="get" role="search">
+    <input id="saut" type="search" name="q" accesskey="k" autocomplete="off" placeholder="Base, fiche, proposition…" aria-label="Aller à une base, une fiche, une proposition" aria-keyshortcuts="Control+K Meta+K">
+    <kbd class="raccourci" aria-hidden="true">Ctrl K</kbd>
   </form>
-  <span class="lecture-seule">lecture seule{% if equipe and visiteur.identite %} · {{ visiteur.identite }}{% endif %}</span>
+  {% set n_points = sante.raisons|length %}
+  <a class="voyant {{ sante.niveau }}" href="/etat" title="{{ sante.raisons|join(' · ') or 'Tout est en ordre' }} — voir l'état du hub">{% if sante.niveau == 'bon' %}<span class="pastille" aria-hidden="true"></span>en ordre{% else %}<span class="icone" aria-hidden="true">{{ '✖' if sante.niveau == 'critique' else '⚠' }}</span> <strong class="nombre">{{ n_points }}</strong> <span class="raison">{{ sante.raisons[0] }}{% if n_points > 1 %} <span class="plus">et {{ (n_points - 1)|nb('autre', 'autres') }}</span>{% endif %}</span>{% endif %}</a>
+  <a class="lecture-seule" href="/a-propos" title="À propos : ce que cette interface est, et ce qu'elle ne fait pas"><span aria-hidden="true">ⓘ</span> lecture seule{% if equipe and visiteur.identite %} · {{ visiteur.identite }}{% endif %}</a>
 </header>
 {% block fil %}{% endblock %}
+{% if avis %}<div class="avis" role="status">{% for a in avis %}<p>{{ a }}</p>{% endfor %}</div>{% endif %}
 <div class="cadre">
 {% block contenu %}{% endblock %}
 </div>
+<footer class="pied-de-page"><a href="/a-propos#glossaire">Glossaire</a> · <a href="/a-propos">À propos de cette interface</a> · <a href="/etat">État du hub</a></footer>
+{# La palette (Ctrl+K) : vide sans script ; okf.js l'ouvre et la remplit avec la liste de /aller. #}
+<dialog id="palette" class="palette-dialogue" aria-label="Aller à une base, une fiche, une proposition">
+  <form action="/aller" method="get" role="search">
+    <input name="q" type="search" autocomplete="off" placeholder="Base, fiche, proposition…" aria-label="Aller à" aria-controls="palette-resultats">
+  </form>
+  <div id="palette-resultats" class="palette-resultats"></div>
+  <p class="pied-palette"><kbd>↑</kbd> <kbd>↓</kbd> choisir · <kbd>Entrée</kbd> ouvrir · <kbd>Échap</kbd> fermer · l'Explorer cherche dans le texte et filtre</p>
+</dialog>
 </body>
 </html>

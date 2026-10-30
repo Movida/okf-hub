@@ -48,7 +48,7 @@ from ..mdutil import normalize_heading
 #: Rôles reconnus — liste fermée, tenue par la spec (§ 3.5). Une base n'en
 #: invente pas : elle en demande un par un retour d'usage.
 ROLES_CHAMP = frozenset({"provenance", "aliases", "start", "end", "version", "identifier"})
-ROLES_SECTION = frozenset({"warnings", "observations", "upstream", "procedure"})
+ROLES_SECTION = frozenset({"warnings", "observations", "upstream", "procedure", "gaps"})
 
 SORTES_VUE = ("list", "timeline", "graph", "freshness")
 

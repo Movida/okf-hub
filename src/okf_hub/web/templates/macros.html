@@ -1,16 +1,22 @@
 {% macro fil(elements, dernier=none) %}
-<nav class="fil">
-  {% for libelle, adresse in elements %}<a href="{{ adresse }}">{{ libelle }}</a>{% if not loop.last or dernier %} › {% endif %}{% endfor %}
+<nav class="fil" aria-label="Fil d'Ariane">
+  <a href="/">Bases</a> › {% for libelle, adresse in elements %}<a href="{{ adresse }}">{{ libelle }}</a>{% if not loop.last or dernier %} › {% endif %}{% endfor %}
   {% if dernier %}<span>{{ dernier }}</span>{% endif %}
 </nav>
 {% endmacro %}
 
 {% macro onglets(nom, actif) %}
-<nav class="onglets">
-  <a href="{{ url_base(nom) }}"{% if actif == 'base' %} class="actif"{% endif %}>Corpus</a>
-  <a href="{{ url_page(nom, 'trouver') }}"{% if actif == 'trouver' %} class="actif"{% endif %}>Trouver</a>
-  <a href="{{ url_page(nom, 'propositions') }}"{% if actif == 'propositions' %} class="actif"{% endif %}>Propositions</a>
-  <a href="{{ url_page(nom, 'journal') }}"{% if actif == 'journal' %} class="actif"{% endif %}>Journal</a>
+<nav class="onglets" aria-label="Pages de la base">
+  {% for cle, libelle, adresse, compte, a_faire in [
+       ('base', 'Corpus', url_base(nom), none, false),
+       ('explorer', 'Explorer', url_page(nom, 'explorer'), none, false),
+       ('reaudit', 'À revérifier', url_page(nom, 'explorer', amont='1', tri='reaudit'), compteurs.get('reaudit'), true),
+       ('manques', 'Manques', url_page(nom, 'manques'), compteurs.get('manques'), false),
+       ('propositions', 'Propositions', url_page(nom, 'propositions'), compteurs.get('propositions'), true),
+       ('gouvernance', 'Gouvernance', url_page(nom, 'gouvernance'), none, false),
+       ('journal', 'Journal', url_page(nom, 'journal'), none, false)] %}
+  <a href="{{ adresse }}"{% if actif == cle %} class="actif" aria-current="page"{% endif %}>{{ libelle }}{% if compte %} <span class="compte{% if a_faire %} a-faire{% endif %}">{{ compte }}</span>{% elif cle == 'manques' and compte == 0 %} <span class="compte ok" title="Aucun document attendu ne manque">✓</span>{% endif %}</a>
+  {% endfor %}
 </nav>
 {% endmacro %}
 
@@ -20,20 +26,25 @@
   <span class="chemin">{{ doc.chemin }}</span>{% if extra %} <span class="note">{{ extra }}</span>{% endif %}</li>
 {% endmacro %}
 
-{% macro panneau(nom, p) %}
+{% macro panneau(nom, p, entrees=true) %}
 <aside class="panneau">
+  {% if p.a_reverifier %}<p class="alerte petit"><a href="{{ url_page(nom, 'explorer', amont='1') }}">{{ p.a_reverifier|nb('fiche à revérifier', 'fiches à revérifier') }}</a> : {{ 'ce qu’elle cite' if p.a_reverifier == 1 else 'ce qu’elles citent' }} dans une autre base a changé depuis.</p>{% endif %}
+  {% if entrees and p.piliers %}
+  <h2>Fiches piliers</h2>
+  <ol class="piliers">{% for d, n in p.piliers %}<li><a href="{{ url_doc(nom, d.chemin) }}">{{ d.titre }}</a> <span class="note">citée par {{ n }}</span></li>{% endfor %}</ol>
+  {% endif %}
   <h2>Types</h2>
   {% if p.types %}
   <ul class="effectifs">
     {% for e in p.types %}
-    <li{% if e.nombre == 0 %} class="vide"{% endif %}><a href="{{ url_page(nom, 'trouver', type=e.valeur) }}">{{ e.valeur }}</a> <span>{{ e.nombre }}</span>{% if e.declare is false %} <em class="hors">hors vocabulaire</em>{% endif %}</li>
+    <li{% if e.nombre == 0 %} class="vide"{% endif %}>{% if e.valeur != '(sans type)' %}<a href="{{ url_page(nom, 'explorer', type=e.valeur) }}">{{ e.valeur }}</a>{% else %}{{ e.valeur }}{% endif %} <span>{{ e.nombre }}</span>{% if e.declare is false %} <em class="hors">hors vocabulaire</em>{% endif %}</li>
     {% endfor %}
   </ul>
   {% else %}<p class="note">Aucun document.</p>{% endif %}
-  {% if p.roles %}
+  {% if entrees and p.roles %}
   <h2>Sections</h2>
   <ul class="effectifs">
-    {% for role, n in p.roles %}<li><a href="{{ url_page(nom, 'trouver', section=role) }}">{{ role }}</a> <span>{{ n }}</span></li>{% endfor %}
+    {% for role, n in p.roles %}<li><a href="{{ url_page(nom, 'explorer', section=role) }}">{{ role }}</a> <span>{{ n }}</span></li>{% endfor %}
   </ul>
   {% endif %}
   {% if p.vues %}
@@ -49,3 +60,6 @@
 </aside>
 {% endmacro %}
 
+
+{# Un terme de l'interface : lien vers sa définition, la définition courte au survol. #}
+{% macro terme(cle, texte=none) %}<a class="terme" href="/a-propos#g-{{ cle }}" title="{{ glossaire[cle][1] }}">{{ texte or glossaire[cle][0] }}</a>{% endmacro %}

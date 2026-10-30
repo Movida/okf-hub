@@ -1,10 +1,10 @@
 {% extends "page.html" %}
-{% import "macros.html" as m %}
+{% import "macros.html" as m with context %}
 {% block titre %}{{ doc.titre }}{% endblock %}
-{% block fil %}{{ m.fil(fil, doc.chemin.split('/')[-1]) }}{% endblock %}
+{% block fil %}{{ m.fil(fil, doc.titre|truncate(70)) }}{% endblock %}
 {% block contenu %}
 <main class="principal">
-  <header class="tete-doc">
+  <header class="tete-doc" id="haut">
     <p class="surtitre"><span class="type">{{ doc.type or sans_type }}</span>{% if not en_tete.type_declare %} <em class="hors">type hors vocabulaire</em>{% endif %}
       {% set c = en_tete.confiance %}
       {% if c.palier == 'humain' %}<span class="badge verifie">vérifié par un humain</span>{% elif c.palier == 'machine' %}<span class="badge">vérifié par un agent</span>{% endif %}
@@ -24,15 +24,29 @@
       {% if en_tete.debut or en_tete.fin %}<dt>Période</dt><dd>{{ en_tete.debut|date if en_tete.debut else '…' }} → {{ en_tete.fin|date if en_tete.fin else '…' }}</dd>{% endif %}
       {% if en_tete.version %}<dt>S'applique à partir de</dt><dd>{{ en_tete.version }}</dd>{% endif %}
       {% if en_tete.identifiant %}<dt>Identifiant</dt><dd><code>{{ en_tete.identifiant }}</code></dd>{% endif %}
-      <dt>Fraîcheur</dt><dd>{{ fraicheur.date|date }} <span class="note">({{ {'verified': 'dernière vérification', 'generated': 'production du contenu', 'sources': 'date de la source', 'commit': 'dernier commit', 'fichier': 'date du fichier'}[fraicheur.origine] }})</span></dd>
+      <dt>Fraîcheur</dt><dd>{{ fraicheur.date|quand }} <span class="note">({{ origines[fraicheur.origine] }})</span>{% if commit %}<br>{{ commit|quand }} <span class="note">(dernier commit)</span>{% endif %}</dd>
       {% for f in en_tete.facettes %}
-      <dt>{{ f.libelle }}</dt><dd>{% for v in f.valeurs %}<a class="tag" href="{{ url_page(nom, 'trouver', tag=v.tag) }}">{{ v.libelle }}</a>{% if v.hors_vocabulaire %} <em class="hors">hors vocabulaire</em>{% endif %} {% endfor %}</dd>
+      <dt>{{ f.libelle }}</dt><dd>{% for v in f.valeurs %}<a class="tag" href="{{ url_page(nom, 'explorer', tag=v.tag) }}">{{ v.libelle }}</a>{% if v.hors_vocabulaire %} <em class="hors">hors vocabulaire</em>{% endif %} {% endfor %}</dd>
       {% endfor %}
-      {% if en_tete.tags_libres %}<dt>Tags</dt><dd>{% for t in en_tete.tags_libres %}<a class="tag" href="{{ url_page(nom, 'trouver', tag=t) }}">{{ t }}</a> {% endfor %}</dd>{% endif %}
+      {% if en_tete.tags_libres %}<dt>Tags</dt><dd>{% for t in en_tete.tags_libres %}<a class="tag" href="{{ url_page(nom, 'explorer', tag=t) }}">{{ t }}</a> {% endfor %}</dd>{% endif %}
     </dl>
-    {% if mode_operatoire %}<p><a class="saut" href="#{{ mode_operatoire }}">Aller au mode opératoire</a></p>{% endif %}
+    {% if mode_operatoire %}<p><a class="aller-procedure" href="#{{ mode_operatoire }}">Aller au mode opératoire</a></p>{% endif %}
     <p class="lire-mcp">MCP : <code>kb_read(base="{{ nom }}", path="{{ doc.chemin }}")</code></p>
   </header>
+  {% if derives %}
+  <section class="alerte bloc derive">
+    <h2>À revérifier : ce que cette fiche cite a changé depuis</h2>
+    <ul>{% for d in derives %}<li><a href="{{ url_doc(d.base, d.chemin) }}">{{ titres_amont[(d.base, d.chemin)] }}</a> <code>{{ d.base }}</code> — modifiée {{ d.date_cible|quand }}{% if d.amont %}, dans la section que cette fiche décline{% endif %}</li>{% endfor %}</ul>
+    <p class="note">Cette fiche date de {{ derives[0].date_doc|quand }} (dernier commit, ou dernière vérification si elle est plus récente).</p>
+  </section>
+  {% endif %}
+  {% set g = genealogie %}
+  {% if g.en_attente %}
+  <section class="alerte bloc petit en-attente">
+    <p><strong>{{ g.en_attente|length|nb('proposition en attente la mentionne', 'propositions en attente la mentionnent') }}</strong> — déposées par des sessions, pas encore revues : ce que dit la fiche peut être contesté.</p>
+    <ul>{% for e in g.en_attente %}{% set type = e.frontmatter.get('type', '?') %}<li><span class="type-proposition t-{{ type }}">{{ libelles.LIBELLES_TYPE.get(type, type) }}</span> <a href="{{ url_page(nom, 'propositions/' ~ e.id) }}">{{ e.frontmatter.get('concerns', e.id) }}</a></li>{% endfor %}</ul>
+  </section>
+  {% endif %}
   {% if rendu.tronque %}<p class="alerte">Rendu possiblement incomplet : le document dépasse l'imbrication que le moteur rend. Sa source suit le rendu.</p>{% endif %}
   <article class="corps">{{ rendu.html }}</article>
   {% if rendu.tronque %}<pre class="source">{{ rendu.source }}</pre>{% endif %}
@@ -49,28 +63,61 @@
   {% if en_tete.autres %}
   <details class="frontmatter"><summary>Autres champs du frontmatter</summary><pre>{{ en_tete.autres }}</pre></details>
   {% endif %}
+  <section class="liens" id="liens">
+    <h2>Liens</h2>
+    <details{% if entrants.total and entrants.total <= 10 %} open{% endif %}>
+      <summary><strong>Entrants</strong> — {% if entrants.total or entrants.sommaires %}{{ entrants.liens|nb('lien') }} depuis {{ entrants.total|nb('fiche') }}{% if entrants.sommaires %} et {{ entrants.sommaires|length|nb('sommaire ou journal', 'sommaires ou journaux') }}{% endif %}{% else %}aucune fiche ne cite celle-ci{% endif %}</summary>
+      {% if entrants.declinee %}
+      <h3>Déclinée par</h3>
+      <ul>{% for e in entrants.declinee %}<li><a href="{{ url_doc(e.base, e.chemin) }}">{{ e.titre }}</a>{% if e.base != nom %} <span class="puce-base {{ couleur(e.base) }}"><span class="pastille-base" aria-hidden="true"></span>{{ e.base }}</span>{% endif %}</li>{% endfor %}</ul>
+      {% endif %}
+      {% for base_source, liste in entrants.citee %}
+      <h3>Citée {% if base_source == nom %}dans cette base{% else %}par <span class="puce-base {{ couleur(base_source) }}"><span class="pastille-base" aria-hidden="true"></span>{{ base_source }}</span>{% endif %}</h3>
+      <ul class="colonnes">{% for e in liste[:entrants_par_base] %}<li><a href="{{ url_doc(e.base, e.chemin) }}">{{ e.titre }}</a></li>{% endfor %}</ul>
+      {% if liste|length > entrants_par_base %}<p class="note">Et {{ (liste|length - entrants_par_base)|nb('autre fiche', 'autres fiches') }} : <a href="{{ url_page(base_source, 'explorer', liant=nom ~ ':/' ~ doc.chemin) }}">toutes dans l'Explorer</a>.</p>{% endif %}
+      {% endfor %}
+      {% if entrants.sommaires %}
+      <h3>Sommaires et journaux <span class="note">— citent sans dépendre : ni comptés comme fiches, ni dans l'impact</span></h3>
+      <ul>{% for e in entrants.sommaires %}<li><a href="{{ url_doc(e.base, e.chemin) }}">{{ e.titre }}</a>{% if e.base != nom %} <span class="puce-base {{ couleur(e.base) }}"><span class="pastille-base" aria-hidden="true"></span>{{ e.base }}</span>{% endif %} <span class="chemin">{{ e.chemin }}</span></li>{% endfor %}</ul>
+      {% endif %}
+    </details>
+    {% set n_sortants = sortants.values()|map('length')|sum %}
+    <details{% if n_sortants and n_sortants <= 10 %} open{% endif %}>
+      <summary><strong>Sortants</strong> — {% if n_sortants %}{{ n_sortants|nb('lien') }}{% if sortants.casses %}, dont {{ sortants.casses|length|nb('cassé ou non suivi', 'cassés ou non suivis') }}{% endif %}{% else %}aucun{% endif %}</summary>
+      {% for cle, titre in [('internes', 'Dans cette base'), ('interbases', 'Vers d\'autres bases'), ('externes', 'Externes'), ('casses', 'Cassés ou non suivis')] %}
+      {% if sortants[cle] %}
+      <h3>{{ titre }}</h3>
+      <ul class="colonnes">{% for l in sortants[cle] %}<li>{% if l.href %}<a href="{{ l.href }}"{% if cle == 'externes' %} rel="noopener noreferrer nofollow"{% endif %}>{{ l.titre }}</a>{% else %}<span class="casse" title="{{ l.motif or '' }}">{{ l.brut }}</span>{% endif %}</li>{% endfor %}</ul>
+      {% endif %}
+      {% endfor %}
+    </details>
+  </section>
+  <section class="genealogie">
+    <h2>Histoire de la fiche</h2>
+    {% if g.integrees %}
+    <h3>Propositions intégrées</h3>
+    <ul>{% for e in g.integrees %}<li><a href="{{ url_page(nom, 'propositions/' ~ e.id) }}">{{ e.frontmatter.get('concerns', e.id) }}</a> <span class="note">({{ e.frontmatter.get('resolved-at', '')|quand }})</span></li>{% endfor %}</ul>
+    {% endif %}
+    {% if g.commits %}
+    <h3>Commits</h3>
+    <ol class="commits">{% for c in g.commits %}<li><span class="note">{{ c.date|quand }} · <code>{{ c.court }}</code></span> {{ c.sujet }}</li>{% endfor %}</ol>
+    {% endif %}
+    {% if not (g.integrees or g.commits) %}<p class="note">Aucun historique lisible pour cette fiche.</p>{% endif %}
+  </section>
+  <p class="haut"><a href="#haut">↑ Haut de page</a></p>
 </main>
-<aside class="panneau">
+<aside class="panneau collant">
   {% if rendu.sommaire %}
-  <h2>Sommaire</h2>
-  <ul class="sommaire">{% for niveau, texte, id in rendu.sommaire %}<li class="n{{ niveau }}"><a href="#{{ id }}">{{ texte }}</a></li>{% endfor %}</ul>
+  <nav class="toc" aria-label="Sommaire">
+    <h2>Sommaire</h2>
+    <ul class="sommaire">{% for niveau, texte, id in rendu.sommaire %}<li class="n{{ niveau }}"><a href="#{{ id }}" title="{{ texte }}">{{ texte }}</a></li>{% endfor %}</ul>
+  </nav>
   {% endif %}
-  <h2>Liens entrants <span class="note">{{ entrants.total }}</span></h2>
-  {% if entrants.declinee %}
-  <h3>Déclinée par</h3>
-  <ul>{% for e in entrants.declinee %}<li><a href="{{ url_doc(e.base, e.chemin) }}">{{ e.titre }}</a>{% if e.base != nom %} <code>{{ e.base }}</code>{% endif %}</li>{% endfor %}</ul>
-  {% endif %}
-  {% for base_source, liste in entrants.citee %}
-  <h3>Citée {% if base_source == nom %}dans cette base{% else %}par <code>{{ base_source }}</code>{% endif %}</h3>
-  <ul>{% for e in liste %}<li><a href="{{ url_doc(e.base, e.chemin) }}">{{ e.titre }}</a></li>{% endfor %}</ul>
-  {% endfor %}
-  {% if entrants.total == 0 %}<p class="note">Aucun document ne cite celui-ci.</p>{% endif %}
-  <h2>Liens sortants</h2>
-  {% for cle, titre in [('internes', 'Dans cette base'), ('interbases', 'Vers d\'autres bases'), ('externes', 'Externes'), ('casses', 'Cassés ou non suivis')] %}
-  {% if sortants[cle] %}
-  <h3>{{ titre }}</h3>
-  <ul>{% for l in sortants[cle] %}<li>{% if l.href %}<a href="{{ l.href }}"{% if cle == 'externes' %} rel="noopener noreferrer nofollow"{% endif %}>{{ l.titre }}</a>{% else %}<span class="casse" title="{{ l.motif or '' }}">{{ l.brut }}</span>{% endif %}</li>{% endfor %}</ul>
-  {% endif %}
-  {% endfor %}
+  <h2>Impact</h2>
+  {% if impact %}
+  <p class="impact">Si cette fiche est fausse :{% for n in impact %}<br><a href="{{ url_page(nom, 'explorer', liant=nom ~ ':/' ~ doc.chemin, profondeur=loop.index) }}">{{ n|nb('fiche') }}</a> {% if loop.first %}{{ 'la cite' if n == 1 else 'la citent' }}{% else %}au {{ loop.index }}e degré{% endif %}{% endfor %}</p>
+  {% else %}<p class="note">Aucune fiche ne dépend de celle-ci.</p>{% endif %}
+  <h2>Liens</h2>
+  <p><a href="#liens">{% if entrants.total %}Citée par {{ entrants.total|nb('fiche') }}{% else %}Citée par aucune fiche{% endif %} · {{ n_sortants|nb('lien sortant', 'liens sortants') }}</a></p>
 </aside>
 {% endblock %}

@@ -1,23 +1,75 @@
 {% extends "page.html" %}
-{% import "macros.html" as m %}
-{% block titre %}{{ entree.id }}{% endblock %}
+{% import "macros.html" as m with context %}
+{% block titre %}{{ entree.frontmatter.get('concerns', entree.id) }}{% endblock %}
 {% block fil %}{{ m.fil([(base.title, url_base(nom)), ('Propositions', url_page(nom, 'propositions'))], entree.id) }}{% endblock %}
 {% block contenu %}
+{% set fm = entree.frontmatter %}
+{% set type = fm.get('type', '?') %}
 <main class="principal">
-  {% set fm = entree.frontmatter %}
-  <h1><code>{{ entree.id }}</code> <span class="statut {{ entree.status }}">{{ entree.status }}</span></h1>
+  <nav class="revue-nav">
+    {% if precedente %}<a rel="prev" href="{{ url_page(precedente[0], 'propositions/' ~ precedente[1].id) }}" title="Précédente (touche K)">← précédente</a>{% endif %}
+    <a href="/propositions">toutes les propositions en attente</a>{% if rang is not none %} <span class="note">{{ rang + 1 }} sur {{ en_attente }}</span>{% endif %}
+    {% if suivante %}<a rel="next" href="{{ url_page(suivante[0], 'propositions/' ~ suivante[1].id) }}" title="Suivante (touche J)">suivante →</a>{% endif %}
+  </nav>
+  <p class="surtitre"><span class="type-proposition t-{{ type }}">{{ libelles.LIBELLES_TYPE.get(type, type) }}</span>
+    <span class="statut {{ entree.status }}">{{ libelles.LIBELLES_STATUT[entree.status] }}</span>
+    <code class="note">{{ entree.id }}</code></p>
+  <h1 class="titre-proposition">{% for morceau, url in segments(fm.get('concerns', entree.id)) %}{% if url %}<a href="{{ url }}">{{ morceau }}</a>{% else %}{{ morceau }}{% endif %}{% endfor %}</h1>
   {% if entree.inconsistent %}<p class="alerte">Incohérence : le frontmatter dit « {{ entree.declared_status }} », l'emplacement « {{ entree.status }} » — l'emplacement fait foi.</p>{% endif %}
+
+  {% for rr in entrantes if rr.nature in ('corrigée par', 'annulée par') %}
+  {% if loop.first %}<section class="alerte bloc relation"><h2>À lire avant de trancher</h2><ul>{% endif %}
+    <li>{{ rr.nature|capitalize }} <a href="{{ url_page(rr.base, 'propositions/' ~ rr.id) }}"><code>{{ rr.id }}</code></a>
+      ({{ libelles.LIBELLES_STATUT.get(statuts_de.get((rr.base, rr.id)), '?') }}){% if rr.base != nom %} <code>{{ rr.base }}</code>{% endif %}</li>
+  {% if loop.last %}</ul></section>{% endif %}
+  {% endfor %}
+  {% set autres_entrantes = entrantes|rejectattr('nature', 'in', ['corrigée par', 'annulée par'])|list %}
+  {% if sortantes or autres_entrantes %}
+  <ul class="relations">
+    {% for rr in sortantes %}<li>{{ rr.nature|capitalize }} <a href="{{ url_page(rr.base, 'propositions/' ~ rr.id) }}"><code>{{ rr.id }}</code></a> ({{ libelles.LIBELLES_STATUT.get(statuts_de.get((rr.base, rr.id)), '?') }})</li>{% endfor %}
+    {% for rr in autres_entrantes %}<li>{{ rr.nature|capitalize }} <a href="{{ url_page(rr.base, 'propositions/' ~ rr.id) }}"><code>{{ rr.id }}</code></a> ({{ libelles.LIBELLES_STATUT.get(statuts_de.get((rr.base, rr.id)), '?') }})</li>{% endfor %}
+  </ul>
+  {% endif %}
+
   <dl class="meta">
-    <dt>Type</dt><dd>{{ fm.get('type', '?') }}</dd>
-    <dt>Objet</dt><dd>{{ fm.get('concerns', '') }}</dd>
-    <dt>Confiance</dt><dd>{{ fm.get('confidence', '') }}</dd>
-    <dt>Déposée</dt><dd>{{ fm.get('submitted-at', '')|date }} par {{ fm.get('submitted-by', '') }} <span class="note">(déclaratif, non authentifié)</span></dd>
-    <dt>Sources</dt><dd><ul>{% for s in liste(fm.get('sources')) %}<li>{{ s }}</li>{% endfor %}</ul></dd>
-    {% if fm.get('resolved-at') %}<dt>Résolue</dt><dd>{{ fm.get('resolved-at')|date }} — {{ fm.get('resolution', '') }}</dd>{% endif %}
+    <dt>Confiance</dt><dd>{{ libelles.LIBELLES_CONFIANCE.get(fm.get('confidence'), fm.get('confidence', '?')) }}</dd>
+    <dt>Déposée</dt><dd>{{ fm.get('submitted-at', '')|quand }}, par <span title="{{ fm.get('submitted-by', '') }}">{{ fm.get('submitted-by', '') }}</span> <span class="note">(déclaratif, non authentifié)</span></dd>
+    {% if fm.get('resolved-at') %}<dt>Tranchée</dt><dd>{{ fm.get('resolved-at')|quand }} — {{ libelles.LIBELLES_STATUT.get(fm.get('resolution'), fm.get('resolution', '')) }}</dd>{% endif %}
     {% if fm.get('rejection-reason') %}<dt>Motif du rejet</dt><dd>{{ fm.get('rejection-reason') }}</dd>{% endif %}
     {% if fm.get('integrated-into') %}<dt>Intégrée dans</dt><dd>{% for c in liste(fm.get('integrated-into')) %}<a href="{{ url_doc(nom, c) }}">{{ c }}</a>{% if not loop.last %}, {% endif %}{% endfor %}</dd>{% endif %}
   </dl>
-  <p class="note">Le texte d'une proposition est déposé par une session : c'est une affirmation à vérifier, pas de la connaissance.</p>
+  <p class="note">Ce texte a été déposé par une session : c'est une affirmation à vérifier, pas de la connaissance.</p>
   <article class="corps proposition">{{ rendu.html }}</article>
+  {% set sources = liste(fm.get('sources')) %}
+  {% if sources %}
+  <section class="sources"><h2>Sources déclarées</h2>
+    <ul>{% for s in sources %}<li>{% for morceau, url in segments(s) %}{% if url %}<a href="{{ url }}">{{ morceau }}</a>{% else %}{{ morceau }}{% endif %}{% endfor %}</li>{% endfor %}</ul>
+  </section>
+  {% endif %}
 </main>
+<aside class="panneau collant">
+  <h2>Fiche visée</h2>
+  {% if visees %}
+  {% for (b, chemin), d in visees %}
+  <div class="apercu {{ couleur(b) }}">
+    <p class="surtitre">{% if d.type %}<span class="type">{{ d.type }}</span>{% endif %}{% if b != nom %} <span class="puce-base"><span class="pastille-base" aria-hidden="true"></span>{{ b }}</span>{% endif %}</p>
+    <h3><a href="{{ url_doc(b, chemin) }}">{{ d.titre }}</a></h3>
+    {% if d.frontmatter.get('description') %}<p class="note">{{ d.frontmatter.get('description')|truncate(220) }}</p>{% endif %}
+    {% set titres = d.sections|selectattr('level', 'le', 2)|list %}
+    {% if titres %}<ul class="sommaire">{% for h in titres[:12] %}<li class="n{{ h.level }}"><a href="{{ url_doc(b, chemin) }}#{{ ancre(h.text) }}">{{ h.text|replace('`', '') }}</a></li>{% endfor %}</ul>{% endif %}
+  </div>
+  {% endfor %}
+  {% else %}<p class="note">Le texte ne désigne aucune fiche par son chemin.</p>{% endif %}
+  {% if proches %}
+  <h2>Fiches proches</h2>
+  <p class="note">D'après les mots de l'objet : un ajout répète-t-il l'existant ?</p>
+  <ul>{% for d in proches %}<li><a href="{{ url_doc(nom, d.chemin) }}">{{ d.titre }}</a></li>{% endfor %}</ul>
+  {% endif %}
+  {% if entree.status == 'pending' %}
+  <h2>Pour trancher</h2>
+  <p class="note">La revue se fait hors de cette interface, par le rôle gestionnaire : une session Claude qui suit la skill <code>kb-review</code> sur la base <code>{{ nom }}</code>. Pour voir ce qui attend :</p>
+  <p class="commande"><code>okf-review inventory {{ nom }}</code> <button type="button" class="copier" hidden data-copier="okf-review inventory {{ nom }}">copier</button></p>
+  <p class="commande"><code>{{ entree.id }}</code> <button type="button" class="copier" hidden data-copier="{{ entree.id }}">copier</button></p>
+  {% endif %}
+</aside>
 {% endblock %}

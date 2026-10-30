@@ -1,0 +1,40 @@
+{% extends "page.html" %}
+{% block titre %}Aller à{% if q %} « {{ q }} »{% endif %}{% endblock %}
+{% block contenu %}
+<main class="principal">
+  <h1>Aller à…</h1>
+  <form class="saut-page" action="/aller" method="get" role="search">
+    <input type="search" name="q" value="{{ q }}" placeholder="Base, fiche, proposition…" aria-label="Aller à une base, une fiche, une proposition" autofocus>
+    <button type="submit">Aller</button>
+  </form>
+  {# La palette de okf.js lit ce bloc tel quel : il ne dépend de rien d'autre dans la page. #}
+  <div class="palette-groupes">
+    {% if bases %}
+    <h2 class="groupe">Bases</h2>
+    <ul class="palette">{% for b in bases %}
+      <li><a href="{{ url_base(b) }}"><span class="quoi">{{ titres[b] }}</span><span class="ou"><span class="puce-base {{ couleur(b) }}"><span class="pastille-base" aria-hidden="true"></span>{{ b }}</span></span></a></li>
+    {% endfor %}</ul>
+    {% endif %}
+    {% if candidats %}
+    <h2 class="groupe">Fiches</h2>
+    <ul class="palette">{% for rang, b, d, par in candidats %}
+      <li><a href="{{ url_doc(b, d.chemin) }}"><span class="quoi">{{ d.titre }}</span>{% if par %} <span class="note">aussi appelé « {{ par }} »</span>{% endif %}
+        <span class="ou">{% if d.type %}<span class="type">{{ d.type }}</span>{% endif %} <span class="puce-base {{ couleur(b) }}"><span class="pastille-base" aria-hidden="true"></span>{{ b }}</span> <span class="chemin">{{ d.chemin }}</span></span></a></li>
+    {% endfor %}</ul>
+    {% if plus %}<p class="note">Et {{ plus|nb('autre fiche', 'autres fiches') }} dont le titre répond.</p>{% endif %}
+    {% endif %}
+    {% if propositions %}
+    <h2 class="groupe">Propositions</h2>
+    <ul class="palette">{% for b, e in propositions %}{% set type = e.frontmatter.get('type', '?') %}
+      <li><a href="{{ url_page(b, 'propositions/' ~ e.id) }}"><span class="quoi">{{ e.frontmatter.get('concerns', e.id) }}</span>
+        <span class="ou"><span class="type-proposition t-{{ type }}">{{ libelles.LIBELLES_TYPE.get(type, type) }}</span> <span class="statut {{ e.status }}">{{ libelles.LIBELLES_STATUT[e.status] }}</span> <span class="puce-base {{ couleur(b) }}"><span class="pastille-base" aria-hidden="true"></span>{{ b }}</span> <code class="note">{{ e.id }}</code></span></a></li>
+    {% endfor %}</ul>
+    {% endif %}
+    {% if q %}
+    <h2 class="groupe">Dans le texte</h2>
+    <ul class="palette"><li class="chercher"><a href="{{ url_page(none, 'explorer', q=q) }}"><span class="quoi">Chercher « {{ q }} » dans tout le texte des bases</span><span class="ou note">Explorer — avec filtres et répartition</span></a></li></ul>
+    {% endif %}
+  </div>
+  <p class="note">Le saut va droit à une base, une fiche ou une proposition, par son nom, son titre ou son identifiant ; l'Explorer cherche dans le texte et filtre. Un nom de base, une référence <code>base:/chemin</code>, un identifiant de proposition ou un titre exact mènent directement à leur page.</p>
+</main>
+{% endblock %}

@@ -1,0 +1,48 @@
+{% extends "page.html" %}
+{% block titre %}Propositions à trancher{% endblock %}
+{% block contenu %}
+<main class="principal pleine">
+  <h1>Propositions à trancher</h1>
+  <p class="intro">Ce que des sessions ont déposé et qu'aucune revue n'a encore tranché. Une correction ou une suite se range sous la proposition qu'elle vise. La revue se fait hors de cette interface, par le rôle gestionnaire (<code>okf-review</code>) : copiez l'identifiant d'une proposition pour la lui désigner.</p>
+  <form method="get" class="filtres-boite auto">
+    <div class="filtres-puces" role="group" aria-label="Bases">
+      <span class="etiquette-groupe">Bases</span>
+      {% for b, n in par_base %}<label class="puce {{ couleur(b) }}"><input type="checkbox" name="base" value="{{ b }}"{% if b in noms_demandes %} checked{% endif %}><span class="pastille-base" aria-hidden="true"></span>{{ b }} <span class="compte">{{ n }}</span></label>{% endfor %}
+      <span class="aide">{% if noms_demandes %}{{ noms_demandes|length|nb('base choisie', 'bases choisies') }}{% else %}aucune choisie : toutes{% endif %}</span>
+    </div>
+    <div class="filtres-ligne">
+      <label class="etiquette-champ">Type <select name="type"><option value="">tous</option>{% for t, n in par_type %}<option value="{{ t }}"{% if t == type_voulu %} selected{% endif %}>{{ libelles.LIBELLES_TYPE.get(t, t) }} ({{ n }})</option>{% endfor %}</select></label>
+      <label class="etiquette-champ">Ordre <select name="ordre"><option value="anciennes"{% if ordre == 'anciennes' %} selected{% endif %}>les plus anciennes d'abord</option><option value="recentes"{% if ordre == 'recentes' %} selected{% endif %}>les plus récentes d'abord</option></select></label>
+      <button type="submit">Filtrer</button>
+    </div>
+  </form>
+  {% macro pagination() %}{% if pages > 1 %}<nav class="pages">{% if page > 1 %}<a href="{{ url_page(none, 'propositions', base=noms_demandes, type=type_voulu, ordre=ordre, page=page - 1) }}">← page précédente</a>{% endif %}<span>page {{ page }} sur {{ pages }}</span>{% if page < pages %}<a href="{{ url_page(none, 'propositions', base=noms_demandes, type=type_voulu, ordre=ordre, page=page + 1) }}">page suivante →</a>{% endif %}</nav>{% endif %}{% endmacro %}
+  <p class="total"><strong>{{ total|nb('proposition') }}</strong></p>
+  {{ pagination() }}
+  {% if lignes %}
+  <table class="boite">
+    <thead><tr><th>Heure</th><th>Base</th><th>Type</th><th>Objet</th><th>Déposée par</th></tr></thead>
+    <tbody>{% for l in lignes %}{% set e = l.e %}{% set type = e.frontmatter.get('type', '?') %}
+      {% if l.nouveau_jour %}<tr class="jour"><th colspan="5" scope="rowgroup">{{ l.nouveau_jour }}</th></tr>{% endif %}
+      <tr>
+        <td class="nombre" title="{% if l.heures is not none %}il y a {% if l.heures < 48 %}{{ l.heures|nb('heure') }}{% else %}{{ (l.heures // 24)|nb('jour') }}{% endif %}{% endif %}">{{ l.heure }}</td>
+        <td><a class="puce-base {{ couleur(l.base) }}" href="{{ url_page(l.base, 'propositions', statut='pending') }}"><span class="pastille-base" aria-hidden="true"></span>{{ l.base }}</a></td>
+        <td><span class="type-proposition t-{{ type }}">{{ libelles.LIBELLES_TYPE.get(type, type) }}</span></td>
+        <td class="objet"><a href="{{ url_page(l.base, 'propositions/' ~ e.id) }}">{{ e.frontmatter.get('concerns', e.id) }}</a>
+          <br><code class="note">{{ e.id }}</code> <button type="button" class="copier" hidden data-copier="{{ e.id }}" aria-label="Copier l'identifiant {{ e.id }}">copier</button>
+          {% if l.fil %}
+          <details class="fil-corrections"><summary>{% set c = l.fil|selectattr('sortantes')|map(attribute='sortantes')|map('first')|map(attribute='nature')|list %}{{ l.fil|length|nb('réponse en attente', 'réponses en attente') }} : {{ c|unique|join(', ') }}</summary>
+            <ul class="corrections">{% for f in l.fil %}{% set fe = f.e %}{% set ft = fe.frontmatter.get('type', '?') %}
+              <li>{% for rr in f.sortantes[:1] %}<span class="note">{{ rr.nature }}</span> {% endfor %}<span class="type-proposition t-{{ ft }}">{{ libelles.LIBELLES_TYPE.get(ft, ft) }}</span>
+                <a href="{{ url_page(f.base, 'propositions/' ~ fe.id) }}">{{ fe.frontmatter.get('concerns', fe.id) }}</a>
+                <br><span class="note">{{ fe.frontmatter.get('submitted-at', '')|quand }} · {{ fe.frontmatter.get('submitted-by', '') }} ·</span> <code class="note">{{ fe.id }}</code> <button type="button" class="copier" hidden data-copier="{{ fe.id }}" aria-label="Copier l'identifiant {{ fe.id }}">copier</button></li>
+            {% endfor %}</ul>
+          </details>
+          {% endif %}</td>
+        <td class="depose-par">{{ e.frontmatter.get('submitted-by', '') }}</td></tr>
+    {% endfor %}</tbody>
+  </table>
+  {{ pagination() }}
+  {% else %}<p>Rien à trancher.</p>{% endif %}
+</main>
+{% endblock %}

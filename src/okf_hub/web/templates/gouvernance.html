@@ -1,0 +1,36 @@
+{% extends "page.html" %}
+{% import "macros.html" as m with context %}
+{% block titre %}Gouvernance — {{ base.title }}{% endblock %}
+{% block fil %}{{ m.fil([(base.title, url_base(nom))], 'Gouvernance') }}{% endblock %}
+{% block contenu %}
+<main class="principal">
+  <h1>{{ titre or 'Gouvernance' }}</h1>
+  {{ m.onglets(nom, 'gouvernance') }}
+  {% if statut == 'draft' %}<p class="alerte brouillon-bandeau"><span class="badge brouillon"><span aria-hidden="true">✎</span> brouillon</span> Ces règles peuvent encore évoluer ; les propositions restent acceptées et revues.</p>{% endif %}
+  <p class="mcp">Même contenu par MCP : <code>kb_governance(base="{{ nom }}")</code> — ces fichiers sont hors corpus, <code>kb_read</code> ne les sert pas.</p>
+  <article class="corps">{{ rendu.html }}</article>
+  {% if schema %}
+  <details class="frontmatter"{% if not profil.enrichi %} open{% endif %}><summary><code>schema.yaml</code> — le frontmatter du corpus{% if profil.enrichi %}, et le profil de la base{% endif %}</summary><pre>{{ schema }}</pre></details>
+  {% endif %}
+</main>
+<aside class="panneau">
+  <h2>Statut</h2>
+  <p>{% if statut == 'draft' %}<span class="badge brouillon">brouillon</span> les règles peuvent évoluer ; les propositions restent acceptées.{% else %}<span class="badge verifie">stable</span>{% endif %}</p>
+  <h2>Revue</h2>
+  <p>Humaine, proposition par proposition (<code>review: {{ base.review }}</code>).</p>
+  {% if checks %}
+  <h3>Contrôles déclarés</h3>
+  <ol class="checks">{% for c in checks %}<li><code>{{ c }}</code></li>{% endfor %}</ol>
+  {% if approuvee is not none %}<p class="note">{% if approuvee %}Approuvés par l'opérateur de ce hub (<code>trusted-checks</code>) : <code>okf-review verify</code> les rejoue.{% else %}Non approuvés sur ce hub : <code>okf-review</code> ne les lance pas.{% endif %}</p>{% endif %}
+  {% endif %}
+  {% if base.cites is not none %}<h3>Bases qu'elle peut citer</h3><p>{% for c in base.cites %}<a href="{{ url_base(c) }}">{{ c }}</a>{% if not loop.last %}, {% endif %}{% else %}aucune{% endfor %}</p>{% endif %}
+  <h2>Profil</h2>
+  {% if not profil.enrichi %}<p class="note">La base ne déclare pas de profil : rôles, facettes et vues n'enrichissent pas son affichage.</p>{% endif %}
+  {% if roles_champs %}<h3>Rôles des champs</h3><ul>{% for c in roles_champs %}<li><code>{{ c.nom }}</code> → {{ c.role }}{% if c.valeurs %} <span class="note">({{ c.valeurs|length }} valeurs)</span>{% endif %}</li>{% endfor %}</ul>{% endif %}
+  {% if profil.sections %}<h3>Sections à rôle</h3><ul>{% for titre, role in profil.sections.items() %}<li>« {{ titre }} » → {{ role }}</li>{% endfor %}</ul>{% endif %}
+  {% if profil.types %}<h3>Types déclarés</h3><ul class="effectifs">{% for e in types %}{% if e.declare is not false %}<li><a href="{{ url_page(nom, 'explorer', type=e.valeur) }}">{{ e.valeur }}</a> <span>{{ e.nombre }}</span></li>{% endif %}{% endfor %}</ul>{% endif %}
+  {% if profil.facettes %}<h3>Facettes</h3><ul>{% for n, f in profil.facettes.items() %}<li>{{ f.libelle or n }} <code>{{ n }}{{ profil.separateur or '' }}…</code> <span class="note">{{ f.valeurs|length|nb('valeur') }}</span></li>{% endfor %}</ul>{% endif %}
+  {% if profil.vues %}<h3>Vues</h3><ul>{% for v in profil.vues %}<li><a href="{{ url_page(nom, 'vues/' ~ loop.index0) }}">{{ v.titre }}</a> <span class="note">{{ v.sorte }}</span></li>{% endfor %}</ul>{% endif %}
+  {% if profil.avertissements %}<h3>Avertissements du profil</h3><ul class="avertissements">{% for a in profil.avertissements %}<li>{{ a }}</li>{% endfor %}</ul>{% endif %}
+</aside>
+{% endblock %}

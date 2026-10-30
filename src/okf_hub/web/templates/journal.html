@@ -1,5 +1,5 @@
 {% extends "page.html" %}
-{% import "macros.html" as m %}
+{% import "macros.html" as m with context %}
 {% block titre %}Journal — {{ base.title }}{% endblock %}
 {% block fil %}{{ m.fil([(base.title, url_base(nom))], 'Journal') }}{% endblock %}
 {% block contenu %}
@@ -11,7 +11,7 @@
 <aside class="panneau">
   <h2>Historique git</h2>
   {% if commits %}
-  <ol class="commits">{% for c in commits %}<li><span class="note">{{ c.date|date }} · <code>{{ c.court }}</code></span><br>{{ c.sujet }}</li>{% endfor %}</ol>
+  <ol class="commits">{% for c, sorte, sujet in commits %}<li>{% if sorte != 'modification' %}<span class="sorte-commit">{{ sorte }}</span> {% endif %}{% for morceau, url in segments(sujet) %}{% if url %}<a href="{{ url }}">{{ morceau }}</a>{% else %}{{ morceau }}{% endif %}{% endfor %}<br><span class="note">{{ c.date|quand }} · <code title="{{ c.sujet }}">{{ c.court }}</code></span></li>{% endfor %}</ol>
   <p class="note">Les {{ historique }} derniers commits.</p>
   {% else %}<p class="note">Aucun historique lisible.</p>{% endif %}
 </aside>

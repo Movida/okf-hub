@@ -1,0 +1,61 @@
+{% extends "page.html" %}
+{% block titre %}À propos{% endblock %}
+{% block contenu %}
+<main class="principal">
+  <h1>À propos de cette interface</h1>
+  <p>Ce site affiche les bases de connaissance d'un hub okf-hub, <strong>en lecture seule</strong>. Il lit les fichiers et l'historique git des bases sur le disque, et ne fait autorité sur rien : la vérité est dans les dépôts, dont il ne modifie aucun fichier (pas même un verrou git). Toutes ses adresses sont en GET.</p>
+
+  <h2>Qui voit quoi</h2>
+  {% if web.equipe %}
+  <p>Mode <strong>équipe</strong> : l'identité vient du proxy d'authentification de l'organisation, et n'est crue que sur une connexion venue de ce proxy. Une base n'est montrée qu'aux personnes ou groupes que la configuration du hub lui ouvre ; une base que la configuration ne nomme pas n'est montrée à personne. Une base qui ne vous est pas ouverte est introuvable, exactement comme une base absente. Les liens entrants et le graphe ne comptent que les bases qui vous sont ouvertes. {{ nb_visibles|nb('base vous est ouverte', 'bases vous sont ouvertes') }}.</p>
+  {% else %}
+  <p>Mode <strong>local</strong> : pas d'authentification, donc toutes les bases du hub sont visibles ({{ nb_installees }}), et l'interface n'écoute que sur la machine (<code>{{ web.host }}:{{ web.port }}</code>) — elle refuse de démarrer sur une autre adresse. Pour la partager, le mode équipe passe par un proxy authentifié, avec une visibilité par base.</p>
+  {% endif %}
+
+  <h2>Ce qu'elle reflète du contrat MCP</h2>
+  <table>
+    <thead><tr><th>Page</th><th>Outil MCP</th></tr></thead>
+    <tbody>
+      <tr><td>Bases</td><td><code>kb_list</code></td></tr>
+      <tr><td>Explorer</td><td><code>kb_find</code> (critères) et <code>kb_search</code> (texte) — la page donne l'appel équivalent</td></tr>
+      <tr><td>Une fiche</td><td><code>kb_read</code>, et <code>kb_find links_to</code> pour les liens entrants</td></tr>
+      <tr><td>Gouvernance</td><td><code>kb_governance</code></td></tr>
+      <tr><td>Propositions</td><td><code>kb_proposal_status</code></td></tr>
+      <tr><td>Graphe, État</td><td><code>kb_hub_rescan</code> (rapport et dépendances)</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Où elle va au-delà, et pourquoi</h2>
+  <ul>
+    <li><strong>Le corps des propositions</strong> est affiché ; <code>kb_proposal_status</code> ne le rend pas, par économie de tokens. Ce texte est une affirmation déposée par une session, à vérifier — pas de la connaissance.</li>
+    <li><strong>Les propositions en attente sont cherchées</strong> par l'Explorer, et nommées sur les fiches qu'elles mentionnent, toujours marquées « non revues ». MCP ne les cherche pas : son § 5.2 les exclut de la recherche.</li>
+    <li><strong>L'historique git</strong> (journal, histoire d'une fiche, chronologie) et l'<strong>état des dépôts</strong> (commits non poussés) : MCP n'expose pas git.</li>
+    <li>Sur MCP aussi, <code>kb_find</code> sait ce que cette interface montre en données : texte, amont modifié, impact par degré, priorité de ré-audit.</li>
+  </ul>
+
+  <h2>Ce qu'elle ne montre pas</h2>
+  <ul>
+    <li>Les fichiers hors corpus d'une base, sauf <code>GOVERNANCE.md</code> et <code>schema.yaml</code> (page Gouvernance) ; seules les images du corpus sont servies.</li>
+    <li>Aucune page n'écrit : pour contribuer, une session dépose une proposition par <code>kb_propose</code>, qu'un humain revoit.</li>
+  </ul>
+
+  <h2 id="glossaire">Glossaire</h2>
+  <p>Les mêmes mots, avec le même sens, sur toutes les pages.</p>
+  <dl class="glossaire">
+    <dt id="g-fiche">Fiche</dt><dd>Un document de connaissance du corpus. Les fichiers réservés (<code>index.md</code>, <code>log.md</code>) n'en sont pas : ils ne comptent nulle part comme fiches. La page État montre les deux nombres, fichiers et fiches.</dd>
+    <dt id="g-a-trancher">Proposition à trancher</dt><dd>Un texte déposé par une session (<code>kb_propose</code>) qu'aucune revue n'a encore intégré ni rejeté. Elle se tranche hors de cette interface, par le rôle gestionnaire. Tant qu'elle attend, c'est une affirmation à vérifier, pas de la connaissance.</dd>
+    <dt id="g-a-reverifier">Fiche à revérifier</dt><dd>Une fiche qui cite un document d'une autre base modifié après elle : ce qu'elle en dit peut ne plus être vrai.</dd>
+    <dt id="g-priorite-de-reaudit">Priorité de ré-audit</dt><dd>Un ordre, pas un état : l'âge d'une fiche multiplié par le nombre de fiches qui la citent, doublé si son amont a changé.</dd>
+    <dt id="g-manque">Manque</dt><dd>Ce que la base devrait contenir et ne contient pas. L'onglet en compte deux sortes : un document qu'au moins une fiche cite et qui n'existe pas, et une proposition de type question encore en attente. La page en montre davantage : ce que le profil déclare sans que le corpus l'ait, et les sections de rôle <code>gaps</code>.</dd>
+    <dt id="g-pilier">Fiche pilier</dt><dd>Parmi les fiches d'une base, l'une des plus citées par les autres.</dd>
+    <dt id="g-amont">Amont</dt><dd>Ce qu'une fiche décline, souvent dans une autre base. Une base déclare les bases qu'elle peut citer (<code>cites</code>) ; l'amont ignore l'aval.</dd>
+    <dt id="g-impact">Impact</dt><dd>Les fiches qui dépendent d'une fiche, directement ou de proche en proche : ce qui serait faux avec elle.</dd>
+    <dt id="g-fraicheur">Fraîcheur</dt><dd>La date la plus parlante d'une fiche, et d'où elle vient : vérification, production, source, sinon dernier commit.</dd>
+    <dt id="g-gouvernance-brouillon">Gouvernance en brouillon</dt><dd>Les règles de la base (son <code>GOVERNANCE.md</code>) peuvent encore évoluer : les propositions restent acceptées et revues, mais une règle peut changer d'une revue à l'autre.</dd>
+    <dt id="g-base-du-hub">Base du hub</dt><dd>Une base qui décrit le hub lui-même (comment chercher, retours d'usage), et non un domaine. Elle reste en gris.</dd>
+  </dl>
+  <h2>Adresses</h2>
+  <p>Stables, pour qu'une autre interface y renvoie : <code>/b/&lt;base&gt;/</code>, <code>/b/&lt;base&gt;/&lt;chemin&gt;.md</code>, <code>/b/&lt;base&gt;/&lt;dossier&gt;/</code>, et les pages d'une base sous <code>/b/&lt;base&gt;/-/</code> (explorer, manques, gouvernance, propositions, journal, vues). Le segment <code>-</code> sépare ces pages du corpus.</p>
+  <p class="note">okf-hub {{ version }} · spécification § 5 bis.</p>
+</main>
+{% endblock %}

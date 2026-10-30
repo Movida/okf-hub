@@ -19,8 +19,9 @@ from typing import Mapping
 
 from ..errors import INVALID_INPUT, ToolError
 from ..mdutil import normalize_heading
+from ..search import run_search
 from .confiance import UTC, date_declaree, mois_avant
-from .modele import BaseModele, Doc, Entrant, Fraicheur, Lecteur
+from .modele import BaseModele, Derive, Doc, Fraicheur, Lecteur
 from .profil import Profil
 
 SANS_TYPE = "(sans type)"
@@ -32,9 +33,14 @@ MOIS_MAX = 600
 
 #: Paramètres de `kb_find` qui sont des critères — ceux qu'une vue peut porter.
 CLES_CRITERES = (
-    "type", "tags", "fields", "section", "without_section", "under", "links_to",
-    "older_than_months",
+    "query", "type", "tags", "fields", "section", "without_section", "under", "links_to",
+    "links_to_depth", "upstream_changed", "older_than_months", "sort",
 )
+
+#: Ordres de la liste (rév. 4.6). Défaut : par chemin ; les plus anciens d'abord
+#: sous `older_than_months` ; par pertinence sous `query`.
+TRIS = ("path", "relevance", "oldest", "most_cited", "reaudit")
+PROFONDEUR_MAX = 3
 
 
 @dataclass(frozen=True)
@@ -48,9 +54,20 @@ class Criteres:
     links_to: str | None = None
     """Référence brute `<base>:/<chemin>` ou chemin ; résolue par l'appelant."""
     older_than_months: int | None = None
+    query: str | None = None
+    """Termes que le texte du document contient tous (comme `kb_search` en
+    mode keyword, sans son repli en OU : un filtre ne devine pas)."""
+    query_regex: bool = False
+    """Interface web seulement : `query` est une expression ripgrep."""
+    links_to_depth: int = 1
+    """Avec `links_to` : documents qui citent la cible jusqu'à ce degré."""
+    upstream_changed: bool = False
+    sort: str | None = None
 
     def decrire(self) -> str:
         parties = []
+        if self.query:
+            parties.append(f"texte « {self.query} »" + (" (regex)" if self.query_regex else ""))
         if self.type is not None:
             parties.append(f"type={self.type}")
         for tag in self.tags:
@@ -69,10 +86,23 @@ class Criteres:
         if self.under:
             parties.append(f"sous {self.under}")
         if self.links_to:
-            parties.append(f"liant {self.links_to}")
+            degre = f", jusqu'au degré {self.links_to_depth}" if self.links_to_depth > 1 else ""
+            parties.append(f"citant {self.links_to}{degre}")
+        if self.upstream_changed:
+            parties.append("amont modifié depuis")
         if self.older_than_months:
             parties.append(f"plus de {self.older_than_months} mois")
+        if self.sort:
+            parties.append(f"tri {self.sort}")
         return " ; ".join(parties) or "aucun critère (tous les documents)"
+
+    @property
+    def tri(self) -> str:
+        if self.sort:
+            return self.sort
+        if self.older_than_months:
+            return "oldest"
+        return "relevance" if self.query else "path"
 
 
 def lire_criteres(arguments: Mapping) -> Criteres:
@@ -122,7 +152,27 @@ def lire_criteres(arguments: Mapping) -> Criteres:
             INVALID_INPUT, f"paramètre 'older_than_months' : entier entre 1 et {MOIS_MAX} attendu"
         )
 
+    profondeur = arguments.get("links_to_depth")
+    if profondeur is None:
+        profondeur = 1
+    if isinstance(profondeur, bool) or not isinstance(profondeur, int) or not 1 <= profondeur <= PROFONDEUR_MAX:
+        raise ToolError(INVALID_INPUT, f"paramètre 'links_to_depth' : entier entre 1 et {PROFONDEUR_MAX} attendu")
+    amont = arguments.get("upstream_changed")
+    if amont is not None and not isinstance(amont, bool):
+        raise ToolError(INVALID_INPUT, "paramètre 'upstream_changed' : booléen attendu")
+    tri = chaine("sort")
+    if tri is not None and tri not in TRIS:
+        raise ToolError(INVALID_INPUT, f"paramètre 'sort' : une valeur parmi {', '.join(TRIS)}")
+    query = chaine("query")
+    if tri == "relevance" and not query:
+        raise ToolError(INVALID_INPUT, "paramètre 'sort' : « relevance » suppose `query`")
+
     return Criteres(
+        query=query,
+        query_regex=bool(arguments.get("query_regex")),
+        links_to_depth=profondeur,
+        upstream_changed=bool(amont),
+        sort=tri,
         type=chaine("type"),
         tags=tuple(t.strip() for t in tags),
         fields=tuple(lus),
@@ -138,10 +188,24 @@ def lire_criteres(arguments: Mapping) -> Criteres:
 class Trouve:
     doc: Doc
     fraicheur: Fraicheur | None = None
-    """Calculée quand la requête porte sur l'ancienneté."""
+    """Calculée quand la requête porte sur l'ancienneté ou la trie par elle."""
     amont: bool = False
     """Avec `links_to` : le lien est dans une section de rôle `upstream` du
     document qui cite — une relation « décline », pas une simple mention."""
+    derives: tuple[Derive, ...] = ()
+    """Documents d'autres bases cités par celui-ci et modifiés après lui."""
+    citations: int | None = None
+    """Documents qui le citent ; calculé pour les tris qui en dépendent."""
+    score: float | None = None
+    """Tri `reaudit` : âge en mois × (1 + citations), doublé par une dérive."""
+    degre: int | None = None
+    """Avec `links_to` : 1 si le document cite la cible, 2 s'il cite un document
+    qui la cite…"""
+    occurrences: int | None = None
+    """Avec `query` : occurrences des termes dans le document — comparables d'une
+    base à l'autre, contrairement au rang."""
+    lignes: tuple[int, ...] = ()
+    """Avec `query` : lignes touchées (base 1), pour les extraits."""
 
 
 def titres_de_section(profil: Profil, section: str) -> frozenset[str]:
@@ -192,14 +256,16 @@ def filtrer(
     modele: BaseModele,
     criteres: Criteres,
     *,
-    entrants: tuple[Entrant, ...] | None = None,
+    cible: tuple[str, str] | None = None,
+    bases: frozenset[str] | None = None,
     maintenant: dt.datetime | None = None,
 ) -> list[Trouve]:
-    """Documents de `modele` qui satisfont tous les critères.
+    """Documents de `modele` qui satisfont tous les critères, dans l'ordre de
+    `criteres.tri`.
 
-    `entrants` : les liens qui arrivent sur la cible de `links_to`, résolue par
-    l'appelant — obligatoire si le critère est posé. Avec `older_than_months`,
-    les plus anciens d'abord ; sinon, dans l'ordre des chemins.
+    `cible` : le document de `links_to`, résolu par l'appelant — obligatoire si
+    le critère est posé. `bases` : celles dont les citations comptent (impact,
+    tri par citations) ; None : toutes.
     """
     profil = modele.profil
     docs = modele.concepts()
@@ -219,34 +285,85 @@ def filtrer(
         prefixe = prefixe_de(criteres.under)
         docs = [d for d in docs if d.chemin == prefixe or d.chemin.startswith(prefixe)]
 
-    amont: dict[str, bool] = {}
-    if criteres.links_to:
-        if entrants is None:
-            raise ValueError("links_to sans liens entrants résolus")
-        for e in entrants:
-            if e.base != modele.nom:
-                continue
-            # La section est celle du document qui cite : c'est le profil de sa
-            # base, donc celui de `modele`, qui dit si elle tient le rôle upstream.
-            en_amont = profil.role_de_section(e.lien.section) == "upstream"
-            amont[e.chemin] = amont.get(e.chemin, False) or en_amont
-        docs = [d for d in docs if d.chemin in amont]
+    rang: dict[str, int] = {}
+    touchees: dict[str, tuple[int, ...]] = {}
+    occurrences: dict[str, int] = {}
+    if criteres.query:
+        issue = run_search(modele.base, criteres.query, "regex" if criteres.query_regex else "keyword", 10**9)
+        if not issue.partial:  # le repli en OU de kb_search n'est pas un filtre
+            for i, h in enumerate(issue.docs):
+                rel = modele.base.rel_path(h.path)
+                rang[rel] = i
+                touchees[rel] = tuple(h.lines)
+                occurrences[rel] = h.match_count
+        docs = [d for d in docs if d.chemin in rang]
 
-    if not criteres.older_than_months:
-        return [Trouve(d, amont=amont.get(d.chemin, False)) for d in docs]
+    amont: dict[str, bool] = {}
+    degres: dict[str, int] = {}
+    if criteres.links_to:
+        if cible is None:
+            raise ValueError("links_to sans cible résolue")
+        for e in lecteur.entrants(*cible):
+            if e.base == modele.nom:
+                # La section est celle du document qui cite : c'est le profil de sa
+                # base, donc celui de `modele`, qui dit si elle tient le rôle upstream.
+                en_amont = profil.role_de_section(e.lien.section) == "upstream"
+                amont[e.chemin] = amont.get(e.chemin, False) or en_amont
+        for degre, sources in enumerate(
+            lecteur.dependants(*cible, criteres.links_to_depth, bases), start=1
+        ):
+            for base, chemin in sources:
+                if base == modele.nom:
+                    degres.setdefault(chemin, degre)
+        docs = [d for d in docs if d.chemin in degres]
+
+    derives = lecteur.derives(modele.nom) if criteres.upstream_changed or criteres.tri == "reaudit" else {}
+    if criteres.upstream_changed:
+        docs = [d for d in docs if d.chemin in derives]
+
+    tri = criteres.tri
+    fraicheurs: dict[str, Fraicheur] = {}
+    if criteres.older_than_months or tri in ("oldest", "reaudit"):
+        dates = None
+        if any(date_declaree(d.frontmatter) is None for d in docs):
+            dates = lecteur.dates_commit(modele.nom)  # un seul `git log` pour tous
+        fraicheurs = {d.chemin: lecteur.fraicheur(modele, d, dates if dates is not None else {}) for d in docs}
+    if criteres.older_than_months:
+        seuil = mois_avant(maintenant or dt.datetime.now(UTC), criteres.older_than_months)
+        docs = [d for d in docs if fraicheurs[d.chemin].date < seuil]
+
+    citations: dict[str, int] = {}
+    if tri in ("most_cited", "reaudit"):
+        citations = {d.chemin: lecteur.citations(modele.nom, d.chemin, bases) for d in docs}
 
     maintenant = maintenant or dt.datetime.now(UTC)
-    seuil = mois_avant(maintenant, criteres.older_than_months)
-    dates = None
-    if any(date_declaree(d.frontmatter) is None for d in docs):
-        # Un seul `git log` pour tous les documents sans date déclarée.
-        dates = lecteur.dates_commit(modele.nom)
     trouves = []
     for d in docs:
-        fraicheur = lecteur.fraicheur(modele, d, dates if dates is not None else {})
-        if fraicheur.date < seuil:
-            trouves.append(Trouve(d, fraicheur, amont.get(d.chemin, False)))
-    trouves.sort(key=lambda t: (t.fraicheur.date, t.doc.chemin))
+        score = None
+        if tri == "reaudit":
+            age = max(0.0, (maintenant - fraicheurs[d.chemin].date).days / 30.44)
+            score = round(age * (1 + citations[d.chemin]) * (2 if d.chemin in derives else 1), 1)
+        trouves.append(Trouve(
+            d,
+            fraicheur=fraicheurs.get(d.chemin),
+            amont=amont.get(d.chemin, False),
+            derives=derives.get(d.chemin, ()),
+            citations=citations.get(d.chemin),
+            score=score,
+            degre=degres.get(d.chemin),
+            lignes=touchees.get(d.chemin, ()),
+            occurrences=occurrences.get(d.chemin),
+        ))
+    if tri == "path" and degres:
+        trouves.sort(key=lambda t: (t.degre, t.doc.chemin))  # le degré 1 d'abord
+    elif tri == "relevance":
+        trouves.sort(key=lambda t: rang[t.doc.chemin])
+    elif tri == "oldest":
+        trouves.sort(key=lambda t: (t.fraicheur.date, t.doc.chemin))
+    elif tri == "most_cited":
+        trouves.sort(key=lambda t: (-t.citations, t.doc.chemin))
+    elif tri == "reaudit":
+        trouves.sort(key=lambda t: (-t.score, t.doc.chemin))
     return trouves
 
 

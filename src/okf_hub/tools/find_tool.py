@@ -48,6 +48,14 @@ SCHEMA = {
                 {"type": "array", "items": {"type": "string"}, "minItems": 1},
             ],
         },
+        "query": {
+            "type": "string",
+            "description": (
+                "Termes que le texte du document contient tous (casse ignorée), comme "
+                "kb_search en mode keyword — mais en filtre : sans repli en OU, et "
+                "cumulable avec les autres critères."
+            ),
+        },
         "type": {"type": "string", "description": "Valeur exacte du champ `type`."},
         "tags": {
             "type": "array",
@@ -86,6 +94,24 @@ SCHEMA = {
                 "rôle upstream est marqué « amont »."
             ),
         },
+        "links_to_depth": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 3,
+            "default": 1,
+            "description": (
+                "Avec links_to : 2 ajoute les documents qui citent ceux qui la citent, "
+                "3 un degré de plus — « si cette fiche est fausse, quoi d'autre l'est ». "
+                "Sommaires et journaux ne propagent pas."
+            ),
+        },
+        "upstream_changed": {
+            "type": "boolean",
+            "description": (
+                "Documents qui citent un document d'une autre base modifié (commit) "
+                "après leur propre dernier commit ou dernière vérification : à relire."
+            ),
+        },
         "older_than_months": {
             "type": "integer",
             "minimum": 1,
@@ -94,6 +120,16 @@ SCHEMA = {
                 "Documents dont la fraîcheur est plus ancienne, les plus anciens "
                 "d'abord, avec la date et son origine : vérification, production, "
                 "source, ou à défaut dernier commit."
+            ),
+        },
+        "sort": {
+            "type": "string",
+            "enum": ["path", "relevance", "oldest", "most_cited", "reaudit"],
+            "description": (
+                "Ordre de la liste : chemin (défaut), pertinence (avec query, défaut "
+                "alors), plus anciens d'abord (défaut sous older_than_months), plus "
+                "cités, ou priorité de ré-audit (âge × citations, doublé si l'amont a "
+                "changé)."
             ),
         },
         "count_by": {
@@ -119,8 +155,10 @@ SCHEMA = {
 def description(registry: Registry) -> str:
     return (
         "Trouve les documents d'une ou plusieurs bases par critères structurés — "
-        "type, tags, champs du frontmatter, présence ou absence d'une section, "
-        "sous-chemin, documents qui en citent un autre, ancienneté — ou compte "
+        "texte (tous les termes), type, tags, champs du frontmatter, présence ou "
+        "absence d'une section, sous-chemin, documents qui en citent un autre "
+        "(jusqu'au 3e degré), amont modifié depuis, ancienneté — triés par chemin, "
+        "pertinence, ancienneté, citations ou priorité de ré-audit, ou compte "
         "leurs valeurs (`count_by`). Rend, par base, le TOTAL EXACT puis les "
         "documents (chemin, titre, type) : un total de zéro est une réponse, qui "
         "établit une absence en un appel. Les critères se cumulent (ET). "
@@ -165,6 +203,20 @@ _DOCUMENT = {
             "properties": {"date": {"type": "string"}, "origin": {"type": "string"}},
         },
         "upstream": {"type": "boolean"},
+        "upstream_changed": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "base": {"type": "string"}, "path": {"type": "string"},
+                    "changed": {"type": "string"}, "declines": {"type": "boolean"},
+                },
+                "required": ["base", "path", "changed"],
+            },
+        },
+        "cited_by": {"type": "integer"},
+        "reaudit_score": {"type": "number"},
+        "depth": {"type": "integer"},
     },
     "required": ["path", "title", "type"],
 }
@@ -218,13 +270,9 @@ def run_structured(registry: Registry, arguments: dict) -> Sortie:
         return Sortie("Aucune base n'est actuellement enregistrée.", donnees)
 
     lecteur = Lecteur.de(registry)
-    entrants = None
-    if criteres.links_to:
-        cible = _cible_des_liens(lecteur, criteres.links_to, noms)
-        entrants = lecteur.entrants(*cible)
-
+    cible = _cible_des_liens(lecteur, criteres.links_to, noms) if criteres.links_to else None
     resultats = {
-        nom: filtrer(lecteur, lecteur.modele(nom), criteres, entrants=entrants) for nom in noms
+        nom: filtrer(lecteur, lecteur.modele(nom), criteres, cible=cible) for nom in noms
     }
     en_tete = f"critères : {criteres.decrire()}"
     if count_by:
@@ -235,7 +283,7 @@ def run_structured(registry: Registry, arguments: dict) -> Sortie:
 
 
 def _document(t) -> dict:
-    return {
+    sortie = {
         "path": t.doc.chemin,
         "title": t.doc.titre,
         "type": t.doc.type,
@@ -245,6 +293,37 @@ def _document(t) -> dict:
         ),
         "upstream": t.amont,
     }
+    if t.derives:
+        sortie["upstream_changed"] = [
+            {"base": d.base, "path": d.chemin, "changed": d.date_cible.isoformat(), "declines": d.amont}
+            for d in t.derives
+        ]
+    if t.citations is not None:
+        sortie["cited_by"] = t.citations
+    if t.score is not None:
+        sortie["reaudit_score"] = t.score
+    if t.degre is not None:
+        sortie["depth"] = t.degre
+    return sortie
+
+
+def _ligne(t) -> str:
+    ligne = f"- {t.doc.chemin} — {truncate_chars(t.doc.titre, TITLE_DISPLAY_MAX)} [{t.doc.type or SANS_TYPE}]"
+    if t.fraicheur is not None:
+        ligne += f" — {t.fraicheur.date.date().isoformat()} ({t.fraicheur.origine})"
+    if t.degre is not None and t.degre > 1:
+        ligne += f" — degré {t.degre}"
+    if t.amont:
+        ligne += " — amont"
+    if t.citations is not None:
+        ligne += f" — cité par {t.citations}"
+    if t.score is not None:
+        ligne += f" — priorité {t.score:g}"
+    if t.derives:
+        d = t.derives[0]
+        autres = f" (+{len(t.derives) - 1})" if len(t.derives) > 1 else ""
+        ligne += f" — amont modifié : {d.base}:/{d.chemin} le {d.date_cible.date().isoformat()}{autres}"
+    return ligne
 
 
 def _rendre_liste(lecteur, noms, resultats, criteres: Criteres, max_results, en_tete, donnees) -> str:
@@ -266,12 +345,7 @@ def _rendre_liste(lecteur, noms, resultats, criteres: Criteres, max_results, en_
         if total == 0 and criteres.type is not None:
             writer.add_forced(_rappel_des_types(lecteur, nom, criteres.type))
         for t in trouves[:quota]:
-            ligne = f"- {t.doc.chemin} — {truncate_chars(t.doc.titre, TITLE_DISPLAY_MAX)} [{t.doc.type or SANS_TYPE}]"
-            if t.fraicheur is not None:
-                ligne += f" — {t.fraicheur.date.date().isoformat()} ({t.fraicheur.origine})"
-            if t.amont:
-                ligne += " — amont"
-            if writer.add(ligne):
+            if writer.add(_ligne(t)):
                 listes.append(_document(t))
             else:
                 omis += 1

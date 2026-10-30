@@ -1,7 +1,9 @@
 # Conception — consultation des bases
 
-> **Statut : intégrée à la spécification, révision 4.5** (§ 1.2, § 2, § 3.3,
-> § 3.5, § 3.6, § 4.1, § 5.6, § 5.8, § 5 bis, § 8, § 9). La spécification
+> **Statut : intégrée à la spécification, révisions 4.5** (§ 1.2, § 2, § 3.3,
+> § 3.5, § 3.6, § 4.1, § 5.6, § 5.8, § 5 bis, § 8, § 9) **et 4.6** (ce que la
+> structure permet de déduire : dérive amont, impact, ré-audit, manques ;
+> recherche et critères réunis ; les écarts de l'interface au contrat MCP). La spécification
 > ([`SPEC-okf-bundle-hub-v0.md`](SPEC-okf-bundle-hub-v0.md)) fait autorité ;
 > les décisions d'implémentation sont dans
 > [`ARCHITECTURE.md`](ARCHITECTURE.md) § 6 nonies. Ce document ne garde que ce
@@ -93,7 +95,7 @@ réexaminées une à une.
 | Schéma d'URI `okf://<base>/<chemin>` | `<name>:/<chemin>` est déjà en usage, et a la forme des liens entre arbres de HOLARCH. |
 | Découper les tags sur `:` sans déclaration | Une heuristique se tromperait sur des tags libres qui contiennent `:`. |
 | Déposer une proposition depuis le web | Décision du 28/10 : lecture seule pour le moment. |
-| JavaScript dans l'interface | Tout se sert par formulaires GET ; la politique de contenu interdit les scripts. À rouvrir pour une vue interactive, servie localement. |
+| JavaScript au-delà de commodités | Rouvert a minima en rév. 4.6 : un seul script, servi par le hub (palette Ctrl+K, J/K, copie d'une commande, filtres appliqués au changement, section courante du sommaire) ; la page s'en passe. La palette lit la page `/aller?liste=1` que le hub sert à qui l'ouvre, et en insère la liste. Une API de données pour la palette (JSON) aurait ouvert le contrat d'échange parallèle que le § 1.2 exclut ; la page servie suffit. |
 | `git status` pour invalider le cache | Ne voit pas un fichier déjà modifié qui l'est une seconde fois. |
 
 ## 5. Questions ouvertes

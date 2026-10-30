@@ -136,7 +136,7 @@ de l'instance.
 ## Vérifier avant de conclure
 
 ```sh
-uv run pytest -q                 # 598 tests, dont la boucle de stress
+uv run pytest -q                 # 634 tests, dont la boucle de stress
 uv run pytest -q -m "not slow"   # sans le test deux processus × 25 itérations
 ```
 

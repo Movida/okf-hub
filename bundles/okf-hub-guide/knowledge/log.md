@@ -5,6 +5,8 @@ plus récent en premier. Le gestionnaire y ajoute une ligne à chaque intégrati
 
 ## 2026-10-29
 
+* **Chercher et lire** : `kb_find` prend aussi le texte comme critère (`query`, en
+  ET strict) et repère ce qui cite un document d'amont modifié depuis (rév. 4.6).
 * **Chercher et lire** : mise à jour de suivi, livrée avec le code (rév. 4.5) —
   `kb_find` pour établir une existence ou une absence par critères, en un
   appel ; il entre dans la stratégie de repli quand rien ne sort.

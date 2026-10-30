@@ -10,7 +10,7 @@
 > sont recensés dans [`ARCHITECTURE.md`](ARCHITECTURE.md), section « Écarts
 > assumés » — nulle part ailleurs.
 >
-> **Révision courante : 4.5.** L'amendement rév. 4.1 (premier retour d'usage
+> **Révision courante : 4.6.** L'amendement rév. 4.1 (premier retour d'usage
 > réel d'une session consommatrice, post-J5) a été intégré dans le corps du
 > texte, section par section, plutôt qu'annexé : les renvois « § x.y » du code
 > restent ainsi la seule adresse d'une exigence. Les passages issus de
@@ -27,7 +27,10 @@
 > **(rév. 4.4)**. La **rév. 4.5** (§ 1.2, § 2, § 3.3, § 3.5, § 3.6, § 4.1,
 > § 5.6, § 5.8, § 5 bis, § 8, § 9) ouvre la consultation : profil de base,
 > références entre bases, `kb_find`, interface web en lecture ; mention
-> **(rév. 4.5)**.
+> **(rév. 4.5)**. La **rév. 4.6** (§ 3.5, § 5.8, § 5 bis) étend la
+> consultation à ce que la structure des bases permet de déduire — dérive amont,
+> impact, priorité de ré-audit, manques — et réunit recherche et critères ;
+> mention **(rév. 4.6)**.
 
 Document d'implémentation, révision 4.1 — révision 4 (version finale pour
 implémentation, intégrant les retours des trois relectures croisées), amendée
@@ -375,6 +378,7 @@ invente pas, elle en demande un par un retour d'usage :
 | Section | `observations` | Section encadrée « constaté » ; critère. |
 | Section | `upstream` | Les références qu'elle contient sont des relations « décline » : les liens entrants les regroupent sous « déclinée par », `kb_find` les marque. |
 | Section | `procedure` | Accès direct en tête du document. |
+| Section | `gaps` **(rév. 4.6)** | Ce que les sources ne disent pas : listé par la page des manques. |
 
 **Facettes.** Un tag `env:prod` se lit comme la facette `env`, valeur `prod`,
 seulement si le profil déclare `separator` ; sinon les tags restent plats. Les
@@ -923,9 +927,21 @@ valeurs. Origine : une session a dû enchaîner sept recherches plein texte pour
   "links_to": "string — documents qui citent `<base>:/<chemin>` (un chemin seul si une seule base)",
   "older_than_months": "int (1..600) — fraîcheur (§ 5 bis.1) plus ancienne",
   "count_by": "string — `type`, `tags`, `section`, une facette déclarée, ou un champ",
-  "max_results": "int (défaut 50, max 200) — plafond global réparti, comme kb_search"
+  "max_results": "int (défaut 50, max 200) — plafond global réparti, comme kb_search",
+  "query": "string (rév. 4.6) — le texte contient tous ces termes ; sans repli en OU",
+  "links_to_depth": "int 1..3 (rév. 4.6, défaut 1) — avec links_to, de proche en proche",
+  "upstream_changed": "bool (rév. 4.6) — cite un document d'une autre base modifié après lui",
+  "sort": "path | relevance | oldest | most_cited | reaudit (rév. 4.6)"
 }
 ```
+
+**(rév. 4.6)** `query` fait du texte un critère : il se cumule avec les autres,
+et un document qui ne contient pas *tous* les termes n'est pas retenu — le repli
+en OU de `kb_search` est une aide à la recherche, pas un filtre. `links_to_depth`
+mesure l'impact d'une fiche : « si elle est fausse, quoi d'autre l'est » ;
+sommaires et journaux ne propagent pas. `upstream_changed` et `sort` reposent
+sur le § 5 bis.1. Le tri par défaut : chemin (et degré sous `links_to`),
+plus anciens d'abord sous `older_than_months`, pertinence sous `query`.
 
 Les critères se cumulent (ET). Les noms réservés (`index.md`, `log.md`) ne
 sont pas des concepts (OKF § 3.1) : ni listés, ni comptés.
@@ -933,7 +949,9 @@ sont pas des concepts (OKF § 3.1) : ni listés, ni comptés.
 **Sortie :** par base, le **total exact**, puis les documents (chemin, titre,
 type) — avec la date de fraîcheur et son origine sous `older_than_months`, et la
 mention « amont » d'un lien venu d'une section de rôle `upstream` sous
-`links_to`. Sous `count_by`, les effectifs par valeur, déclarées et nulles
+`links_to`. **(rév. 4.6)** Selon les critères et le tri : le degré, le nombre
+de documents qui citent, la priorité de ré-audit, et les documents d'amont
+modifiés depuis. Sous `count_by`, les effectifs par valeur, déclarées et nulles
 comprises, valeurs hors vocabulaire marquées. Si un `type` ne trouve rien dans
 aucune base interrogée, les types présents sont rappelés : une faute de frappe
 ne passe pas pour une absence. Plafond transverse, le total restant exact.
@@ -971,6 +989,17 @@ origine est toujours dite. **Confiance** : le palier d'OKF § 5.3 quand
 déclarée par le profil, sans palier inventé ; `stale_after` dépassé donne
 « périmé », `generated.by: process:…` donne « généré ».
 
+**Dérive amont (rév. 4.6).** Un document *dérive* quand il cite un document
+d'une autre base dont le dernier commit est postérieur au sien — ou à sa
+dernière vérification si elle est plus récente : il n'a pas été relu depuis que
+ce qu'il cite a changé. Une citation placée dans une section de rôle `upstream`
+est une déclinaison, et marquée comme telle. **Impact** : les documents qui
+citent un document, puis ceux qui les citent, jusqu'au troisième degré.
+**Citations** : le nombre de documents distincts qui citent, sommaires et
+journaux exclus. **Priorité de ré-audit** : l'âge en mois multiplié par
+(1 + citations), doublé par une dérive — une fiche ancienne et très citée passe
+devant une fiche ancienne que personne ne lit.
+
 **Rendu** markdown → HTML côté serveur, HTML brut désactivé, imbrication
 relevée et troncature signalée. Liens : `http`, `https`, `mailto`, internes et
 références entre bases seulement, réécrits vers l'interface ; tout autre schéma
@@ -983,9 +1012,52 @@ est rendu inerte. Une note `[^id]` sans définition renvoie à l'entrée `id` de
 même registre et réutilise le mécanisme de re-scan du § 4.4.c (un déclencheur de
 plus). **Toutes ses routes sont en GET ; il n'écrit rien**, pas même un verrou
 d'index git. Pages : accueil (bases, documents, propositions en attente et date
-de la plus ancienne, statut de gouvernance, dernière entrée du journal), base,
-répertoire, document (en-tête, corps, sources, liens sortants et entrants),
-trouver, vues déclarées, recherche, propositions, journal, graphe des bases.
+de la plus ancienne, statut de gouvernance, dernière entrée du journal), base
+(et ses fiches piliers, les plus citées), répertoire, document (en-tête, corps,
+sources, liens sortants et entrants, dérive amont, impact, histoire), vues
+déclarées, propositions, journal, graphe des bases. **(rév. 4.6)** L'**Explorer**
+réunit recherche plein texte et critères de `kb_find` — le texte en est un
+critère —, avec la répartition du résultat et la même requête en MCP ; les
+adresses `/trouver` et `/recherche` y redirigent. S'y ajoutent la
+**gouvernance** d'une base (l'équivalent de `kb_governance`, et ce que le moteur
+comprend de son profil), ses **manques** (documents attendus que des liens
+désignent, questions en attente, vocabulaire déclaré sans document, croisement
+de deux facettes, sections `gaps`), une **chronologie** par semaine de tout le
+hub, l'**état** (découverte, état git de chaque dépôt, journal) et une page
+**à propos** qui dit ce que l'interface est et n'est pas. Un critère ou un
+filtre que l'interface ne comprend pas est signalé, jamais ignoré en silence.
+L'accueil montre les bases en cartes, sort les phrases que plusieurs
+descriptions répètent mot pour mot dans un aiguillage commun, et mène à la
+**boîte des propositions en attente** de toutes les bases, les plus anciennes
+d'abord ; une correction ou une suite s'y range sous la proposition qu'elle
+vise. La page d'une proposition réunit ce qu'il faut pour en juger : ses
+**relations** aux autres propositions (corrige, suite de, annule, cite —
+déduites de son objet et de son texte, rien n'est déclaré), la **fiche visée**
+qu'elle désigne par un chemin ou un lien, les **fiches proches** de son objet,
+et la précédente et la suivante dans l'ordre de la boîte. Un **saut** (`/aller`,
+Ctrl+K) ouvre une base par son nom, un document par sa référence ou son titre
+exact, une proposition par son identifiant ; sinon, il propose les bases, fiches
+et propositions qui répondent, groupées, le titre exact d'abord, et la recherche
+dans tout le texte. Avec le script de l'interface, Ctrl+K ouvre une palette qui
+affiche cette même liste pendant la frappe : elle lit la page servie
+(`/aller?liste=1`), pas une API (§ 1.2). Chaque base a une **couleur** et une
+**forme** fixes, tirées de son rang parmi les bases installées — jamais parmi
+celles qu'un visiteur voit —, toujours à côté de son nom ; les bases du hub
+(`okf-hub-guide`, `okf-hub-feedback`) restent grises, en formes creuses. Un
+**voyant** d'en-tête résume l'état du hub et affiche sa raison principale : à
+corriger quand du contenu manque (un bundle non chargé), à surveiller sinon —
+dont une synchronisation avec un remote qui a échoué dans les 24 heures, d'après
+le journal partagé (§ 4.1) : les bases servent alors leur copie locale, qui fait
+foi. La page d'état en donne la cause et le remède.
+
+**Où l'interface va au-delà du contrat MCP (rév. 4.6)**, et pourquoi :
+
+| Ce qu'elle montre | MCP | Motif |
+|---|---|---|
+| Le corps d'une proposition | `kb_proposal_status` ne le rend pas (§ 5.7) | Économie de tokens côté agent ; un humain qui en juge a besoin du texte. Toujours présenté comme une affirmation à vérifier. |
+| Les propositions en attente, cherchées et nommées sur les fiches qu'elles mentionnent | Exclues de la recherche (§ 5.2) | Ce qu'une session a appris devient visible de la suivante avant la revue ; l'exclusion du § 5.2 garde le corpus revu de ce qui ne l'est pas, et la page les sépare et les marque « non revues ». |
+| L'historique git, l'état des dépôts | Hors MCP | Git est canonique (§ 1.1) ; une base peut diverger de son remote sans que rien d'autre ne le dise (§ 4.5). |
+| Les relations entre propositions, la fiche qu'une proposition vise | Hors MCP | Une correction en attente doit se lire avant ce qu'elle corrige ; sans elle, la revue intègre une erreur déjà signalée. Déduites du texte, jamais déclarées. |
 La recherche montre tout le classement de `kb_search`, paginé, en extraits
 lisibles : une ligne touchée dans le frontmatter y devient le champ qui la
 porte. Le graphe donne le total des références qu'aucune déclaration ne couvre
@@ -997,8 +1069,10 @@ document, SVG sous politique `sandbox`) ; aucune autre ressource du corpus.
 
 **Adresses stables**, celles que citent les autres interfaces : `/b/<base>/`,
 `/b/<base>/<chemin>`, `/b/<base>/<dossier>/`, et sous `/b/<base>/-/` les pages
-d'une base (`trouver`, `vues/<n>`, `propositions[/<id>]`, `journal`) ; `/trouver`,
-`/recherche`, `/graphe` pour le hub.
+d'une base (`explorer`, `vues/<n>`, `manques`, `gouvernance`,
+`propositions[/<id>]`, `journal`) ; `/explorer`, `/propositions`, `/chronologie`,
+`/graphe`, `/etat`, `/a-propos` et `/aller` pour le hub — `/trouver` et
+`/recherche` redirigent vers l'Explorer.
 
 ### 5 bis.3 Accès depuis une autre interface
 
@@ -1010,6 +1084,9 @@ elle.
 
 ### 5 bis.4 Accès et confidentialité
 
+- **(rév. 4.6)** En mode équipe, la page d'état ne montre ni le rapport de
+  découverte ni le journal : ils nomment des répertoires et des bases qui ne
+  sont pas forcément ouverts au visiteur.
 - **Mode local** (défaut) : aucune authentification, l'opérateur voit toutes
   les bases ; l'interface n'écoute donc que sur une adresse de bouclage.
 - **Mode équipe** : l'authentification est déléguée à un proxy inverse qui
@@ -1197,7 +1274,7 @@ dans ce cadre ; ce qui n'y résiste pas est marqué.
 | Usurpation `submitted-by` | Non authentifié, documenté comme tel. [v1+] : jetons par contributeur ou signatures. |
 | Bundles tiers → exécution de code | `tools`/`skills` non chargés en v0 ; [v1+] : approbation explicite par outil + sous-processus confiné. **(rév. 4.3)** Les `governance.checks` d'une base (§ 3.3) sont du code de la base : jamais lancés par le serveur MCP, ni à la découverte, ni par une session consommatrice ; seulement par `okf-review verify` (sur une copie) et, **(rév. 4.4)** après des résolutions réelles, par `okf-review resolve --checks` (dans la base), invoqués par l'opérateur ou le gestionnaire, pour une base inscrite dans `trusted-checks` (§ 4.1). L'approbation porte sur la base, pas sur chaque commande : c'est le code de ses scripts qu'on approuve, et figer leurs lignes de commande ne figerait pas leur contenu. Le confinement est celui d'une copie jetable : aucune vraie base n'est atteignable par chemin relatif ; ce n'est pas un bac à sable contre un script malveillant, hors du modèle de menace v0. |
 | Fuite vers un dépôt public **(rév. 4.4)** | Trois couches, sur les termes privés du § 4.1 : refus au dépôt par `kb_propose` dans une base publique (§ 5.5) ; hooks git `pre-commit`, `commit-msg` et `pre-push` sur le hub et ses bases publiques (contenus ajoutés, chemins, messages, auteurs ; une branche inconnue du remote est examinée sur tout ce qu'aucun remote ne connaît) ; test de neutralité des fichiers versionnés. Les hooks ne valent qu'activés : `okf-hub setup` les active, l'installation d'une base publique aussi. Les commits du hub lui-même passent `--no-verify` : c'est le refus au dépôt qui les couvre. |
-| Injection par la surface web **(rév. 4.5)** | Le corps des documents vient en partie de propositions d'agents : HTML brut désactivé, gabarits à échappement automatique, schémas de lien filtrés, politique de contenu stricte (`default-src 'self'`, aucun script, aucune ressource externe), SVG servi sous `sandbox`. |
+| Injection par la surface web **(rév. 4.5)** | Le corps des documents vient en partie de propositions d'agents : HTML brut désactivé, gabarits à échappement automatique, schémas de lien filtrés, politique de contenu stricte (`default-src 'self'`, aucune ressource externe ; **(rév. 4.6)** pour script, le seul fichier du hub — des commodités : palette du saut, raccourcis clavier, copie d'une commande, filtres appliqués au changement ; la page s'en passe, il ne lit que des pages que le hub sert déjà et n'envoie rien —, jamais de script en ligne), SVG servi sous `sandbox`. |
 | En-tête d'identité usurpé **(rév. 4.5)** | Cru seulement sur une connexion venue d'un proxy de `trusted-proxies`, adresse du pair TCP, jamais `X-Forwarded-For` ; toute autre connexion refusée. Mode local : bouclage seulement. |
 | Fuite par les liens et le graphe **(rév. 4.5)** | Liens entrants filtrés par la visibilité de la base qui cite ; une base fermée et une base absente indiscernables, dans les liens comme dans le graphe. |
 | Corruption par écritures concurrentes | `flock()` (auto-libéré à la mort du processus, fd frais par acquisition — § 4.4.b) + index git temporaire initialisé depuis HEAD + écriture atomique par `rename`. Fenêtre de crash résiduelle rattrapée par réconciliation (§ 7.1.0). **Tests de concurrence obligatoires (J2).** |
@@ -1513,9 +1590,33 @@ contournement de `kb_propose`) ; découper les tags sur `:` sans déclaration ;
 dépôt de proposition depuis le web (lecture seule) ; clés de profil en français
 à côté des clés anglaises du schéma v0 (deux langues pour un même vocabulaire).
 
+### rév. 4.6 — ce que la structure permet de déduire (post-J5-sexies)
+
+Origine : deux relectures de l'interface de la rév. 4.5 par une session qui
+l'évaluait contre la demande d'origine, et la décision du propriétaire de lever
+les frictions relevées. Recherche et critères se ressemblaient trop ; la
+gouvernance n'avait pas d'équivalent web ; les propositions en attente étaient
+invisibles avant la revue ; un filtre incompris était avalé ; l'état du hub et
+le périmètre de l'interface n'étaient dits nulle part.
+
+| § amendé | Objet |
+|---|---|
+| § 3.5 | Rôle `gaps` |
+| § 5.8 | `kb_find` : `query`, `links_to_depth`, `upstream_changed`, `sort` |
+| § 5 bis.1 | Dérive amont, impact, citations, priorité de ré-audit |
+| § 5 bis.2 | Explorer, gouvernance, manques, chronologie, état, à propos, boîte des propositions, saut ; couleur par base, voyant ; ce que l'interface montre au-delà de MCP |
+| § 8 | Un script, le seul fichier du hub, jamais en ligne |
+| § 5 bis.4 | Page d'état en mode équipe |
+
+Non retenu : chercher les propositions en attente depuis MCP (l'exclusion du
+§ 5.2 reste la frontière entre revu et non revu, pour les agents) ; un index de
+la dérive persistant (un `git log` par base, en cache par HEAD, suffit) ; un
+score de centralité calculé sur tout le graphe (le nombre de citations dit déjà
+l'essentiel, et s'explique).
+
 ---
 
-*Fin de spécification (rév. 4.5).* **Toute déviation par rapport aux principes du
+*Fin de spécification (rév. 4.6).* **Toute déviation par rapport aux principes du
 § 1 ou aux mécanismes du § 4.4.b doit être remontée au propriétaire du projet
 avant implémentation.** En cas de conflit non identifié entre deux révisions,
 **la plus ancienne prévaut** et le conflit est remonté.

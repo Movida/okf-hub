@@ -1,0 +1,45 @@
+{% extends "page.html" %}
+{% block titre %}Chronologie {{ semaine }}{% endblock %}
+{% block contenu %}
+<main class="principal pleine">
+  <h1>Chronologie</h1>
+  {% set c = carte %}
+  <div class="carte-activite"><svg class="activite" viewBox="0 0 {{ c.largeur }} {{ c.hauteur + 14 }}" role="img" aria-label="Activité des 26 dernières semaines, un carré par jour">
+    {% for libelle in ['lun', 'mar', 'mer', 'jeu', 'ven', 'sam', 'dim'] %}<text x="0" y="{{ 24 + loop.index0 * 14 }}">{{ libelle }}</text>{% endfor %}
+    {% for col in c.colonnes %}{% if col.mois %}<text x="{{ col.x }}" y="9">{{ col.mois }}</text>{% endif %}{% endfor %}
+    {% for k in c.cases %}{% if k.futur %}<rect class="jour futur" x="{{ k.x + 0.5 }}" y="{{ k.y + 0.5 }}" width="11" height="11" rx="2"><title>{{ k.jour }} : à venir</title></rect>{% else %}<a href="{{ url_page(none, 'chronologie', semaine=k.iso, base=noms_demandes, sorte=voulues) }}"><rect class="jour n{{ k.niveau }}" x="{{ k.x }}" y="{{ k.y }}" width="12" height="12" rx="2"><title>{{ k.jour }} : {{ k.n|nb('événement') }}</title></rect></a>{% endif %}{% endfor %}
+    {% for col in c.colonnes %}{% if col.courante %}<rect class="courante" x="{{ col.x - 1.5 }}" y="12.5" width="15" height="{{ 7 * 14 + 1 }}" rx="3"/>{% endif %}{% endfor %}
+  </svg></div>
+  <p class="legende-activite note" aria-hidden="true">moins {% for n in range(5) %}<span class="case n{{ n }}"></span>{% endfor %} plus · <span class="case futur"></span> à venir · un carré par jour, cliquer ouvre sa semaine</p>
+  <nav class="pages"><a href="{{ url_page(none, 'chronologie', semaine=precedente, base=noms_demandes, sorte=voulues) }}">← semaine précédente</a><strong>semaine du {{ debut|date }} au {{ fin|date }}</strong>{% if suivante %}<a href="{{ url_page(none, 'chronologie', semaine=suivante, base=noms_demandes, sorte=voulues) }}">semaine suivante →</a> <a href="{{ url_page(none, 'chronologie', base=noms_demandes, sorte=voulues) }}">cette semaine</a>{% else %}<span class="desactive" aria-disabled="true">semaine suivante →</span> <span class="note">(c'est la semaine en cours)</span>{% endif %}</nav>
+  <form method="get" class="filtres-puces auto">
+    <input type="hidden" name="semaine" value="{{ semaine }}">
+    {% for b in toutes %}<label class="puce {{ couleur(b) }}"><input type="checkbox" name="base" value="{{ b }}"{% if b in noms_demandes %} checked{% endif %}><span class="pastille-base" aria-hidden="true"></span>{{ b }}</label>{% endfor %}
+    <span class="aide">aucune base choisie : toutes</span>
+    <span class="separateur" aria-hidden="true"></span>
+    {% for s in sortes %}<label class="puce sorte-{{ s|replace(' ', '-') }}"><input type="checkbox" name="sorte" value="{{ s }}"{% if s in voulues %} checked{% endif %}>{{ s }} <span class="compte">{{ comptes.get(s, 0) }}</span></label>{% endfor %}
+    <button type="submit">Afficher</button>
+  </form>
+  <p class="total"><strong>{{ montres|nb('événement montré', 'événements montrés') }}</strong> sur {{ total }} cette semaine.{% if 'proposition déposée' not in voulues and comptes.get('proposition déposée') %} {{ comptes['proposition déposée']|nb('dépôt de proposition n’est pas montré', 'dépôts de propositions ne sont pas montrés') }} : une proposition apparaît le jour où elle est intégrée ou rejetée. <a href="{{ url_page(none, 'chronologie', semaine=semaine, base=noms_demandes, sorte=voulues + ['proposition déposée']) }}">Montrer aussi les dépôts</a>.{% endif %}</p>
+  {% for jour, lignes in jours %}
+  <h2>{{ jour|jour }}</h2>
+  <table class="evenements">
+    <tbody>
+    {% for l in lignes %}
+      {% if l.seul is defined %}{% set e = l.seul %}
+      <tr class="sorte-{{ e.sorte|replace(' ', '-') }}"><td class="heure">{{ e.date.astimezone().strftime('%H:%M') }}</td><td class="sorte"><span class="badge">{{ e.sorte }}</span></td>
+        <td class="base"><span class="puce-base {{ couleur(e.base) }}"><span class="pastille-base" aria-hidden="true"></span>{{ e.base }}</span></td>
+        <td>{% if e.doc %}<a href="{{ url_doc(e.base, e.doc) }}">{{ e.texte }}</a>{% else %}{{ e.texte|truncate(160) }}{% for id in e.ids[:2] %} <a href="{{ url_page(e.base, 'propositions/' ~ id) }}">→ {{ id }}</a>{% endfor %}{% endif %}</td></tr>
+      {% else %}
+      <tr class="sorte-{{ l.sorte|replace(' ', '-') }}"><td class="heure">{{ l.date.astimezone().strftime('%H:%M') }}</td><td class="sorte"><span class="badge">{{ l.sorte }}</span></td>
+        <td class="base"><span class="puce-base {{ couleur(l.base) }}"><span class="pastille-base" aria-hidden="true"></span>{{ l.base }}</span></td>
+        <td><details><summary>{{ l.groupe|length|nb(l.sorte, l.sorte.replace('proposition ', 'propositions ').replace('intégrée', 'intégrées').replace('rejetée', 'rejetées').replace('déposée', 'déposées').replace('vues régénérées', 'régénérations des vues').replace('modification', 'modifications')) }}</summary>
+          <ul>{% for e in l.groupe %}<li><span class="note">{{ e.date.astimezone().strftime('%H:%M') }}</span> {{ e.texte|truncate(140) }}{% for id in e.ids[:1] %} <a href="{{ url_page(e.base, 'propositions/' ~ id) }}">→ {{ id }}</a>{% endfor %}</li>{% endfor %}</ul></details></td></tr>
+      {% endif %}
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}<p class="note">Rien à montrer cette semaine.</p>{% endfor %}
+  <p class="note">Sont comptés les commits de chaque base — dépôts, intégrations et rejets de propositions, régénérations des vues, modifications — et, si son profil déclare un champ de rôle <code>start</code>, les documents dont la période commence dans la semaine.</p>
+</main>
+{% endblock %}

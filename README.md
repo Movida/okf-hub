@@ -213,7 +213,7 @@ uv run pytest -q
 | `kb_list` | Bases disponibles, avec titre, objet, nombre de documents et de propositions en attente. `include_pending_concerns` ajoute les sujets en attente. |
 | `kb_search` | Recherche plein texte dans une base. Mode `keyword` (ET strict, repli automatique en OU signalé) ou `regex` (dialecte ripgrep). Chaque extrait porte le heading de sa section, après `§`, à reporter tel quel dans `kb_read`. |
 | `kb_read` | Lecture d'un document, ou d'une seule section. Au-delà du seuil, retourne la table des headings — `force: true` pour passer outre. |
-| `kb_find` | Documents par critères structurés — type, tags, champs, présence ou absence d'une section, sous-chemin, documents qui en citent un autre, ancienneté — ou effectifs par valeur (`count_by`). Total exact par base : zéro est une réponse. Sortie structurée en plus du texte. |
+| `kb_find` | Documents par critères structurés — texte, type, tags, champs, présence ou absence d'une section, sous-chemin, documents qui en citent un autre (jusqu'au 3e degré), amont modifié depuis, ancienneté — triés au besoin par citations ou priorité de ré-audit, ou effectifs par valeur (`count_by`). Total exact par base : zéro est une réponse. Sortie structurée en plus du texte. |
 | `kb_governance` | Golden rules et schéma de frontmatter d'une base. Signale par un bandeau une gouvernance en `status: draft`. |
 | `kb_propose` | Dépose une proposition dans `proposals/pending/`. Seul outil d'écriture, et il ne touche jamais au corpus. |
 | `kb_proposal_status` | État et résolution des propositions : intégrée (avec les documents modifiés) ou rejetée (avec le motif). Lecture pure. `id` ou `submitted_by` requis. |
@@ -236,10 +236,19 @@ uv run okf-hub web --port 9000
 
 Un processus à part des instances MCP, sur le même moteur de lecture que
 `kb_find` : liste des bases, navigation dans le corpus, documents rendus avec
-leurs sources et leurs liens entrants et sortants — entre bases compris —,
-recherche plein texte, `kb_find` en formulaire avec effectifs par facette, vues
-déclarées par le profil d'une base, propositions, journal, graphe des bases.
-Toutes les routes sont en `GET`, rien n'est jamais écrit. Les adresses
+leurs sources, leurs liens entrants et sortants — entre bases compris —, leur
+histoire (propositions intégrées, commits, propositions en attente qui les
+nomment), leur impact et la dérive de ce qu'ils citent. L'**Explorer** réunit
+recherche plein texte et critères de `kb_find`, avec la répartition du résultat ;
+s'y ajoutent les vues déclarées par le profil d'une base, sa gouvernance, ses
+manques, ses propositions et son journal, une chronologie de tout le hub, le
+graphe des bases, l'état de la découverte et des dépôts, et une page « à
+propos ».
+Toutes les routes sont en `GET`, rien n'est jamais écrit. Ctrl+K saute vers une
+base, un document ou une proposition depuis n'importe quelle page, et propose
+les titres qui répondent quand rien n'est unique ; la boîte des propositions
+réunit celles en attente de toutes les bases, et la page de chacune montre ce
+qu'il faut pour la trancher. Les adresses
 (`/b/<base>/<chemin>`, `/b/<base>/-/propositions`…) sont stables : une autre
 interface y renvoie pour la lecture et passe par MCP pour les données
 (spec § 5 bis).

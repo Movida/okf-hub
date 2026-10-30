@@ -1,0 +1,113 @@
+{% extends "page.html" %}
+{% import "macros.html" as m with context %}
+{% block titre %}Explorer{% if base %} — {{ base.title }}{% endif %}{% endblock %}
+{% block fil %}{% if nom %}{{ m.fil([(base.title, url_base(nom))], 'Explorer') }}{% endif %}{% endblock %}
+{% block contenu %}
+<main class="principal">
+  <h1>Explorer{% if base %} {{ base.title }}{% endif %}</h1>
+  {% if nom %}{{ m.onglets(nom, 'reaudit' if criteres.upstream_changed else 'explorer') }}{% endif %}
+  <form class="explorer" method="get">
+    <div class="ligne-texte">
+      <input type="search" name="q" value="{{ params.get('q', '') }}" placeholder="Texte cherché (facultatif)" aria-label="Texte cherché">
+      <label class="etiquette-champ">Correspondance <select name="mode"><option value="keyword"{% if not criteres.query_regex %} selected{% endif %}>tous les mots</option><option value="regex"{% if criteres.query_regex %} selected{% endif %}>expression régulière</option></select></label>
+      <button type="submit">Explorer</button>
+    </div>
+    <p class="aide aide-correspondance">« Tous les mots » : chacun doit figurer dans la fiche, dans n'importe quel ordre. « Expression régulière » : un motif, avec la syntaxe de ripgrep.</p>
+    {# Les critères posés par clic restent posés quand on change le texte. #}
+    {% for v in params.getlist('tag')[1:] %}<input type="hidden" name="tag" value="{{ v }}">{% endfor %}
+    {% for v in params.getlist('champ')[1:] %}<input type="hidden" name="champ" value="{{ v }}">{% endfor %}
+    {% if not nom %}
+    <fieldset class="bases-choisies"><legend>Bases</legend>
+      {% for b in toutes %}<label class="puce {{ couleur(b) }}"><input type="checkbox" name="base" value="{{ b }}"{% if b in noms_demandes %} checked{% endif %}><span class="pastille-base" aria-hidden="true"></span>{{ b }}</label>{% endfor %}
+      <span class="aide">aucune choisie : toutes</span>
+    </fieldset>
+    {% endif %}
+    {# Toujours replié : les critères posés se lisent, et se retirent, dans les étiquettes au-dessus des résultats. #}
+    <details class="avances">
+      <summary>Critères avancés — type, tag, dossier, champ, section, liens, ancienneté, ordre</summary>
+      <div class="champs">
+        <label>Type de document <input name="type" list="l-types" value="{{ params.get('type', '') }}"><span class="aide">valeur exacte du champ <code>type</code></span></label>
+        <label>Tag <input name="tag" list="l-tags" value="{{ params.getlist('tag')[0] if params.getlist('tag') else '' }}"><span class="aide">forme exacte, souvent <code>facette:valeur</code></span></label>
+        <label>Dans le dossier <input name="sous" list="l-dossiers" value="{{ params.get('sous', '') }}"><span class="aide">et ses sous-dossiers</span></label>
+        <label>Champ du frontmatter <input name="champ" value="{{ params.getlist('champ')[0] if params.getlist('champ') else '' }}"><span class="aide"><code>nom=valeur</code>, <code>nom</code> (présent) ou <code>!nom</code> (absent)</span></label>
+        <label>Contient la section <input name="section" list="l-sections" value="{{ params.get('section', '') }}"><span class="aide">titre, casse ignorée, ou rôle déclaré par la base</span></label>
+        <label>Ne contient pas la section <input name="sans_section" list="l-sections" value="{{ params.get('sans_section', '') }}"><span class="aide">même lecture que ci-contre</span></label>
+        <label>Cite le document <input name="liant" value="{{ params.get('liant', '') }}"><span class="aide"><code>base:/chemin.md</code> — qui renvoie vers lui</span></label>
+        <label>Jusqu'au degré <select name="profondeur" data-suppose="liant">{% for n in (1, 2, 3) %}<option value="{{ n }}"{% if criteres.links_to_depth == n %} selected{% endif %}>{{ n }}{% if n == 1 %} (le citent){% else %} (de proche en proche){% endif %}</option>{% endfor %}</select><span class="aide">ne sert qu'avec « cite le document »</span></label>
+        <label>Pas mis à jour depuis <input name="mois" type="number" min="1" max="600" value="{{ params.get('mois', '') }}"><span class="aide">mois, d'après la date de fraîcheur</span></label>
+        <div class="champ-case"><span>Amont modifié depuis</span><label class="case"><input type="checkbox" name="amont" value="1"{% if criteres.upstream_changed %} checked{% endif %}> cite un document d'une autre base modifié après elle</label></div>
+        <label>Ordre <select name="tri"><option value="">par défaut</option>{% for cle, libelle in tris.items() %}<option value="{{ cle }}"{% if criteres.sort == cle %} selected{% endif %}>{{ libelle }}</option>{% endfor %}</select><span class="aide">« priorité de ré-audit » : âge × citations, doublé si l'amont a changé</span></label>
+      </div>
+      {% if exemples %}<p class="exemples">Exemples : {% for libelle, ex in exemples %}<a href="{{ url_page(nom, 'explorer', **ex) }}">{{ libelle }}</a>{% if not loop.last %} · {% endif %}{% endfor %}</p>{% endif %}
+    </details>
+  </form>
+  <datalist id="l-types">{% for t, n in suggestions.types.most_common(80) %}<option value="{{ t }}">{{ n|nb('fiche') }}</option>{% endfor %}</datalist>
+  <datalist id="l-tags">{% for t in suggestions.tags %}<option value="{{ t }}">{% endfor %}</datalist>
+  <datalist id="l-sections">{% for t in suggestions.sections %}<option value="{{ t }}">{% endfor %}</datalist>
+  <datalist id="l-dossiers">{% for t in suggestions.dossiers %}<option value="{{ t }}">{% endfor %}</datalist>
+
+  {% if actifs %}
+  <p class="actifs">{% for libelle, adresse in actifs %}<a class="etiquette-critere" href="{{ adresse }}" title="Retirer ce critère">{{ libelle }} ×</a>{% endfor %}
+    <a class="note" href="{{ url_page(nom, 'explorer') }}">tout retirer</a></p>
+  {% endif %}
+
+  {% if montrer %}
+  <p class="total"><strong>{{ total|nb('fiche') }}</strong>{% if nb_bases > 1 %} dans {{ bases_touchees|nb('base') }} sur {{ nb_bases }}{% endif %}{% if not actifs %} — toutes les fiches{% endif %}.</p>
+  {% if nb_bases > 1 and total > 1 and criteres.sort != 'path' %}<p class="note ordre-resultats">{% if par_base %}Groupés par base. <a href="{{ regrouper }}">Un seul classement pour toutes les bases</a>{% else %}Un seul classement pour toutes les bases{% if criteres.query %}, titre exact d'abord{% endif %}. <a href="{{ regrouper }}">Grouper par base</a>{% endif %}</p>{% endif %}
+  <p class="mcp">Même requête par MCP : <code>{{ appel }}</code></p>
+  {% if total == 0 and criteres.query %}
+  <p>Aucun document du <strong>corpus</strong> ne répond. {% if examinees %}{% if en_attente %}{{ en_attente|length|nb('proposition en attente le mentionne', 'propositions en attente le mentionnent') }}, ci-dessous.{% else %}Aucune des {{ examinees|nb('proposition en attente', 'propositions en attente') }} non plus.{% endif %}{% endif %}</p>
+  {% endif %}
+  {% for res in resultats %}{% set t = res.t %}
+  {% if par_base and (loop.first or res.base != resultats[loop.index0 - 1].base) %}{% if nb_bases > 1 %}<h2 class="base-resultats {{ couleur(res.base) }}"><span class="pastille-base" aria-hidden="true"></span><a href="{{ url_base(res.base) }}">{{ res.base }}</a></h2>{% endif %}{% endif %}
+  <article class="resultat-doc">
+    <h3><a href="{{ url_doc(res.base, t.doc.chemin) }}">{{ t.doc.titre }}</a> <span class="type">{{ t.doc.type or sans_type }}</span>{% if not par_base %} <span class="puce-base {{ couleur(res.base) }}"><span class="pastille-base" aria-hidden="true"></span>{{ res.base }}</span>{% endif %} <span class="chemin">{{ t.doc.chemin }}</span></h3>
+    <p class="drapeaux">
+      {% if t.fraicheur %}<span>{{ t.fraicheur.date|quand }} ({{ origines[t.fraicheur.origine] }})</span>{% endif %}
+      {% if t.degre and t.degre > 1 %}<span>degré {{ t.degre }}</span>{% endif %}
+      {% if t.amont %}<span class="badge">décline la cible</span>{% endif %}
+      {% if t.citations is not none %}<span>citée par {{ t.citations }}</span>{% endif %}
+      {% if t.score is not none %}<span class="badge">priorité {{ t.score }}</span>{% endif %}
+      {% if t.derives %}<span class="badge perime" title="{% for d in t.derives %}{{ d.base }}:/{{ d.chemin }} modifiée le {{ d.date_cible|date }}&#10;{% endfor %}">amont modifié depuis ({{ t.derives|length }})</span>{% endif %}
+    </p>
+    {% for e in res.extraits %}
+    {% if loop.index == 2 %}<details class="autres-passages"><summary>{{ (res.extraits|length - 1)|nb('autre passage', 'autres passages') }}</summary>{% endif %}
+    {% if e.champ %}<p class="section">frontmatter · <code>{{ e.champ }}</code></p>
+    {% else %}<p class="section">§ {% if e.ancre %}<a href="{{ url_doc(res.base, t.doc.chemin, e.ancre) }}">{{ e.section }}</a>{% else %}{{ e.section }}{% endif %} <span class="note">· ligne {{ e.debut }}</span></p>{% endif %}
+    <p class="texte-extrait">{% for morceau, touche in e.morceaux %}{% if touche %}<mark>{{ morceau }}</mark>{% else %}{{ morceau }}{% endif %}{% endfor %}</p>
+    {% if loop.last and loop.length > 1 %}</details>{% endif %}
+    {% endfor %}
+  </article>
+  {% endfor %}
+  {% if pages > 1 %}
+  <nav class="pages">
+    {% if page > 1 %}<a href="{{ adresses.page(page - 1) }}">← précédents</a>{% endif %}
+    <span>{{ (page - 1) * par_page + 1 }}–{{ [page * par_page, total]|min }} sur {{ total }} · page {{ page }} sur {{ pages }}</span>
+    {% if page < pages %}<a href="{{ adresses.page(page + 1) }}">suivants →</a>{% endif %}
+  </nav>
+  {% endif %}
+  {% if en_attente %}
+  <section class="en-attente">
+    <h2>Dans les propositions en attente <span class="note">— non revues</span></h2>
+    <p class="note">Ce que des sessions ont déposé et qu'aucune revue n'a encore intégré : à lire comme une affirmation à vérifier, pas comme de la connaissance. MCP ne les cherche pas (<code>kb_search</code> ne lit que le corpus).</p>
+    <ul>{% for p in en_attente %}{% set e = p.entree %}<li><a href="{{ url_page(p.base, 'propositions/' ~ e.id) }}"><code>{{ e.id }}</code></a> {% if nb_bases > 1 %}<code>{{ p.base }}</code> {% endif %}({{ e.frontmatter.get('type', '?') }}) — {{ e.frontmatter.get('concerns', '') }}</li>{% endfor %}</ul>
+  </section>
+  {% elif criteres.query and examinees %}
+  <p class="note">{{ examinees|nb('proposition en attente', 'propositions en attente') }} cherchée{{ 's' if examinees > 1 }} aussi : aucune ne contient ce texte.</p>
+  {% endif %}
+  {% else %}
+  <p class="intro">Le texte et les critères se cumulent : les fiches qui répondent à <strong>tout</strong> ce qui est posé, avec leur nombre exact — zéro est une réponse. La répartition, à côté, se lit et se clique.</p>
+  {% if exemples %}<p class="exemples">Pour commencer : {% for libelle, ex in exemples %}<a href="{{ url_page(nom, 'explorer', **ex) }}">{{ libelle }}</a>{% if not loop.last %} · {% endif %}{% endfor %}</p>{% endif %}
+  {% endif %}
+</main>
+<aside class="panneau repartition">
+  <h2>Répartition{% if montrer %} du résultat{% else %} de tout{% endif %}</h2>
+  {% for g in repartition %}
+  {% if g.valeurs %}{% set plus_grand = g.valeurs|map(attribute=1)|max %}
+  <h3>{{ g.titre }}</h3>
+  <ul class="effectifs">{% for v, n, lien in g.valeurs %}{% if loop.index == 11 %}</ul><details class="repli"><summary>{{ (loop.length - 10)|nb('autre valeur', 'autres valeurs') }}</summary><ul class="effectifs">{% endif %}<li{% if g.titre == 'Base' %} class="{{ couleur(v) }}"{% endif %}>{% if g.titre == 'Base' %}<span class="puce-base"><span class="pastille-base" aria-hidden="true"></span>{% endif %}{% if lien %}<a href="{{ lien }}">{{ v }}</a>{% else %}{{ v }}{% endif %}{% if g.titre == 'Base' %}</span>{% endif %} <span>{{ n }}</span>
+    <svg class="barre" viewBox="0 0 100 4" preserveAspectRatio="none" aria-hidden="true"><rect class="fond" width="100" height="4" rx="2"/><rect width="{{ (100 * n / plus_grand)|round(1) if plus_grand else 0 }}" height="4" rx="2"/></svg></li>{% endfor %}</ul>{% if g.valeurs|length > 10 %}</details>{% endif %}
+  {% endif %}
+  {% endfor %}
+</aside>
+{% endblock %}

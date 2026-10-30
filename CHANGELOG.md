@@ -5,6 +5,60 @@ Le projet suit la version de la spécification qu'il implémente : `bundle-spec 
 
 ## [Non publié]
 
+### Ajouté — ce que la structure permet de déduire (spec rév. 4.6)
+
+- **`kb_find`** : `query` (le texte comme critère, en ET strict), `links_to_depth`
+  (impact jusqu'au 3e degré), `upstream_changed` (cite un document d'une autre
+  base modifié depuis), `sort` (pertinence, ancienneté, citations, priorité de
+  ré-audit).
+- **Explorer** : recherche et critères réunis sur une page, répartition du
+  résultat cliquable, critères retirables, même requête en MCP ; les
+  propositions en attente y sont cherchées, marquées non revues. `/trouver` et
+  `/recherche` y redirigent.
+- **Fiche** : dérive amont, impact par degré, histoire (propositions intégrées,
+  commits, propositions en attente qui la nomment). **Base** : fiches piliers,
+  fiches à relire. **Pages** : gouvernance, manques, chronologie par semaine,
+  état (découverte, dépôts, journal regroupé), à propos. Rôle de section `gaps`.
+- Un filtre incompris est signalé en tête de page au lieu d'être ignoré.
+- Interface retravaillée : hiérarchie typographique et rôles de couleur, une
+  couleur par base partout, accueil en cartes avec l'aiguillage que plusieurs
+  descriptions répétaient sorti à part, boîte unique des propositions en
+  attente, saut Ctrl+K, voyant de santé, onglets à compteurs, graphe coloré et
+  survolable, chronologie avec carte d'activité et événements regroupés.
+- Relecture du 29/10 : la page d'une **proposition** montre ses relations aux
+  autres (une correction en attente se lit avant de trancher), la fiche qu'elle
+  vise et les fiches proches, la précédente et la suivante (J/K), et les
+  commandes de revue à copier ; la boîte range les corrections sous ce qu'elles
+  corrigent. La page d'une **fiche** a un sommaire collant, des permaliens, deux
+  dates (fraîcheur et dernier commit), les propositions qui la contestent en
+  tête et ses liens en bas. Le **saut** propose des candidats classés quand rien
+  n'est unique ; l'**Explorer** classe toutes les bases ensemble, titre exact
+  d'abord. Le **voyant** passe au rouge sur une synchronisation remote en échec
+  dans les 24 heures, et affiche sa raison. Vocabulaire unifié (« à trancher »,
+  « à revérifier », fiches partout) et glossaire ; palette des bases sans ambre
+  ni rouge, bases du hub en gris ; en-tête collant ; journal git lisible.
+- Relecture du 29/10, suite : **palette Ctrl+K** (fenêtre qui affiche pendant la
+  frappe les bases, fiches et propositions qui répondent, en lisant la page
+  `/aller` servie) ; voyant **à surveiller**, non plus rouge, sur une
+  synchronisation en échec, avec cause et remède sur la page d'état ; une
+  **forme** de pastille par base et un cyan à la place de l'aqua, que le vert
+  rendait indiscernable en sombre ; accueil sans appel à l'action impossible,
+  compteurs à traiter en ambre partout, ordre des cartes au choix, aiguillage en
+  **arbre de décision** ; boîte groupée par jour, sur une page, identifiants à
+  copier ; Explorer aux critères repliés ; chronologie dont la luminosité suit
+  l'activité en sombre, jours à venir distincts, sujets de commit lisibles ;
+  graphe à l'épaisseur absolue et marquée, étiquettes écartées, légende
+  dessinée ; fil d'Ariane depuis « Bases » ; mêmes comptes de fiches citantes
+  partout ; dossiers paginés (une page de 891 Ko ramenée à 73 Ko) ; texte de
+  13 px au moins.
+- Relecture du 29/10, fin : chiffres cliquables soulignés, voyant en badge qui
+  compte ses points, glossaire en pied de page et termes liés à leur définition,
+  code jamais sous 13 px ; dates en un seul format, relatives sous sept jours
+  avec la date exacte au survol ; descriptions coupées à une fin de phrase ;
+  corrections repliées sous ce qu'elles visent et en-tête collant dans la boîte ;
+  aiguillage et bases du hub repliés ; commande de revue à copier sur chaque
+  carte ; puces de la chronologie à la couleur de leur sorte.
+
 ### Ajouté — consultation (spec rév. 4.5)
 
 - **`kb_find`** : les documents d'une ou plusieurs bases par critères

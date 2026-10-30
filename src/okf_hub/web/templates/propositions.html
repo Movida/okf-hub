@@ -1,40 +1,42 @@
 {% extends "page.html" %}
-{% import "macros.html" as m %}
+{% import "macros.html" as m with context %}
 {% block titre %}Propositions — {{ base.title }}{% endblock %}
 {% block fil %}{{ m.fil([(base.title, url_base(nom))], 'Propositions') }}{% endblock %}
 {% block contenu %}
-<main class="principal large">
+<main class="principal pleine">
   <h1>Propositions</h1>
   {{ m.onglets(nom, 'propositions') }}
   <nav class="filtres">
     <a href="{{ url_page(nom, 'propositions') }}"{% if not statut %} class="actif"{% endif %}>toutes ({{ comptes.values()|sum }})</a>
     {% for s in statuts %}<a href="{{ url_page(nom, 'propositions', statut=s) }}"{% if statut == s %} class="actif"{% endif %}>{{ {'pending': 'en attente', 'accepted': 'intégrées', 'rejected': 'rejetées'}[s] }} ({{ comptes[s] }})</a>{% endfor %}
+    <span class="tri">ordre : {% for o, libelle in [('anciennes', 'les plus anciennes'), ('recentes', 'les plus récentes')] %}<a href="{{ url_page(nom, 'propositions', statut=statut, ordre=o) }}"{% if ordre == o %} class="actif"{% endif %}>{{ libelle }}</a>{% if not loop.last %} · {% endif %}{% endfor %}</span>
   </nav>
-  {% if pages > 1 %}<p class="note">Les plus récentes d'abord — {{ (page - 1) * par_page + 1 }} à {{ [page * par_page, total]|min }} sur {{ total }}.</p>{% endif %}
-  {% if illisibles %}<p class="alerte">{{ illisibles }} fichier(s) au frontmatter illisible ignoré(s).</p>{% endif %}
-  {% if not entrees %}<p>Aucune proposition.</p>{% else %}
+  {% if illisibles %}<p class="alerte">{{ illisibles|nb('fichier au frontmatter illisible ignoré', 'fichiers au frontmatter illisible ignorés') }}.</p>{% endif %}
+  {% if pages > 1 %}<p class="note">{{ (page - 1) * par_page + 1 }} à {{ [page * par_page, total]|min }} sur {{ total }}.</p>{% endif %}
+  {% if not lignes %}<p>Aucune proposition.</p>{% else %}
   <table class="propositions">
-    <thead><tr><th>Proposition</th><th>Statut</th><th>Type</th><th>Objet</th><th>Déposée</th><th>Résolution</th></tr></thead>
+    <thead><tr><th>Proposition</th><th>Type</th><th>Déposée</th>{% if statut != 'pending' %}<th>Statut</th><th>Résolution</th>{% endif %}</tr></thead>
     <tbody>
-    {% for e in entrees %}{% set fm = e.frontmatter %}
-    <tr>
-      <td><a href="{{ url_page(nom, 'propositions/' ~ e.id) }}"><code>{{ e.id }}</code></a></td>
-      <td><span class="statut {{ e.status }}">{{ e.status }}</span>{% if e.inconsistent %} <em class="hors">incohérence status/emplacement</em>{% endif %}</td>
-      <td>{{ fm.get('type', '?') }}</td>
-      <td>{{ fm.get('concerns', '') }}</td>
-      <td>{{ fm.get('submitted-at', '')|date }}<br><span class="note">{{ fm.get('submitted-by', '') }}</span></td>
-      <td>{% if fm.get('resolved-at') %}{{ fm.get('resolved-at')|date }}{% endif %}
-        {% if fm.get('rejection-reason') %}<br>{{ fm.get('rejection-reason')|string|truncate(240) }}{% endif %}
-        {% set into = fm.get('integrated-into') %}{% if into %}{% set into = into if into is not string else [into] %}<br>{% for c in into[:3] %}<a href="{{ url_doc(nom, c) }}">{{ c }}</a>{% if not loop.last %}, {% endif %}{% endfor %}{% if into|length > 3 %} <span class="note">et {{ into|length - 3 }} autre(s)</span>{% endif %}{% endif %}</td>
+    {% for b, e, profondeur, sortantes in lignes %}{% set fm = e.frontmatter %}{% set type = fm.get('type', '?') %}
+    <tr class="profondeur-{{ [profondeur, 3]|min }}">
+      <td class="objet">{% if profondeur %}<span class="fil-relation" aria-hidden="true">↳</span> {% endif %}<a href="{{ url_page(nom, 'propositions/' ~ e.id) }}">{{ fm.get('concerns', e.id) }}</a><br><code class="note">{{ e.id }}</code> <button type="button" class="copier" hidden data-copier="{{ e.id }}" aria-label="Copier l'identifiant {{ e.id }}">copier</button>{% if e.inconsistent %} <em class="hors">incohérence status/emplacement</em>{% endif %}</td>
+      <td><span class="type-proposition t-{{ type }}">{{ libelles.LIBELLES_TYPE.get(type, type) }}</span></td>
+      <td class="note">{{ fm.get('submitted-at', '')|quand }}<br><span class="depose-par">{{ fm.get('submitted-by', '') }}</span></td>
+      {% if statut != 'pending' %}
+      <td><span class="statut {{ e.status }}">{{ libelles.LIBELLES_STATUT[e.status] }}</span></td>
+      <td>{% if fm.get('resolved-at') %}{{ fm.get('resolved-at')|quand }}{% endif %}
+        {% if fm.get('rejection-reason') %}<br>{{ fm.get('rejection-reason')|string|truncate(200) }}{% endif %}
+        {% set into = liste(fm.get('integrated-into')) %}{% if into %}<br>{% for c in into[:3] %}<a href="{{ url_doc(nom, c) }}">{{ c }}</a>{% if not loop.last %}, {% endif %}{% endfor %}{% if into|length > 3 %} <span class="note">et {{ (into|length - 3)|nb('autre') }}</span>{% endif %}{% endif %}</td>
+      {% endif %}
     </tr>
     {% endfor %}
     </tbody>
   </table>
   {% if pages > 1 %}
   <nav class="pages">
-    {% if page > 1 %}<a href="{{ url_page(nom, 'propositions', statut=statut, page=page - 1) }}">← plus récentes</a>{% endif %}
+    {% if page > 1 %}<a href="{{ url_page(nom, 'propositions', statut=statut, ordre=ordre, page=page - 1) }}">← page précédente</a>{% endif %}
     <span>page {{ page }} sur {{ pages }}</span>
-    {% if page < pages %}<a href="{{ url_page(nom, 'propositions', statut=statut, page=page + 1) }}">plus anciennes →</a>{% endif %}
+    {% if page < pages %}<a href="{{ url_page(nom, 'propositions', statut=statut, ordre=ordre, page=page + 1) }}">page suivante →</a>{% endif %}
   </nav>
   {% endif %}
   {% endif %}

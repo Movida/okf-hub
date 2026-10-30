@@ -1,0 +1,59 @@
+{% extends "page.html" %}
+{% block titre %}État du hub{% endblock %}
+{% block contenu %}
+<main class="principal large">
+  <h1>État du hub</h1>
+  <div class="etat-global {{ sante.niveau }}" role="status"><span class="pastille" aria-hidden="true"></span>
+    <div><strong>{{ {'bon': 'Tout est en ordre', 'attention': 'À surveiller', 'critique': 'À corriger'}[sante.niveau] }}</strong>
+    {% if sante.raisons %}<ul>{% for raison in sante.raisons %}<li>{{ raison }}</li>{% endfor %}</ul>{% endif %}</div></div>
+  <p class="note">okf-hub {{ version }}{% if local %} · racine <code>{{ hub_root }}</code> · bases dans <code>{{ bases_dir }}</code>{% endif %} · ce que voit ce processus, à l'instant.</p>
+  {% if rapport %}
+  {% if rapport.invalid or rapport.collisions %}
+  <section class="alerte bloc">
+    <h2>Bundles non chargés</h2>
+    <ul>{% for rep, motif in rapport.invalid %}<li><code>{{ rep }}</code> : {{ motif }}</li>{% endfor %}
+    {% for nom, garde, ignore in rapport.collisions %}<li>collision de <code>name</code> « {{ nom }} » : <code>{{ garde }}</code> retenu, <code>{{ ignore }}</code> ignoré</li>{% endfor %}</ul>
+  </section>
+  {% else %}<p class="note">Tous les bundles de <code>bases-dir</code> sont chargés.</p>{% endif %}
+  {% endif %}
+  {% if echecs %}
+  <section class="alerte bloc" id="synchro">
+    <h2>Synchronisation avec les remotes, dernières 24 heures</h2>
+    <p>Au démarrage, chaque instance du hub tire le remote de chaque base. Celles-ci n'ont pas pu : leurs bases servent la copie locale, qui fait foi, mais peuvent être en retard sur leur remote. Le journal est commun à toutes les instances ; celle qui échoue n'est pas forcément celle qui affiche cette page.</p>
+    <ul>{% for e in echecs %}
+      <li><strong>Processus {{ e.pids|join(', ') }}</strong> — {{ e.motif }} : {{ e.cause }}. {{ e.bases|length|nb('base') }} ({{ e.bases|join(', ') }}), {{ e.fois|nb('fois', 'fois') }}, dernière le {{ e.dernier[:16]|replace('T', ' à ') }} UTC.
+        {% if e.remede %}<br><em>Que faire :</em> {{ e.remede }}.{% endif %}</li>
+    {% endfor %}</ul>
+  </section>
+  {% endif %}
+  <h2>Bases</h2>
+  <table class="etat">
+    <thead><tr><th>Base</th><th title="Fichiers markdown du corpus, dont index et journal · fiches de connaissance">Fichiers · fiches</th><th>Dépôt</th><th>À revérifier</th><th>Avertissements</th></tr></thead>
+    <tbody>{% for b in bases %}{% set d = b.depot %}
+    <tr><td><a class="puce-base {{ couleur(b.nom) }}" href="{{ url_base(b.nom) }}"><span class="pastille-base" aria-hidden="true"></span>{{ b.nom }}</a>{% if b.repertoire != b.nom %} <span class="note">({{ b.repertoire }}/)</span>{% endif %}</td>
+      <td class="nombre">{{ b.fichiers }} · {{ b.fiches }}</td>
+      <td>{% if d is none %}<em class="hors">pas un dépôt git lisible</em>{% else %}<code>{{ d.branche }}</code>{% if d.amont %} → <code>{{ d.amont }}</code>{% elif b.repertoire in livrees %} <span class="note">sans remote — sa source est <code>bundles/</code> du hub</span>{% else %} <span class="badge perime" title="Aucune copie de cette base hors de cette machine">sans remote</span>{% endif %}
+        {% if b.nom in bases_en_echec %}<br><a class="badge perime" href="#synchro">synchro impossible depuis une instance</a>{% endif %}
+        {% if d.en_avance %}<br><span class="hors">{{ d.en_avance|nb('commit non poussé', 'commits non poussés') }}</span>{% endif %}
+        {% if d.en_retard %}<br><span class="hors">{{ d.en_retard|nb('commit en retard sur le remote', 'commits en retard sur le remote') }}</span>{% endif %}
+        {% if d.modifies %}<br><span class="hors">{{ d.modifies|nb('fichier modifié ou non suivi', 'fichiers modifiés ou non suivis') }}</span>{% endif %}{% endif %}</td>
+      <td class="nombre">{% if b.derives %}<a href="{{ url_page(b.nom, 'explorer', amont='1') }}">{{ b.derives }}</a>{% else %}0{% endif %}</td>
+      <td>{% for a in b.avertissements %}<span class="hors">{{ a }}</span><br>{% endfor %}</td></tr>
+    {% endfor %}</tbody>
+  </table>
+  {% if graphe.avertissements %}<h2>Dépendances déclarées</h2><ul class="avertissements">{% for a in graphe.avertissements %}<li>{{ a }}</li>{% endfor %}</ul>{% endif %}
+  {% if depot_hub and (depot_hub.en_avance or depot_hub.en_retard or depot_hub.modifies) %}
+  <h2>Dépôt du hub</h2>
+  <p>{% if depot_hub.en_avance %}{{ depot_hub.en_avance|nb('commit non poussé', 'commits non poussés') }}. {% endif %}{% if depot_hub.en_retard %}{{ depot_hub.en_retard|nb('commit en retard', 'commits en retard') }}. {% endif %}{% if depot_hub.modifies %}{{ depot_hub.modifies|nb('fichier modifié ou non suivi', 'fichiers modifiés ou non suivis') }}.{% endif %}</p>
+  {% endif %}
+  {% if local %}
+  <h2>Journal <span class="note">— derniers avertissements et erreurs de <code>hub.log</code>, toutes instances</span></h2>
+  {% if journal %}
+  <table class="journal">
+    <thead><tr><th>Dernière fois</th><th>Fois</th><th>Message</th></tr></thead>
+    <tbody>{% for g in journal %}<tr><td class="note">{{ g.dernier[:16]|replace('T', ' ') }}</td><td class="nombre">{{ g.fois }}{% if g.pids|length > 1 %} <span class="note">({{ g.pids|length }} instances)</span>{% endif %}</td><td><span class="{{ 'hors' if g.niveau == 'ERROR' else '' }}">{{ g.message }}</span></td></tr>{% endfor %}</tbody>
+  </table>
+  {% else %}<p class="note">Aucun.</p>{% endif %}
+  {% else %}<p class="note">En mode équipe, le rapport de découverte et le journal ne sont pas montrés : ils nomment des bases qui ne vous sont pas forcément ouvertes.</p>{% endif %}
+</main>
+{% endblock %}

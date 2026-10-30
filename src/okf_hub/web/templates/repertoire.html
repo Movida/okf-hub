@@ -1,35 +1,58 @@
 {% extends "page.html" %}
-{% import "macros.html" as m %}
+{% import "macros.html" as m with context %}
 {% block titre %}{{ dossier or base.title }}{% endblock %}
 {% block fil %}{{ m.fil(fil[:-1] if dossier else [], fil[-1][0] if dossier else base.title) }}{% endblock %}
 {% block contenu %}
 <main class="principal">
   <header class="tete-base">
-    <h1>{% if dossier %}{{ dossier }}/{% else %}{{ base.title }}{% endif %}</h1>
-    {% if not dossier %}<p class="description">{{ base.description }}</p>{% endif %}
+    <h1 class="{{ couleur(nom) }}"><span class="pastille-base" aria-hidden="true"></span>{% if dossier %}{{ titre_dossier or dossier ~ '/' }}{% else %}{{ base.title }}{% endif %}</h1>
+    {% if dossier and titre_dossier %}<p class="note"><code>{{ dossier }}/</code></p>{% endif %}
+    {% if not dossier %}<p class="description">{{ chapeau }}</p>
+    {% if suite %}<details class="description-complete"><summary>Description complète — écrite pour qu'un agent choisisse la bonne base</summary><p>{{ suite }}</p></details>{% endif %}{% endif %}
     {{ m.onglets(nom, 'base') }}
-    {% if not dossier and en_attente %}<p class="note"><a href="{{ url_page(nom, 'propositions', statut='pending') }}">{{ en_attente }} proposition(s) en attente</a></p>{% endif %}
   </header>
-  {% if rendu %}
+  {% if not dossier and (panneau.piliers or panneau.roles) %}
+  <section class="entrees">
+    {% if panneau.piliers %}<div><h2>Fiches piliers</h2>
+      <ol class="piliers">{% for d, n in panneau.piliers %}<li><a href="{{ url_doc(nom, d.chemin) }}">{{ d.titre }}</a> <span class="note">citée par {{ n }}</span></li>{% endfor %}</ol></div>{% endif %}
+    {% if panneau.roles %}<div><h2>Sections</h2>
+      <p class="note">Les fiches qui portent une section de ce rôle.</p>
+      <ul class="effectifs">{% for role, n in panneau.roles %}<li><a href="{{ url_page(nom, 'explorer', section=role) }}">{{ role }}</a> <span>{{ n }}</span></li>{% endfor %}</ul></div>{% endif %}
+  </section>
+  {% endif %}
+  {% macro index_rendu() %}
   {% if rendu.tronque %}<p class="alerte">Rendu possiblement incomplet : le document dépasse l'imbrication que le moteur rend. Sa source suit le rendu.</p>{% endif %}
   <article class="corps">{{ rendu.html }}</article>
   {% if rendu.tronque %}<pre class="source">{{ rendu.source }}</pre>{% endif %}
-  {% endif %}
+  {% endmacro %}
+  {% if rendu and dossier %}{{ index_rendu() }}{% endif %}
+  {% if index_long %}<p class="note">Ce dossier a un index trop long pour s'afficher ici : <a href="{{ url_doc(nom, index_long) }}">le lire sur sa page</a>.</p>{% endif %}
   {% if sous or docs %}
   <section class="contenu-repertoire">
-    <h2>{% if rendu %}Contenu du répertoire{% else %}Contenu{% endif %}</h2>
+    <h2>{% if rendu and dossier %}Contenu du répertoire{% else %}Contenu{% endif %}</h2>
     {% if sous %}
     <ul class="dossiers">
-      {% for chemin, libelle, n in sous %}<li><a href="{{ url_rep(nom, chemin) }}">{{ libelle }}/</a> <span class="note">{{ n }} document(s)</span></li>{% endfor %}
+      {% for chemin, libelle, n in sous %}<li><a href="{{ url_rep(nom, chemin) }}">{{ libelle }}/</a> <span class="note">{{ n|nb('fiche') }}</span></li>{% endfor %}
     </ul>
     {% endif %}
     {% if docs %}
+    {% macro pagination() %}{% if pages > 1 %}<nav class="pages">{% if page > 1 %}<a href="?page={{ page - 1 }}">← précédentes</a>{% endif %}<span>fiches {{ (page - 1) * par_page + 1 }} à {{ [page * par_page, total_docs]|min }} sur {{ total_docs }} · page {{ page }} sur {{ pages }}</span>{% if page < pages %}<a href="?page={{ page + 1 }}">suivantes →</a>{% endif %}</nav>{% endif %}{% endmacro %}
+    {% if pages > 1 %}<p class="note">Pour filtrer ce dossier par type, tag ou texte : <a href="{{ url_page(nom, 'explorer', sous=dossier) }}">l'Explorer, limité à <code>{{ dossier }}/</code></a>.</p>{% endif %}
+    {{ pagination() }}
     <ul class="documents">
-      {% for d in docs %}{{ m.doc_ligne(nom, d, '(sans type)') }}{% endfor %}
+      {% for d in docs %}{{ m.doc_ligne(nom, d, '(sans type)', dates[d.chemin]|date) }}{% endfor %}
     </ul>
+    {{ pagination() }}
     {% endif %}
   </section>
   {% endif %}
+  {% if rendu and not dossier %}
+  {# L'index racine s'adresse autant aux agents qu'aux humains (format, conventions) : il se déplie. #}
+  <details class="index-base">
+    <summary><strong>Index de la base</strong> <span class="note">— sa présentation, ses conventions et sa table des matières (<code>index.md</code>)</span></summary>
+    {{ index_rendu() }}
+  </details>
+  {% endif %}
 </main>
-{{ m.panneau(nom, panneau) }}
+{{ m.panneau(nom, panneau, entrees=dossier != '') }}
 {% endblock %}

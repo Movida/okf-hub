@@ -3,7 +3,7 @@
 {% block contenu %}
 <main class="principal">
   <h1>{{ titre }}</h1>
-  <p>{{ message }}</p>
+  <p>{{ message }} <a href="/a-propos">Ce que cette interface sert, et à qui.</a></p>
   {% if proches is defined and proches %}
   <p>Vouliez-vous dire {% for b in proches %}<a href="{{ url_base(b) }}">{{ url_base(b) }}</a>{% if not loop.last %} ou {% endif %}{% endfor %} ?</p>
   {% endif %}

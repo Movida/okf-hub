@@ -1,0 +1,47 @@
+{% extends "page.html" %}
+{% import "macros.html" as m with context %}
+{% block titre %}Manques — {{ base.title }}{% endblock %}
+{% block fil %}{{ m.fil([(base.title, url_base(nom))], 'Manques') }}{% endblock %}
+{% block contenu %}
+<main class="principal">
+  <h1>Ce qui manque</h1>
+  {{ m.onglets(nom, 'manques') }}
+  <p class="intro">Ce que la base devrait contenir et ne contient pas : documents attendus, au point qu'on y renvoie ; vocabulaire déclaré sans document ; questions déposées sans réponse.</p>
+  <h2>Documents attendus <span class="note">— des liens y mènent, ils n'existent pas</span></h2>
+  {% if attendus %}
+  <table class="manques">
+    <thead><tr><th>Cible</th><th>Cité par</th></tr></thead>
+    <tbody>{% for cible, docs in attendus[:200] %}<tr><td><code>{{ cible }}</code></td><td>{% for d in docs[:5] %}<a href="{{ url_doc(nom, d.chemin) }}">{{ d.titre }}</a>{% if not loop.last %}, {% endif %}{% endfor %}{% if docs|length > 5 %} <span class="note">et {{ (docs|length - 5)|nb('autre') }}</span>{% endif %}</td></tr>{% endfor %}</tbody>
+  </table>
+  {% if attendus|length > 200 %}<p class="note">{{ (attendus|length - 200)|nb('autre cible non affichée', 'autres cibles non affichées') }}.</p>{% endif %}
+  {% else %}<p class="note">Aucun : tous les liens de la base mènent à un document qui existe.</p>{% endif %}
+  {% if hors_vue %}<p class="note">Références vers des bases hors de ce hub ou de votre vue : {% for b, n in hors_vue %}<code>{{ b }}</code> ({{ n }}){% if not loop.last %}, {% endif %}{% endfor %}.</p>{% endif %}
+
+  <h2>Questions en attente <span class="note">— lacunes déposées par des sessions</span></h2>
+  {% if questions %}<ul>{% for e in questions %}<li><a href="{{ url_page(nom, 'propositions/' ~ e.id) }}"><code>{{ e.id }}</code></a> — {{ e.frontmatter.get('concerns', '') }} <span class="note">({{ e.frontmatter.get('submitted-at', '')|quand }})</span></li>{% endfor %}</ul>
+  {% else %}<p class="note">Aucune.</p>{% endif %}
+
+  <h2>Vocabulaire déclaré sans document</h2>
+  {% if not profil_enrichi %}<p class="note">La base ne déclare pas de profil : rien à confronter. Un profil (types, facettes, sections de rôle <code>gaps</code>) rend cette section utile — voir sa <a href="{{ url_page(nom, 'gouvernance') }}">gouvernance</a>.</p>
+  {% else %}
+  {% if types_vides %}<p>Types : {% for e in types_vides %}<code>{{ e.valeur }}</code>{% if not loop.last %}, {% endif %}{% endfor %}.</p>{% endif %}
+  {% for libelle, vides in facettes_vides %}<p>{{ libelle }} : {% for v in vides %}<code>{{ v }}</code>{% if not loop.last %}, {% endif %}{% endfor %}.</p>{% endfor %}
+  {% if not types_vides and not facettes_vides %}<p class="note">Chaque type et chaque valeur déclarés ont au moins un document.</p>{% endif %}
+  {% endif %}
+
+  {% if matrice %}{% set mx = matrice %}
+  <h2>Croisement {{ mx.lignes }} × {{ mx.colonnes }}</h2>
+  <form method="get" class="criteres"><label>Lignes <select name="lignes">{% for n in mx.noms %}<option{% if n == mx.lignes %} selected{% endif %}>{{ n }}</option>{% endfor %}</select></label>
+    <label>Colonnes <select name="colonnes">{% for n in mx.noms %}<option{% if n == mx.colonnes %} selected{% endif %}>{{ n }}</option>{% endfor %}</select></label><button type="submit">Croiser</button></form>
+  <table class="matrice">
+    <thead><tr><th></th>{% for b in mx.vb %}<th>{{ b }}</th>{% endfor %}</tr></thead>
+    <tbody>{% for a in mx.va %}<tr><th>{{ a }}</th>{% for b in mx.vb %}{% set n = mx.cases.get((a, b), 0) %}<td class="nombre{% if n == 0 %} zero{% endif %}">{% if n %}<a href="{{ url_page(nom, 'explorer', tag=[mx.lignes ~ mx.separateur ~ a, mx.colonnes ~ mx.separateur ~ b]) }}">{{ n }}</a>{% else %}0{% endif %}</td>{% endfor %}</tr>{% endfor %}</tbody>
+  </table>
+  {% endif %}
+
+  {% if gaps_declare %}
+  <h2>Ce que les sources ne disent pas <span class="note">— sections de rôle <code>gaps</code></span></h2>
+  {% if lacunes %}<ul>{% for d, titre, id in lacunes %}<li><a href="{{ url_doc(nom, d.chemin, id) }}">{{ d.titre }}</a> — § {{ titre }}</li>{% endfor %}</ul>{% else %}<p class="note">Aucune section de ce rôle.</p>{% endif %}
+  {% endif %}
+</main>
+{% endblock %}

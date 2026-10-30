@@ -1,4 +1,4 @@
-"""Interface web de consultation, en lecture seule (§ 5 bis.2, rév. 4.5).
+"""Interface web de consultation, en lecture seule (§ 5 bis.2).
 
 Processus distinct des instances MCP (`okf-hub web`), sur le même moteur de
 lecture : il lit le disque par le même registre et n'a aucun état qui fasse
@@ -13,343 +13,104 @@ Adresses stables — ce sont elles que citent les autres interfaces (§ 5 bis.3)
 | Adresse | Page |
 |---|---|
 | `/` | Accueil : les bases visibles |
-| `/b/<base>/` | Une base : son `index.md`, ses vues, ses effectifs |
-| `/b/<base>/<chemin>.md` | Un document |
+| `/b/<base>/` | Une base : son `index.md`, ses vues, ses effectifs, ses fiches piliers |
+| `/b/<base>/<chemin>.md` | Un document, avec sa généalogie, son impact et sa dérive amont |
 | `/b/<base>/<dossier>/` | Un répertoire du corpus |
-| `/b/<base>/-/trouver`, `/-/vues/<n>`, `/-/propositions[/<id>]`, `/-/journal` | Pages d'une base |
-| `/trouver`, `/recherche`, `/graphe` | Pages du hub |
+| `/b/<base>/-/explorer`, `/-/vues/<n>`, `/-/manques`, `/-/gouvernance`, `/-/propositions[/<id>]`, `/-/journal` | Pages d'une base |
+| `/explorer`, `/chronologie`, `/graphe`, `/etat`, `/a-propos` | Pages du hub |
 
-Le segment `-` sépare les pages d'une base de son corpus : un dossier de
-corpus nommé `propositions/` reste ainsi adressable.
+`/trouver`, `/recherche` et `/b/<base>/-/trouver` (rév. 4.5) redirigent vers
+l'Explorer. Le segment `-` sépare les pages d'une base de son corpus : un dossier
+de corpus nommé `propositions/` reste ainsi adressable.
 """
 
 from __future__ import annotations
 
 import datetime as dt
+import math
 import posixpath
 import re
 from collections import Counter, defaultdict
-from dataclasses import dataclass, field
-from pathlib import Path
-from typing import Callable
-from urllib.parse import quote, urlencode
+from dataclasses import dataclass
 
 import yaml
-from jinja2 import Environment, FileSystemLoader, StrictUndefined, select_autoescape
 from starlette.applications import Starlette
-from starlette.datastructures import MutableHeaders
-from starlette.requests import Request
-from starlette.responses import FileResponse, HTMLResponse, RedirectResponse, Response
+from starlette.responses import FileResponse, RedirectResponse, Response
 from starlette.routing import Mount, Route
 from starlette.staticfiles import StaticFiles
 
-from .. import governance, hublog
-from ..errors import INVALID_INPUT, NOT_FOUND, UNKNOWN_BASE, ToolError
+from .. import governance
+from ..errors import ToolError
 from ..lecture.confiance import confiance, instant
 from ..lecture.graphe import analyser, cycles
-from ..lecture.liens import ANCRE, EXTERNE, HORS_CORPUS, INTERBASE, INTERNE, Cible, classer
-from ..lecture.modele import (
-    CHARGEUR,
-    DOC,
-    REP,
-    BaseModele,
-    Doc,
-    Entrant,
-    Lecteur,
-    cible_document,
-    resoudre,
-)
+from ..lecture.liens import ANCRE, EXTERNE, INTERBASE, INTERNE
+from ..lecture.modele import CHARGEUR, DOC, BaseModele, Doc, resoudre
 from ..lecture.profil import Vue
-from ..lecture.rendu import Lien, Contexte, ancre, ancre_de_source, rendre
-from ..lecture.requete import (
-    CLES_CRITERES,
-    SANS_TYPE,
-    Criteres,
-    compter,
-    filtrer,
-    lire_criteres,
+from ..lecture.rendu import Contexte, ancre_de_source, rendre
+from ..lecture.requete import CLES_CRITERES, SANS_TYPE, Criteres, compter, filtrer, lire_criteres
+from ..mdutil import normalize_heading, parse_document
+from ..search import RESERVED_NAMES
+from ..server import META_BASES
+from ..tools.proposal_status_tool import STATUSES
+from . import explorer, pages, revue
+from .commun import (
+    jour_lisible,
+    CSP,
+    ICI,
+    PROPOSITIONS_PAR_PAGE,
+    TYPES_IMAGES,
+    CSP_SVG,
+    HISTORIQUE,
+    Hub,
+    Introuvable,
+    Requete,
+    _EnTetesDeSecurite,
+    chemin_d_image,
+    hors_route,
+    page_demandee,
+    page_html,
+    url_base,
+    url_doc,
+    url_page,
+    url_rep,
 )
-from ..mdutil import (
-    PREAMBLE_LABEL,
-    heading_at_line,
-    normalize_heading,
-    parse_document,
-    parse_headings,
-)
-from ..registry import Registry
-from ..search import run_search, split_terms
-from ..tools.proposal_status_tool import STATUSES, collect
-from ..tools.search_tool import CONTEXT_LINES, MAX_EXCERPTS_PER_DOC
-from .acces import AccesRefuse, Visiteur, WebConfig, bases_visibles, visiteur_de
-from .figure import disposer
+from .figure import disposer, epaisseur_de
 
-ICI = Path(__file__).resolve().parent
-
-#: Politique de contenu : rien d'extérieur, aucun script, aucun cadre. Le corps
-#: des documents vient en partie de propositions d'agents (§ 8).
-CSP = (
-    "default-src 'self'; script-src 'none'; object-src 'none'; base-uri 'none'; "
-    "form-action 'self'; frame-ancestors 'none'"
-)
-
-#: Fichiers du corpus servis tels quels : des images, rien d'autre. Un SVG peut
-#: porter du script ; il est servi sous une politique `sandbox` qui l'empêche de
-#: s'exécuter, même ouvert seul dans un onglet.
-TYPES_IMAGES = {
-    ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".gif": "image/gif",
-    ".webp": "image/webp", ".avif": "image/avif", ".svg": "image/svg+xml",
-}
-CSP_SVG = "sandbox; default-src 'none'; style-src 'unsafe-inline'; img-src data:"
-
-#: Propositions par page : une base en accumule des centaines.
-PROPOSITIONS_PAR_PAGE = 50
-
-#: Valeurs proposées au plus par champ du formulaire Trouver.
-SUGGESTIONS_MAX = 80
-
-#: Documents listés au plus par base sur une page de résultats.
-LISTE_MAX = 500
-#: Recherche : documents par page quand une base est choisie ; aperçu par base
-#: quand plusieurs sont interrogées, avec un lien vers la liste complète.
-RECHERCHE_PAR_PAGE = 25
-RECHERCHE_APERCU = 8
-RECHERCHE_TOUT = 100_000
-HISTORIQUE = 30
-
-
-class Introuvable(Exception):
-    """404 : base inconnue, non visible, ou chemin absent — indiscernables."""
-
-
-# --- application ----------------------------------------------------------------
-
-
-@dataclass
-class Hub:
-    registry: Registry
-    config: WebConfig
-    rafraichir: Callable[[], object] = lambda: None
-    """Re-scan de la découverte, sous cooldown (`HubServer._silent_rescan("web")`)."""
-    lecteur: Lecteur = field(init=False)
-
-    def __post_init__(self) -> None:
-        self.lecteur = Lecteur.de(self.registry)
-
-
-class _EnTetesDeSecurite:
-    """Pose la politique de contenu et ses compagnes sur toute réponse."""
-
-    def __init__(self, app) -> None:
-        self.app = app
-
-    async def __call__(self, scope, receive, send) -> None:
-        if scope["type"] != "http":
-            await self.app(scope, receive, send)
-            return
-
-        async def envoyer(message) -> None:
-            if message["type"] == "http.response.start":
-                en_tetes = MutableHeaders(scope=message)
-                # Une réponse qui pose sa propre politique la garde : celle d'un
-                # SVG est plus stricte que celle des pages.
-                en_tetes.setdefault("Content-Security-Policy", CSP)
-                en_tetes["X-Content-Type-Options"] = "nosniff"
-                en_tetes["Referrer-Policy"] = "same-origin"
-                en_tetes["X-Frame-Options"] = "DENY"
-            await send(message)
-
-        await self.app(scope, receive, envoyer)
+__all__ = ["CSP", "Hub", "creer_app"]
 
 
 def creer_app(hub: Hub) -> Starlette:
     routes = [
-        Route("/", _page(accueil)),
-        Route("/trouver", _page(trouver)),
-        Route("/recherche", _page(recherche)),
-        Route("/graphe", _page(graphe)),
+        Route("/", page_html(accueil)),
+        Route("/explorer", page_html(explorer.explorer)),
+        Route("/propositions", page_html(boite)),
+        Route("/aller", page_html(aller)),
+        Route("/chronologie", page_html(pages.chronologie)),
+        Route("/graphe", page_html(graphe)),
+        Route("/etat", page_html(pages.etat)),
+        Route("/a-propos", page_html(pages.a_propos)),
+        # Adresses de la rév. 4.5, conservées : elles mènent à l'Explorer.
+        Route("/trouver", page_html(explorer.ancienne_adresse)),
+        Route("/recherche", page_html(explorer.ancienne_adresse)),
         Mount("/static", StaticFiles(directory=ICI / "static"), name="static"),
-        Route("/b/{base}", _page(base_sans_barre)),
-        Route("/b/{base}/", _page(base_accueil)),
-        Route("/b/{base}/-/trouver", _page(trouver)),
-        Route("/b/{base}/-/vues/{n:int}", _page(vue)),
-        Route("/b/{base}/-/propositions", _page(propositions)),
-        Route("/b/{base}/-/propositions/{id}", _page(proposition)),
-        Route("/b/{base}/-/journal", _page(journal)),
-        Route("/b/{base}/{chemin:path}", _page(document_ou_repertoire)),
+        Route("/b/{base}", page_html(base_sans_barre)),
+        Route("/b/{base}/", page_html(base_accueil)),
+        Route("/b/{base}/-/explorer", page_html(explorer.explorer)),
+        Route("/b/{base}/-/trouver", page_html(explorer.ancienne_adresse)),
+        Route("/b/{base}/-/vues/{n:int}", page_html(vue)),
+        Route("/b/{base}/-/manques", page_html(pages.manques)),
+        Route("/b/{base}/-/gouvernance", page_html(pages.gouvernance)),
+        Route("/b/{base}/-/propositions", page_html(propositions)),
+        Route("/b/{base}/-/propositions/{id}", page_html(proposition)),
+        Route("/b/{base}/-/journal", page_html(journal)),
+        Route("/b/{base}/{chemin:path}", page_html(document_ou_repertoire)),
     ]
-    app = Starlette(routes=routes, exception_handlers={404: _hors_route})
+    app = Starlette(routes=routes, exception_handlers={404: hors_route})
     app.state.hub = hub
     app.add_middleware(_EnTetesDeSecurite)
     return app
 
 
-def _hors_route(request: Request, exc) -> Response:
-    """Adresse qui ne correspond à aucune route : la même page que tout 404,
-    avec les mêmes suggestions — sous le même contrôle d'accès."""
-    requete = _requete(request)
-    return requete if isinstance(requete, Response) else _introuvable(requete)
-
-
-# --- gabarits -------------------------------------------------------------------
-
-
-def url_base(nom: str) -> str:
-    return f"/b/{nom}/"
-
-
-def url_doc(nom: str, chemin: str, fragment: str | None = None) -> str:
-    return f"/b/{nom}/{quote(chemin)}" + (f"#{quote(fragment)}" if fragment else "")
-
-
-def url_rep(nom: str, chemin: str) -> str:
-    return f"/b/{nom}/{quote(chemin)}/" if chemin else url_base(nom)
-
-
-def url_page(nom: str | None, quelle: str, /, **params) -> str:
-    """Une page d'une base (`/b/<nom>/-/<quelle>`) ou du hub (`/<quelle>`) ;
-    `params` devient la chaîne de requête — `page` compris, d'où les deux
-    premiers paramètres positionnels seulement."""
-    racine = f"/b/{nom}/-/{quelle}" if nom else f"/{quelle}"
-    params = {k: v for k, v in params.items() if v not in (None, "", [])}
-    return racine + ("?" + urlencode(params, doseq=True) if params else "")
-
-
-def _date(valeur) -> str:
-    if isinstance(valeur, dt.datetime):
-        return valeur.astimezone(dt.timezone.utc).date().isoformat()
-    if isinstance(valeur, dt.date):
-        return valeur.isoformat()
-    lu = instant(valeur)
-    return lu.date().isoformat() if lu else str(valeur or "")
-
-
-_ENV = Environment(
-    loader=FileSystemLoader(ICI / "templates"),
-    autoescape=select_autoescape(default=True, default_for_string=True),
-    undefined=StrictUndefined,
-    trim_blocks=True,
-    lstrip_blocks=True,
-)
-_ENV.globals.update(url_base=url_base, url_doc=url_doc, url_rep=url_rep, url_page=url_page)
-_ENV.filters["date"] = _date
-
-
-# --- requête ---------------------------------------------------------------------
-
-
-@dataclass
-class Requete:
-    request: Request
-    hub: Hub
-    visiteur: Visiteur
-    visibles: frozenset[str]
-
-    @property
-    def lecteur(self) -> Lecteur:
-        return self.hub.lecteur
-
-    def nom_de_base(self) -> str:
-        nom = self.request.path_params.get("base", "")
-        if nom not in self.visibles:
-            raise Introuvable(nom)
-        return nom
-
-    def modele(self, nom: str) -> BaseModele:
-        if nom not in self.visibles:
-            raise Introuvable(nom)
-        return self.lecteur.modele(nom)
-
-    def visibles_tries(self) -> list[str]:
-        return sorted(self.visibles)
-
-    def page(self, gabarit: str, code: int = 200, **contexte) -> HTMLResponse:
-        html = _ENV.get_template(gabarit).render(
-            visiteur=self.visiteur, equipe=self.hub.config.equipe, **contexte
-        )
-        return HTMLResponse(html, status_code=code)
-
-    def lien_vers(self, cible: Cible) -> Lien:
-        """Ce que devient une cible de lien dans une page (`rendu.Contexte`)."""
-        if cible.sorte == EXTERNE:
-            return Lien(cible.brut.strip().strip("<>"), "externe")
-        if cible.sorte == ANCRE:
-            return Lien("#" + quote(cible.ancre or ""), "ancre")
-        if cible.sorte == HORS_CORPUS:
-            return Lien(None, "casse", f"lien hors du corpus : {cible.brut}")
-        if cible.sorte not in (INTERNE, INTERBASE):
-            return Lien(None, "refuse", f"lien non suivi : {cible.brut}")
-        if cible.base not in self.visibles:
-            if not self.hub.config.equipe and cible.base not in self.hub.registry.names():
-                return Lien(None, "casse", f"base « {cible.base} » absente de ce hub")
-            # En équipe, une base fermée et une base absente sont indiscernables.
-            return Lien(None, "masque", "lien vers une base qui ne vous est pas ouverte")
-        modeles = self.lecteur.modeles([cible.base])
-        resolution = resoudre(cible, modeles)
-        classe = "interbase" if cible.sorte == INTERBASE else "interne"
-        if resolution.sorte == DOC:
-            doc = modeles[cible.base].docs[resolution.chemin]
-            return Lien(url_doc(cible.base, resolution.chemin, resolution.ancre), classe, doc.titre)
-        if resolution.sorte == REP:
-            return Lien(url_rep(cible.base, resolution.chemin or ""), classe + " repertoire")
-        return Lien(None, "casse", f"lien cassé : {cible.brut}")
-
-    def image_vers(self, cible: Cible) -> str | None:
-        """Adresse d'une image du corpus d'une base visible, ou None."""
-        if cible.sorte not in (INTERNE, INTERBASE) or cible.base not in self.visibles or cible.repertoire:
-            return None
-        if chemin_d_image(self.lecteur.modele(cible.base), cible.chemin or "") is None:
-            return None
-        return url_doc(cible.base, cible.chemin or "")
-
-
-def _requete(request: Request) -> Requete | Response:
-    """La requête et ce que son visiteur peut lire, ou le refus du mode équipe."""
-    hub: Hub = request.app.state.hub
-    adresse = request.client.host if request.client else None
-    try:
-        visiteur = visiteur_de(hub.config, request.headers, adresse)
-    except AccesRefuse as exc:
-        requete = Requete(request, hub, Visiteur(None), frozenset())
-        return requete.page("erreur.html", 403, titre="Accès refusé", message=str(exc))
-    return Requete(request, hub, visiteur, bases_visibles(hub.config, visiteur, hub.registry.names()))
-
-
-def _introuvable(r: Requete) -> Response:
-    """404, avec la bonne adresse quand l'URL nomme une base ouverte au visiteur
-    (`/base/x`, `/x` : le schéma `/b/<base>/` ne se devine pas). Une base
-    fermée n'est jamais suggérée : rien ne la distingue d'une base absente."""
-    segments = {s for s in r.request.url.path.split("/") if s}
-    proches = [b for b in r.visibles_tries() if b in segments]
-    return r.page(
-        "erreur.html", 404, titre="Introuvable",
-        message="Cette page n'existe pas, ou ne vous est pas ouverte.",
-        proches=proches, bases=r.visibles_tries(),
-    )
-
-
-def _page(fonction: Callable[[Requete], Response]) -> Callable[[Request], Response]:
-    def point_d_entree(request: Request) -> Response:
-        request.app.state.hub.rafraichir()
-        requete = _requete(request)
-        if isinstance(requete, Response):
-            return requete
-        try:
-            return fonction(requete)
-        except Introuvable:
-            return _introuvable(requete)
-        except ToolError as exc:
-            if exc.code in (UNKNOWN_BASE, NOT_FOUND):
-                return _introuvable(requete)
-            if exc.code == INVALID_INPUT:
-                return requete.page("erreur.html", 400, titre="Requête invalide", message=exc.message)
-            hublog.error(f"web : {request.url.path} — {exc.code}: {exc.message}")
-            return requete.page("erreur.html", 500, titre="Erreur", message=exc.message)
-
-    point_d_entree.__name__ = fonction.__name__
-    return point_d_entree
-
-
-# --- accueil -----------------------------------------------------------------------
 
 
 def _derniere_entree_du_journal(modele: BaseModele) -> str | None:
@@ -362,28 +123,255 @@ def _derniere_entree_du_journal(modele: BaseModele) -> str | None:
     return None
 
 
-def _resume_base(r: Requete, nom: str) -> dict:
+_FIN_DE_PHRASE = re.compile(r"(?<=[.!?»])\s+(?=[A-ZÀ-ÝÉÈ«])")
+
+
+def _phrases(texte: str) -> list[str]:
+    return [p.strip() for p in _FIN_DE_PHRASE.split(texte) if p.strip()]
+
+
+def _regles_communes(r: Requete, descriptions: dict[str, str]) -> list[dict]:
+    """Les phrases que plusieurs descriptions de bases répètent mot pour mot.
+
+    Une description de manifeste est écrite pour le routage d'un agent (§ 3.3),
+    qui la lit base par base : une règle d'aiguillage s'y recopie donc dans
+    chaque base concernée. Sur une page qui les montre toutes, elle se lit une
+    fois. Un segment « condition → base » devient une étape de l'aiguillage : un
+    « sinon, » en tête le rattache au « non » de l'étape d'avant, et ce qui précède
+    un « : » est le contexte de l'étape, pas sa question — d'où un arbre de
+    décision, sans rien changer au texte des bases.
+    """
+    occurrences: dict[str, list[str]] = {}
+    for nom, texte in descriptions.items():
+        for phrase in dict.fromkeys(_phrases(texte)):
+            occurrences.setdefault(phrase, []).append(nom)
+    regles = []
+    for phrase, bases in occurrences.items():
+        if len(bases) < 2:
+            continue
+        lignes = []
+        for segment in phrase.rstrip(".").split(" ; "):
+            condition, fleche, cible = segment.partition("→")
+            if not fleche:
+                lignes.append({"condition": segment.strip(), "cibles": []})
+                continue
+            noms = [n for n in re.findall(r"[a-z0-9-]+", cible) if n in r.hub.registry.names()]
+            texte = condition.strip()
+            sinon = bool(re.match(r"(?i)^sinon\s*,\s*", texte))
+            texte = re.sub(r"(?i)^sinon\s*,\s*", "", texte)
+            contexte, deux_points, question = texte.partition(" : ")
+            if not deux_points:
+                contexte, question = "", texte
+            lignes.append({"condition": condition.strip(), "cibles": noms, "reste": cible.strip(),
+                           "sinon": sinon, "contexte": contexte.strip(), "question": question.strip()})
+        regles.append({"phrase": phrase, "bases": bases, "lignes": lignes})
+    return regles
+
+
+def _resume_base(r: Requete, nom: str, communes: set[str]) -> dict:
     modele = r.modele(nom)
     base = modele.base
-    en_attente = collect(base, ("pending",), loader=CHARGEUR).entries
+    en_attente = [e for e in r.hub.propositions(nom)[0].entries if e.status == "pending"]
     dates = sorted(e.submitted_at for e in en_attente if e.submitted_at)
+    propres = [p for p in _phrases(base.manifest.description) if p not in communes]
     return {
         "nom": nom,
         "titre": base.manifest.title,
-        "description": base.manifest.description,
-        "documents": len(modele.docs),
+        "phrase": propres[0] if propres else base.manifest.description,
+        # Des fiches, partout : les fichiers réservés (index, journal) ne sont pas
+        # de la connaissance, et l'Explorer ne les compte pas non plus.
+        "fiches": len(modele.concepts()),
         "en_attente": len(en_attente),
         "plus_ancienne": dates[0] if dates else None,
+        "a_reverifier": sum(1 for d in r.lecteur.derives(nom).values() if any(x.base in r.visibles for x in d)),
         "gouvernance": governance.status_of_file(base.manifest.governance_rules),
         "journal": _derniere_entree_du_journal(modele),
+        # La dernière activité réelle : le titre du journal peut dater d'un mois
+        # quand les commits datent d'hier.
+        "dernier_commit": next(iter(r.lecteur.historique(nom, 1)), None),
+        "du_hub": nom in META_BASES,
     }
 
 
+#: Les ordres des cartes de l'accueil. Par défaut, ce qui demande une action
+#: d'abord, le plus chargé en tête ; les autres par nom.
+ORDRES_DE_L_ACCUEIL = {
+    "action": lambda b: (-(b["en_attente"] + b["a_reverifier"]) if (b["en_attente"] or b["a_reverifier"]) else 1, b["titre"].casefold()),
+    "nom": lambda b: b["titre"].casefold(),
+    "taille": lambda b: (-b["fiches"], b["titre"].casefold()),
+    "activite": lambda b: (-(b["dernier_commit"].date.timestamp() if b["dernier_commit"] else 0), b["titre"].casefold()),
+}
+
+
 def accueil(r: Requete) -> Response:
-    return r.page("accueil.html", bases=[_resume_base(r, n) for n in r.visibles_tries()])
+    noms = r.visibles_tries()
+    regles = _regles_communes(r, {n: r.hub.registry.get(n).manifest.description for n in noms})
+    communes = {regle["phrase"] for regle in regles}
+    bases = [_resume_base(r, n, communes) for n in noms]
+    dates = sorted(b["plus_ancienne"] for b in bases if b["plus_ancienne"])
+    ordre = r.request.query_params.get("ordre") or "action"
+    if ordre not in ORDRES_DE_L_ACCUEIL:
+        r.avis.append(f"ordre « {ordre} » inconnu ({', '.join(ORDRES_DE_L_ACCUEIL)}) : à traiter d'abord")
+        ordre = "action"
+    domaines = sorted((b for b in bases if not b["du_hub"]), key=ORDRES_DE_L_ACCUEIL[ordre])
+    plus_ancienne = instant(dates[0]) if dates else None
+    return r.page(
+        "accueil.html", bases=domaines, bases_du_hub=[b for b in bases if b["du_hub"]], regles=regles, ordre=ordre,
+        attente_jours=(dt.datetime.now(dt.timezone.utc) - plus_ancienne).days if plus_ancienne else None,
+        en_attente=sum(b["en_attente"] for b in bases), plus_ancienne=dates[0] if dates else None,
+    )
 
 
-# --- base, répertoire, document ---------------------------------------------------
+def boite(r: Requete) -> Response:
+    """Toutes les propositions en attente des bases visibles, les plus anciennes
+    d'abord : le travail de revue, en une liste."""
+    params = r.request.query_params
+    demandees = [b for b in params.getlist("base") if b]
+    for b in demandees:
+        if b not in r.visibles:
+            r.avis.append(f"base « {b} » inconnue ou non ouverte : ignorée")
+    noms = [b for b in demandees if b in r.visibles] or r.visibles_tries()
+    type_voulu = params.get("type") or None
+    toutes = []
+    for nom in r.visibles_tries():
+        for e in r.hub.propositions(nom)[0].entries:
+            if e.status == "pending":
+                toutes.append((nom, e))
+    par_base = Counter(nom for nom, _ in toutes)
+    par_type = Counter(str(e.frontmatter.get("type") or "?") for nom, e in toutes if nom in noms)
+    if type_voulu and type_voulu not in par_type:
+        r.avis.append(f"type « {type_voulu} » : aucune proposition en attente de ce type")
+    retenues = sorted(
+        ((nom, e) for nom, e in toutes if nom in noms and (not type_voulu or e.frontmatter.get("type") == type_voulu)),
+        key=lambda x: (x[1].submitted_at or "9999", x[1].id),
+    )
+    ordre = _tri_des_propositions(r, "anciennes")
+    if ordre == "recentes":
+        retenues.reverse()
+    pages = max(1, -(-len(retenues) // BOITE_PAR_PAGE))
+    page = min(page_demandee(params), pages)
+    maintenant = dt.datetime.now(dt.timezone.utc)
+    rel = revue.relations(r, r.visibles_tries())
+    lignes = []
+    jour_courant = None
+    for nom, e, profondeur, sortantes in _fils(retenues[(page - 1) * BOITE_PAR_PAGE : page * BOITE_PAR_PAGE], rel):
+        depose = instant(e.frontmatter.get("submitted-at"))
+        local = depose.astimezone() if depose else None  # l'heure du poste qui sert la page
+        jour = local.date() if local else None
+        lignes.append({
+            "base": nom, "e": e, "profondeur": profondeur, "sortantes": sortantes,
+            "heures": int((maintenant - depose).total_seconds() // 3600) if depose else None,
+            "heure": local.strftime("%H:%M") if local else "",
+            # Un titre de jour à chaque changement de jour, entre les fils seulement.
+            "nouveau_jour": jour_lisible(jour) if profondeur == 0 and jour != jour_courant else None,
+            "fil": [],
+        })
+        if profondeur == 0:
+            jour_courant = jour
+    # Une correction, une suite se lisent dans le fil de ce qu'elles visent, replié
+    # sous lui ; seules les têtes de fil sont des lignes du tableau.
+    tetes: list[dict] = []
+    for ligne in lignes:
+        if ligne["profondeur"] and tetes:
+            tetes[-1]["fil"].append(ligne)
+        else:
+            tetes.append(ligne)
+    lignes = tetes
+    return r.page(
+        "boite.html", lignes=lignes, total=len(retenues), par_base=sorted(par_base.items()),
+        par_type=par_type.most_common(), noms_demandes=demandees, type_voulu=type_voulu,
+        page=page, pages=pages, par_page=BOITE_PAR_PAGE, ordre=ordre,
+    )
+
+
+#: La boîte tient sur une page dans l'usage courant : on la parcourt et on la
+#: filtre, on n'y feuillette pas.
+BOITE_PAR_PAGE = 200
+
+
+
+def aller(r: Requete) -> Response:
+    """Le saut de l'en-tête (Ctrl+K) : une base par son nom, un document par sa
+    référence `<base>:/<chemin>` ou son titre exact, une proposition par son
+    identifiant ; sinon, les candidats groupés, ou l'Explorer si rien ne répond.
+
+    `liste=1` rend toujours la liste, sans redirection : c'est ce que lit la
+    palette de `okf.js`, qui l'insère telle quelle — la page servie, pas une API
+    (§ 1.2)."""
+    q = (r.request.query_params.get("q") or "").strip()
+    liste = r.request.query_params.get("liste") == "1"
+    if not q and not liste:
+        return RedirectResponse("/explorer", 303)
+    if not liste:
+        if q in r.visibles:
+            return RedirectResponse(url_base(q), 303)
+        m = re.match(r"^([a-z0-9-]+):/(.+)$", q)
+        if m and m.group(1) in r.visibles:
+            modele = r.lecteur.modele(m.group(1))
+            trouve = modele.trouver(m.group(2).strip("/"), m.group(2).endswith("/"))
+            if trouve is not None:
+                return RedirectResponse(url_doc(m.group(1), trouve[1]) if trouve[0] == DOC else url_rep(m.group(1), trouve[1]), 303)
+        if revue.ID_PROPOSITION.fullmatch(q) and (adresse := r.proposition_vers(q)):
+            return RedirectResponse(adresse, 303)
+    candidats = _candidats_du_saut(r, q) if q else []
+    exacts = [c for c in candidats if c[0] == 0]
+    if not liste and len(exacts) == 1:
+        return RedirectResponse(url_doc(exacts[0][1], exacts[0][2].chemin), 303)
+    bases = [n for n in r.visibles_tries() if q.casefold() in n or q.casefold() in r.hub.registry.get(n).manifest.title.casefold()]
+    propositions = _propositions_du_saut(r, q) if q else []
+    if not liste and not candidats and not bases and not propositions:
+        return RedirectResponse(url_page(None, "explorer", q=q), 303)
+    return r.page("aller.html", q=q, bases=bases, candidats=candidats[:SAUT_MAX],
+                  plus=max(0, len(candidats) - SAUT_MAX), propositions=propositions,
+                  titres={n: r.hub.registry.get(n).manifest.title for n in bases})
+
+
+def _propositions_du_saut(r: Requete, q: str) -> list[tuple[str, object]]:
+    """Les propositions dont l'identifiant ou l'objet contient `q`, en attente
+    d'abord, les plus récentes ensuite."""
+    cible = q.casefold()
+    trouvees = []
+    for nom in r.visibles_tries():
+        for e in r.hub.propositions(nom)[0].entries:
+            if cible in e.id or cible in str(e.frontmatter.get("concerns") or "").casefold():
+                trouvees.append((nom, e))
+    trouvees.sort(key=lambda x: (x[1].status != "pending", -(instant(x[1].frontmatter.get("submitted-at")) or dt.datetime.min.replace(tzinfo=dt.timezone.utc)).timestamp()))
+    return trouvees[:SAUT_PROPOSITIONS]
+
+
+#: Ce que la palette du saut montre au plus ; au-delà, l'Explorer.
+SAUT_MAX = 30
+SAUT_PROPOSITIONS = 8
+_RANGS_DU_SAUT = ("titre exact", "début du titre", "dans le titre", "tous les mots du titre", "dans le chemin")
+
+
+def _candidats_du_saut(r: Requete, q: str) -> list[tuple[int, str, Doc, str]]:
+    """Documents dont le titre ou un synonyme répond à `q`, du plus sûr au moins
+    sûr : (rang, base, document, ce qui a répondu). Le titre exact d'abord — c'est
+    ce qu'on tape quand on sait où l'on va."""
+    cible = q.casefold()
+    mots = cible.split()
+    out = []
+    for nom in r.visibles_tries():
+        modele = r.lecteur.modele(nom)
+        champ = modele.profil.champ_du_role("aliases")
+        for d in modele.concepts():
+            noms = [d.titre]
+            if champ is not None:
+                synonymes = d.frontmatter.get(champ.nom)
+                noms += [str(x) for x in (synonymes if isinstance(synonymes, list) else [synonymes] if synonymes else [])]
+            meilleur = None
+            for i, libelle in enumerate(noms):
+                replie = libelle.casefold()
+                rang = (0 if replie == cible else 1 if replie.startswith(cible) else 2 if cible in replie
+                        else 3 if len(mots) > 1 and all(m in replie for m in mots) else None)
+                if rang is not None and (meilleur is None or rang < meilleur[0]):
+                    meilleur = (rang, libelle if i else "")
+            if meilleur is None and cible in d.chemin.casefold():
+                meilleur = (4, "")
+            if meilleur is not None:
+                out.append((meilleur[0], nom, d, meilleur[1]))
+    return sorted(out, key=lambda c: (c[0], len(c[2].titre), c[2].titre.casefold(), c[1]))
 
 
 def base_sans_barre(r: Requete) -> Response:
@@ -409,18 +397,6 @@ def document_ou_repertoire(r: Requete) -> Response:
     return _image(modele, chemin)
 
 
-def chemin_d_image(modele: BaseModele, chemin: str) -> Path | None:
-    """Fichier image du corpus désigné par `chemin`, confiné comme un document (§ 5.3)."""
-    extension = posixpath.splitext(chemin)[1].lower()
-    if extension not in TYPES_IMAGES:
-        return None
-    base = modele.base
-    candidat = (base.corpus_dir / chemin).resolve()
-    if base.corpus_dir not in candidat.parents or base.is_excluded(candidat, is_dir=False):
-        return None
-    return candidat if candidat.is_file() else None
-
-
 def _image(modele: BaseModele, chemin: str) -> Response:
     fichier = chemin_d_image(modele, chemin)
     if fichier is None:
@@ -431,9 +407,11 @@ def _image(modele: BaseModele, chemin: str) -> Response:
     return reponse
 
 
-def _fil(nom: str, chemin: str) -> list[tuple[str, str]]:
-    """(libellé, adresse) de la base jusqu'au dossier qui contient `chemin`."""
-    fil = [(nom, url_base(nom))]
+def _fil(modele: BaseModele, chemin: str) -> list[tuple[str, str]]:
+    """(libellé, adresse) de la base — par son titre, comme sur sa page — jusqu'au
+    dossier qui contient `chemin`."""
+    nom = modele.nom
+    fil = [(modele.base.manifest.title, url_base(nom))]
     parties = [p for p in chemin.split("/") if p]
     for i in range(len(parties) - (0 if chemin.endswith("/") else 1)):
         fil.append((parties[i], url_rep(nom, "/".join(parties[: i + 1]))))
@@ -454,31 +432,87 @@ def _panneau(r: Requete, modele: BaseModele) -> dict:
         "roles": roles,
         "vues": list(enumerate(profil.vues)),
         "avertissements": profil.avertissements,
+        "piliers": _piliers(r, modele),
+        "a_reverifier": sum(1 for d in r.lecteur.derives(modele.nom).values() if any(x.base in r.visibles for x in d)),
     }
+
+
+#: Fiches piliers montrées dans la colonne d'une base.
+PILIERS = 8
+
+
+def _piliers(r: Requete, modele: BaseModele) -> list[tuple[Doc, int]]:
+    """Les fiches les plus citées de la base — par des documents que le visiteur
+    peut lire, sommaires et journaux exclus des deux côtés : un sommaire cite
+    tout et n'apprend rien sur ce qui compte."""
+    comptes = []
+    for (nom, chemin), liens in r.lecteur.index_entrants().items():
+        if nom != modele.nom or posixpath.basename(chemin) in ("index.md", "log.md") or chemin not in modele.docs:
+            continue
+        sources = {(e.base, e.chemin) for e in liens
+                   if e.base in r.visibles and posixpath.basename(e.chemin) not in ("index.md", "log.md")}
+        if sources:
+            comptes.append((len(sources), chemin))
+    comptes.sort(key=lambda x: (-x[0], x[1]))
+    return [(modele.docs[c], n) for n, c in comptes[:PILIERS]]
+
+
+#: Fiches listées par page d'un dossier ; liens entrants listés par base sur une fiche.
+REPERTOIRE_PAR_PAGE = 200
+ENTRANTS_PAR_BASE = 50
+INDEX_EN_LIGNE_MAX = 40_000  # octets de markdown
 
 
 def _repertoire(r: Requete, modele: BaseModele, dossier: str) -> Response:
     sous, docs = modele.contenu(dossier)
     index = modele.index_de(dossier)
     rendu = None
+    index_long = False
     if index is not None:
-        rendu = _rendu_document(r, modele, modele.docs[index])
+        # Un index généré peut lister des milliers de fiches (240 Ko de markdown
+        # mesurés) : il se lit alors sur sa page, pas en tête du dossier.
+        index_long = modele.docs[index].taille > INDEX_EN_LIGNE_MAX
+        if not index_long:
+            rendu = _rendu_document(r, modele, modele.docs[index])
     compte = defaultdict(int)
-    for d in modele.docs.values():
+    for d in modele.concepts():
         for s in sous:
             if d.chemin.startswith(s + "/"):
                 compte[s] += 1
+    chapeau, suite = None, None
+    if not dossier:
+        # La description d'un manifeste est écrite pour le routage d'un agent
+        # (§ 3.3) : sa première phrase propre suffit en tête, le reste se déplie.
+        noms = r.visibles_tries()
+        communes = {regle["phrase"] for regle in _regles_communes(
+            r, {n: r.hub.registry.get(n).manifest.description for n in noms})}
+        description = modele.base.manifest.description
+        propres = [x for x in _phrases(description) if x not in communes]
+        chapeau = propres[0] if propres else description
+        suite = description if len(_phrases(description)) > 1 else None
+    dates = r.lecteur.dates_commit(modele.nom)
+    # Un dossier de deux mille fiches faisait une page de 900 Ko, lente à afficher :
+    # la liste se pagine, et l'Explorer filtre le dossier.
+    docs = [d for d in docs if d.chemin != index]
+    pages = max(1, -(-len(docs) // REPERTOIRE_PAR_PAGE))
+    page = min(page_demandee(r.request.query_params), pages)
+    total_docs = len(docs)
+    docs = docs[(page - 1) * REPERTOIRE_PAR_PAGE: page * REPERTOIRE_PAR_PAGE]
     return r.page(
-        "repertoire.html",
+        "repertoire.html", page=page, pages=pages, total_docs=total_docs, par_page=REPERTOIRE_PAR_PAGE,
+        index_long=index if index_long else None,
         base=modele.base.manifest,
         nom=modele.nom,
         dossier=dossier,
-        fil=_fil(modele.nom, dossier + "/" if dossier else ""),
+        titre_dossier=modele.docs[index].titre if dossier and index is not None else None,
+        chapeau=chapeau, suite=suite,
+        dates={d.chemin: r.lecteur.fraicheur(modele, d, dates).date for d in docs},
+        fil=_fil(modele, dossier + "/" if dossier else ""),
         sous=[(s, posixpath.basename(s), compte[s]) for s in sous],
-        docs=[d for d in docs if d.chemin != index],
+        docs=docs,
         rendu=rendu,
         panneau=_panneau(r, modele),
-        en_attente=len(collect(modele.base, ("pending",), loader=CHARGEUR).entries),
+        en_attente=sum(1 for e in r.hub.propositions(modele.nom)[0].entries if e.status == "pending"),
     )
 
 
@@ -497,7 +531,7 @@ def _rendu_document(r: Requete, modele: BaseModele, doc: Doc) -> _RenduDocument:
     ids = frozenset(str(s["id"]) for s in _sources(doc.frontmatter) if s.get("id"))
     rendu = rendre(
         corps,
-        Contexte(modele.nom, doc.chemin, r.lien_vers, ids, r.image_vers),
+        Contexte(modele.nom, doc.chemin, r.lien_vers, ids, r.image_vers, r.proposition_vers),
         titre=doc.titre,
         roles=modele.profil.sections,
     )
@@ -619,10 +653,20 @@ def _liens_sortants(r: Requete, modele: BaseModele, doc: Doc) -> dict:
 
 def _liens_entrants(r: Requete, modele: BaseModele, doc: Doc) -> dict:
     """Liens entrants visibles du lecteur seulement (§ 5 bis.4) : sinon la page
-    d'une base ouverte listerait des titres d'une base fermée."""
+    d'une base ouverte listerait des titres d'une base fermée.
+
+    Les fiches sont comptées comme l'impact les compte (`Lecteur.dependants`) :
+    sans la fiche elle-même, et sans les sommaires et journaux, qui citent sans
+    dépendre — ils sont listés à part. Le même nombre partout sur la page."""
     par_source: dict[tuple[str, str], bool] = {}
+    sommaires: set[tuple[str, str]] = set()
+    liens = 0
     for e in r.lecteur.entrants(modele.nom, doc.chemin):
-        if e.base not in r.visibles:
+        if e.base not in r.visibles or (e.base, e.chemin) == (modele.nom, doc.chemin):
+            continue
+        liens += 1
+        if posixpath.basename(e.chemin) in RESERVED_NAMES:
+            sommaires.add((e.base, e.chemin))
             continue
         source = r.lecteur.modele(e.base)
         en_amont = source.profil.role_de_section(e.lien.section) == "upstream"
@@ -631,12 +675,54 @@ def _liens_entrants(r: Requete, modele: BaseModele, doc: Doc) -> dict:
     for (nom, chemin), en_amont in sorted(par_source.items()):
         entree = {"base": nom, "chemin": chemin, "titre": r.lecteur.modele(nom).docs[chemin].titre}
         (declinee.append(entree) if en_amont else citee[nom].append(entree))
-    return {"declinee": declinee, "citee": sorted(citee.items()), "total": len(par_source)}
+    return {"declinee": declinee, "citee": sorted(citee.items()), "total": len(par_source), "liens": liens,
+            "sommaires": [{"base": b, "chemin": c, "titre": r.lecteur.modele(b).docs[c].titre} for b, c in sorted(sommaires)]}
+
+
+def _liste(valeur) -> list[str]:
+    if isinstance(valeur, list):
+        return [str(v) for v in valeur]
+    return [str(valeur)] if valeur else []
+
+
+def _genealogie(r: Requete, modele: BaseModele, doc: Doc) -> dict:
+    """D'où vient ce que dit la fiche : les propositions qu'elle a intégrées,
+    les commits qui l'ont touchée, et ce qui l'attend — les propositions en
+    attente qui la nomment, non revues."""
+    collecte, corps = r.hub.propositions(modele.nom)
+    integrees = [e for e in collecte.entries
+                 if e.status == "accepted" and doc.chemin in _liste(e.frontmatter.get("integrated-into"))]
+    sans_extension = doc.chemin[:-3] if doc.chemin.endswith(".md") else doc.chemin
+    marques = {doc.chemin, f"{modele.nom}:/{sans_extension}", f"/{sans_extension}"}
+    if len(doc.titre) >= 12:
+        marques.add(doc.titre.casefold())
+    mentions = []
+    for e in collecte.entries:
+        if e.status != "pending":
+            continue
+        texte = corps.get(e.id, "")
+        replie = texte.casefold()
+        if any((m in texte) if m != doc.titre.casefold() else (m in replie) for m in marques):
+            mentions.append(e)
+    return {
+        "integrees": integrees,
+        "en_attente": mentions,
+        "commits": r.lecteur.historique(modele.nom, HISTORIQUE_FICHE, chemin=doc.chemin),
+    }
+
+
+#: Commits montrés dans l'historique d'une fiche.
+HISTORIQUE_FICHE = 12
 
 
 def _document(r: Requete, modele: BaseModele, doc: Doc) -> Response:
     rendu = _rendu_document(r, modele, doc)
     fraicheur = r.lecteur.fraicheur(modele, doc)
+    # La date déclarée dit quand le contenu a été confronté ; le commit, quand le
+    # fichier a changé. Les deux répondent à des questions différentes.
+    commit = r.lecteur.date_commit(modele.nom, doc.chemin) if fraicheur.origine != "commit" else None
+    derives = [d for d in r.lecteur.derives(modele.nom).get(doc.chemin, ()) if d.base in r.visibles]
+    impact = r.lecteur.dependants(modele.nom, doc.chemin, 3, r.visibles)
     mode_operatoire = None
     for niveau, texte, id_ancre in rendu.sommaire:
         if modele.profil.role_de_section(normalize_heading(texte)) == "procedure":
@@ -647,176 +733,22 @@ def _document(r: Requete, modele: BaseModele, doc: Doc) -> Response:
         nom=modele.nom,
         base=modele.base.manifest,
         doc=doc,
-        fil=_fil(modele.nom, doc.chemin),
+        fil=_fil(modele, doc.chemin),
         description=doc.frontmatter.get("description"),
         en_tete=_en_tete(r, modele, doc),
         fraicheur=fraicheur,
+        commit=commit, entrants_par_base=ENTRANTS_PAR_BASE,
         rendu=rendu,
         mode_operatoire=mode_operatoire,
         sources=_sources(doc.frontmatter),
         sortants=_liens_sortants(r, modele, doc),
         entrants=_liens_entrants(r, modele, doc),
+        derives=derives,
+        titres_amont={(d.base, d.chemin): r.lecteur.modele(d.base).docs[d.chemin].titre for d in derives},
+        impact=[len(degre) for degre in impact],
+        genealogie=_genealogie(r, modele, doc),
         sans_type=SANS_TYPE,
     )
-
-
-# --- trouver --------------------------------------------------------------------
-
-
-#: Paramètres du formulaire → paramètres de `kb_find` : une seule validation.
-def _criteres_du_formulaire(params) -> Criteres:
-    champs: dict[str, str | bool] = {}
-    for brut in params.getlist("champ"):
-        brut = brut.strip()
-        if not brut:
-            continue
-        if brut.startswith("!"):
-            champs[brut[1:].strip()] = False
-        elif "=" in brut:
-            nom, _, valeur = brut.partition("=")
-            champs[nom.strip()] = valeur.strip()
-        else:
-            champs[brut] = True
-    mois = params.get("mois") or None
-    if mois is not None:
-        try:
-            mois = int(mois)
-        except ValueError:
-            raise ToolError(INVALID_INPUT, "ancienneté : un nombre de mois est attendu")
-    return lire_criteres({
-        "type": params.get("type") or None,
-        "tags": [t for t in params.getlist("tag") if t.strip()],
-        "fields": champs,
-        "section": params.get("section") or None,
-        "without_section": params.get("sans_section") or None,
-        "under": params.get("sous") or None,
-        "links_to": params.get("liant") or None,
-        "older_than_months": mois,
-    })
-
-
-def _entrants_de(r: Requete, noms: list[str], criteres: Criteres) -> tuple[Entrant, ...] | None:
-    """Liens qui arrivent sur la cible de `links_to`, ou None sans ce critère."""
-    if not criteres.links_to:
-        return None
-    cible = classer(criteres.links_to, noms[0] if len(noms) == 1 else "", "")
-    if cible.sorte not in (INTERNE, INTERBASE) or not cible.base or cible.base not in r.visibles:
-        raise ToolError(INVALID_INPUT, f"« liant » : référence illisible ou base non ouverte — {criteres.links_to}")
-    modeles = r.lecteur.modeles([cible.base])
-    trouve = cible_document(resoudre(cible, modeles), modeles)
-    if trouve is None:
-        raise ToolError(INVALID_INPUT, f"« liant » : aucun document {criteres.links_to}")
-    return r.lecteur.entrants(*trouve)
-
-
-def _executer(r: Requete, noms: list[str], criteres: Criteres) -> list[dict]:
-    entrants = _entrants_de(r, noms, criteres)
-    resultats = []
-    for nom in noms:
-        modele = r.modele(nom)
-        trouves = filtrer(r.lecteur, modele, criteres, entrants=entrants)
-        docs = [t.doc for t in trouves]
-        facettes = []
-        _, types = compter(docs, "type", modele.profil)
-        for nom_facette, facette in modele.profil.facettes.items():
-            if modele.profil.separateur:
-                _, effectifs = compter(docs, nom_facette, modele.profil)
-                facettes.append((facette.libelle or nom_facette, nom_facette, effectifs))
-        resultats.append({
-            "nom": nom,
-            "total": len(trouves),
-            "trouves": trouves[:LISTE_MAX],
-            "types": types,
-            "facettes": facettes,
-            "separateur": modele.profil.separateur,
-        })
-    return resultats
-
-
-def _suggestions(r: Requete, noms: list[str]) -> dict:
-    """Valeurs réellement présentes, proposées par les champs du formulaire
-    (`<datalist>` : une saisie assistée sans script)."""
-    types, tags, sections = Counter(), Counter(), Counter()
-    dossiers: set[str] = set()
-    roles: set[str] = set()
-    for nom in noms:
-        modele = r.modele(nom)
-        for d in modele.concepts():
-            if d.type:
-                types[d.type] += 1
-            tags.update(d.tags)
-            sections.update({h.text for h in d.sections if len(h.text) <= 60})
-        dossiers.update(x for x in modele.repertoires if x)
-        roles.update(modele.profil.sections.values())
-    return {
-        "types": types,
-        "tags": [t for t, _ in tags.most_common(SUGGESTIONS_MAX)],
-        "sections": sorted(roles) + [t for t, _ in sections.most_common(SUGGESTIONS_MAX)],
-        "dossiers": sorted(dossiers)[: SUGGESTIONS_MAX * 2],
-        "roles": roles,
-    }
-
-
-def _exemples(r: Requete, noms: list[str], suggestions: dict) -> list[tuple[str, dict]]:
-    """Quelques requêtes cliquables, tirées des données : elles montrent ce que
-    chaque critère fait mieux qu'une explication."""
-    exemples: list[tuple[str, dict]] = []
-    types = suggestions["types"]
-    if types:
-        (t, n), = types.most_common(1)
-        exemples.append((f"Les {n} documents de type « {t} »", {"type": t}))
-    if "warnings" in suggestions["roles"]:
-        exemples.append(("Ceux qui ont une section de pièges (rôle warnings)", {"section": "warnings"}))
-        if types:
-            exemples.append((f"Les « {t} » sans section de pièges", {"type": t, "sans_section": "warnings"}))
-    elif suggestions["sections"]:
-        s = suggestions["sections"][0]
-        exemples.append((f"Ceux qui ont une section « {s} »", {"section": s}))
-    exemples.append(("Pas mis à jour depuis plus de 12 mois", {"mois": 12}))
-    dans = set(noms)
-    cites = [
-        (len({(e.base, e.chemin) for e in liens if e.base in r.visibles}), cle)
-        for cle, liens in r.lecteur.index_entrants().items()
-        if cle[0] in dans and posixpath.basename(cle[1]) not in ("index.md", "log.md")
-    ]
-    if cites:
-        n, (base, chemin) = max(cites, key=lambda x: (x[0], x[1]))
-        if n:
-            titre = r.lecteur.modele(base).docs[chemin].titre
-            exemples.append((f"Les {n} documents qui citent « {titre} »", {"liant": f"{base}:/{chemin}"}))
-    return exemples
-
-
-def trouver(r: Requete) -> Response:
-    une_base = r.request.path_params.get("base")
-    if une_base is not None:
-        noms = [r.nom_de_base()]
-    else:
-        demandees = [b for b in r.request.query_params.getlist("base") if b]
-        noms = [b for b in demandees if b in r.visibles] or r.visibles_tries()
-    params = r.request.query_params
-    criteres = _criteres_du_formulaire(params)
-    soumis = any(params.get(k) for k in ("type", "tag", "champ", "section", "sans_section", "sous", "liant", "mois"))
-    resultats = _executer(r, noms, criteres) if (soumis or une_base) else []
-    suggestions = _suggestions(r, noms)
-    return r.page(
-        "trouver.html",
-        suggestions=suggestions,
-        exemples=_exemples(r, noms, suggestions),
-        nom=une_base,
-        base=r.modele(une_base).base.manifest if une_base else None,
-        noms=noms,
-        toutes=r.visibles_tries(),
-        params=params,
-        criteres=criteres,
-        resultats=resultats,
-        soumis=soumis or bool(une_base),
-        liste_max=LISTE_MAX,
-        sans_type=SANS_TYPE,
-    )
-
-
-# --- vues déclarées ---------------------------------------------------------------
 
 
 def _groupes(trouves, vue: Vue, profil) -> list[tuple[str, list]]:
@@ -848,7 +780,7 @@ def vue(r: Requete) -> Response:
     erreur = None
     try:
         criteres = lire_criteres({k: filtre.get(k) for k in CLES_CRITERES})
-        trouves = filtrer(r.lecteur, modele, criteres, entrants=_entrants_de(r, [modele.nom], criteres))
+        trouves = filtrer(r.lecteur, modele, criteres, cible=explorer._cible(r, [modele.nom], criteres), bases=r.visibles)
     except ToolError as exc:
         criteres, trouves, erreur = Criteres(), [], exc.message
     contexte = {"groupes": [], "chronologie": [], "graphe": [], "fraicheur": [], "sans_date": [],
@@ -924,201 +856,98 @@ def vue(r: Requete) -> Response:
     )
 
 
-# --- recherche ---------------------------------------------------------------------
+def _fils(entrees: list, rel: dict, nom: str | None = None) -> list[tuple[object, str, int, list]]:
+    """(base, entrée, profondeur, relations sortantes) : une proposition qui en
+    corrige, suit ou annule une autre de la liste se range sous elle, indentée."""
+    entrees = list(entrees)
+    presents = {(b, e.id) for b, e in entrees}
+    parent: dict[tuple[str, str], tuple[str, str]] = {}
+    for b, e in entrees:
+        for rr in rel["sortantes"].get((b, e.id), []):
+            if rr.nature in ("corrige", "suite de", "annule") and (rr.base, rr.id) in presents:
+                parent.setdefault((b, e.id), (rr.base, rr.id))
+                break
+    enfants: dict[tuple[str, str], list] = defaultdict(list)
+    for b, e in entrees:
+        if (b, e.id) in parent:
+            enfants[parent[(b, e.id)]].append((b, e))
+    ordre = []
+
+    def poser(b, e, profondeur):
+        ordre.append((b, e, profondeur, rel["sortantes"].get((b, e.id), [])))
+        for fb, fe in enfants.get((b, e.id), []):
+            poser(fb, fe, profondeur + 1)
+
+    for b, e in entrees:
+        if (b, e.id) not in parent:
+            poser(b, e, 0)
+    return ordre
 
 
-_CLE_FM = re.compile(r"^([A-Za-z0-9_.-]+)\s*:")
-_LIEN_MD = re.compile(r"!?\[([^\]]*)\]\((?:[^()]|\([^()]*\))*\)")
-_MARQUES_MD = re.compile(r"\*\*|__|`|~~")
-_TITRE_MD = re.compile(r"^\s{0,3}#{1,6}\s+")
-_PUCE_MD = re.compile(r"^(\s*)(?:[-*+]|\d+\.)\s+")
-_CLOTURE_MD = re.compile(r"^\s{0,3}(```|~~~)")
-
-
-def _texte_simple(ligne: str) -> str | None:
-    """La ligne débarrassée de sa syntaxe markdown — titres, liens, emphase,
-    code, puces, cellules de tableau — pour un extrait qui se lit comme du
-    texte. None pour une clôture de bloc de code, qui n'apprend rien."""
-    if _CLOTURE_MD.match(ligne):
-        return None
-    texte = _TITRE_MD.sub("", ligne)
-    texte = _LIEN_MD.sub(lambda m: m.group(1), texte)
-    texte = _MARQUES_MD.sub("", texte)
-    texte = _PUCE_MD.sub(lambda m: m.group(1) + "• ", texte)
-    if texte.lstrip().startswith("|"):
-        cellules = [c.strip() for c in texte.strip().strip("|").split("|")]
-        if all(set(c) <= set("-: ") for c in cellules):
-            return None  # ligne de séparation d'un tableau
-        texte = " · ".join(c for c in cellules if c)
-    return texte.rstrip()
-
-
-def _valeur_de_champ(valeur) -> str | None:
-    if isinstance(valeur, str):
-        return valeur
-    if isinstance(valeur, list) and all(isinstance(v, (str, int, float)) for v in valeur):
-        return ", ".join(str(v) for v in valeur)
-    return None
-
-
-def _extraits(texte: str, lignes: list[int], termes: list[str]) -> list[dict]:
-    """Les fenêtres de kb_search (ligne touchée ± 2, trois au plus, fusionnées),
-    lisibles par un humain : une ligne touchée dans le frontmatter devient le
-    champ qui la porte et sa valeur ; une fenêtre du corps ne déborde pas dans
-    le frontmatter, et perd sa syntaxe markdown."""
-    parse = parse_document(texte, loader=CHARGEUR)
-    toutes = texte.split("\n")
-    corps = parse.body_offset  # lignes 1..corps : le frontmatter, délimiteurs compris
-    headings = parse_headings(texte)
-    out: list[dict] = []
-    champs_vus: set[str] = set()
-    fenetres: list[list[int]] = []
-    for n in lignes:
-        if n <= corps:
-            for i in range(n - 1, 0, -1):
-                m = _CLE_FM.match(toutes[i])
-                if m:
-                    break
-            else:
-                continue
-            cle = m.group(1)
-            # `title` est déjà l'intitulé du résultat ; le répéter n'apprend rien.
-            if cle in champs_vus or cle == "title":
-                continue
-            champs_vus.add(cle)
-            valeur = _valeur_de_champ((parse.frontmatter or {}).get(cle))
-            brut = toutes[i].split(":", 1)[1].strip()
-            out.append({"champ": cle, "morceaux": _surligner(valeur if valeur is not None else brut, termes)})
-            continue
-        debut, fin = max(corps + 1, n - CONTEXT_LINES), min(len(toutes), n + CONTEXT_LINES)
-        if fenetres and debut <= fenetres[-1][1] + 1:
-            fenetres[-1][1] = max(fenetres[-1][1], fin)
-        else:
-            fenetres.append([debut, fin, n])
-    for debut, fin, n in fenetres:
-        simples = [l for l in (_texte_simple(x) for x in toutes[debut - 1 : fin]) if l is not None]
-        extrait = "\n".join(simples).strip("\n")
-        if not extrait.strip():
-            continue
-        heading = heading_at_line(headings, n - 1)
-        out.append({
-            "champ": None,
-            "debut": debut,
-            "section": heading.text if heading else PREAMBLE_LABEL,
-            "ancre": ancre(heading.text) if heading else None,
-            "morceaux": _surligner(extrait, termes),
-        })
-    return out[:MAX_EXCERPTS_PER_DOC]
-
-
-def _surligner(texte: str, termes: list[str]) -> list[tuple[str, bool]]:
-    """(morceau, touché ?) : le gabarit échappe chaque morceau, jamais le moteur."""
-    if not termes:
-        return [(texte, False)]
-    motif = re.compile("|".join(re.escape(t) for t in sorted(termes, key=len, reverse=True)), re.I)
-    out, pos = [], 0
-    for m in motif.finditer(texte):
-        if m.start() > pos:
-            out.append((texte[pos : m.start()], False))
-        out.append((m.group(0), True))
-        pos = m.end()
-    if pos < len(texte):
-        out.append((texte[pos:], False))
-    return out
-
-
-def _page_demandee(params) -> int:
-    try:
-        return max(1, int(params.get("page") or 1))
-    except ValueError:
-        return 1
-
-
-def recherche(r: Requete) -> Response:
-    params = r.request.query_params
-    q = (params.get("q") or "").strip()
-    mode = params.get("mode") if params.get("mode") in ("keyword", "regex") else "keyword"
-    demandees = [b for b in params.getlist("base") if b in r.visibles]
-    noms = demandees or r.visibles_tries()
-    une_base = len(noms) == 1
-    page = _page_demandee(params) if une_base else 1
-    resultats = []
-    if q:
-        termes = split_terms(q) if mode == "keyword" else []
-        for nom in noms:
-            modele = r.modele(nom)
-            # Tout le classement : kb_search le coupe à 25, la page le pagine.
-            issue = run_search(modele.base, q, mode, RECHERCHE_TOUT)
-            total = len(issue.docs)
-            if une_base:
-                # Une page au-delà de la dernière montre la dernière.
-                page = min(page, max(1, -(-total // RECHERCHE_PAR_PAGE)))
-                tranche = issue.docs[(page - 1) * RECHERCHE_PAR_PAGE : page * RECHERCHE_PAR_PAGE]
-            else:
-                tranche = issue.docs[:RECHERCHE_APERCU]
-            docs = []
-            for hits in tranche:
-                rel = modele.base.rel_path(hits.path)
-                doc = modele.docs.get(rel)
-                try:
-                    texte = hits.path.read_text(encoding="utf-8", errors="replace")
-                except OSError:
-                    continue
-                docs.append({
-                    "chemin": rel,
-                    "titre": doc.titre if doc else rel,
-                    "type": doc.type if doc else None,
-                    "extraits": _extraits(texte, hits.lines, termes),
-                })
-            if total:
-                resultats.append({
-                    "nom": nom, "partiel": issue.partial, "total": total, "docs": docs,
-                    "pages": -(-total // RECHERCHE_PAR_PAGE),
-                })
-    return r.page(
-        "recherche.html", q=q, mode=mode, noms=demandees, toutes=r.visibles_tries(),
-        resultats=resultats, une_base=une_base, page=page, par_page=RECHERCHE_PAR_PAGE,
-        apercu=RECHERCHE_APERCU, total=sum(x["total"] for x in resultats),
-    )
-
-
-# --- propositions, journal --------------------------------------------------------
+def _tri_des_propositions(r: Requete, defaut: str) -> str:
+    tri = r.request.query_params.get("ordre") or defaut
+    if tri not in ("anciennes", "recentes"):
+        r.avis.append(f"ordre « {tri} » inconnu (anciennes ou recentes) : {defaut}")
+        tri = defaut
+    return tri
 
 
 def propositions(r: Requete) -> Response:
     modele = r.modele(r.nom_de_base())
     statut = r.request.query_params.get("statut")
+    if statut and statut not in STATUSES:
+        r.avis.append(f"statut « {statut} » inconnu ({', '.join(STATUSES)}) : toutes les propositions sont montrées")
     statut = statut if statut in STATUSES else None
-    collecte = collect(modele.base, STATUSES, loader=CHARGEUR)
+    # En attente : le travail, les plus anciennes d'abord ; sinon l'histoire, les plus récentes.
+    ordre = _tri_des_propositions(r, "anciennes" if statut == "pending" else "recentes")
+    collecte, _ = r.hub.propositions(modele.nom)
     comptes = Counter(e.status for e in collecte.entries)
     entrees = [e for e in collecte.entries if statut is None or e.status == statut]
+    entrees.sort(key=lambda e: (e.submitted_at or "", e.id), reverse=(ordre == "recentes"))
     pages = max(1, -(-len(entrees) // PROPOSITIONS_PAR_PAGE))
-    page = min(_page_demandee(r.request.query_params), pages)
+    page = min(page_demandee(r.request.query_params), pages)
+    tranche = entrees[(page - 1) * PROPOSITIONS_PAR_PAGE : page * PROPOSITIONS_PAR_PAGE]
+    rel = revue.relations(r, r.visibles_tries())
     return r.page(
         "propositions.html", nom=modele.nom, base=modele.base.manifest,
-        entrees=entrees[(page - 1) * PROPOSITIONS_PAR_PAGE : page * PROPOSITIONS_PAR_PAGE],
-        total=len(entrees), comptes=comptes, page=page, pages=pages,
+        lignes=_fils([(modele.nom, e) for e in tranche], rel),
+        total=len(entrees), comptes=comptes, page=page, pages=pages, ordre=ordre,
         par_page=PROPOSITIONS_PAR_PAGE, illisibles=collecte.unreadable, statut=statut,
-        statuts=STATUSES,
+        statuts=STATUSES, liste=_liste,
     )
 
 
 def proposition(r: Requete) -> Response:
     modele = r.modele(r.nom_de_base())
     ident = r.request.path_params["id"]
-    for entree in collect(modele.base, STATUSES, loader=CHARGEUR).entries:
+    collecte, textes = r.hub.propositions(modele.nom)
+    for entree in collecte.entries:
         if entree.id == ident:
             break
     else:
         raise Introuvable(ident)
-    texte = entree.path.read_text(encoding="utf-8", errors="replace")
+    texte = textes.get(ident, "")
     corps = parse_document(texte, loader=CHARGEUR).body
     # Une proposition est une donnée non fiable, rendue sous la même politique
     # que le corpus ; ses liens se lisent depuis la racine du corpus.
-    rendu = rendre(corps, Contexte(modele.nom, "", r.lien_vers, image_vers=r.image_vers))
+    rendu = rendre(corps, Contexte(modele.nom, "", r.lien_vers, image_vers=r.image_vers,
+                                   proposition_vers=r.proposition_vers))
+    rel = revue.relations(r, r.visibles_tries())
+    visees = revue.fiches_visees(r, modele.nom, entree, texte)
+    ordre = revue.ordre_de_revue(r)
+    rang = next((i for i, (b, e) in enumerate(ordre) if b == modele.nom and e.id == ident), None)
     return r.page(
         "proposition.html", nom=modele.nom, base=modele.base.manifest, entree=entree,
-        rendu=rendu, liste=lambda v: v if isinstance(v, list) else ([v] if v else []),
+        rendu=rendu, liste=_liste,
+        sortantes=rel["sortantes"].get((modele.nom, ident), []),
+        entrantes=rel["entrantes"].get((modele.nom, ident), []),
+        statuts_de={(b, e.id): e.status for b in r.visibles_tries() for e in r.hub.propositions(b)[0].entries},
+        visees=visees,
+        proches=revue.fiches_proches(r, modele.nom, entree, {cle for cle, _ in visees}),
+        precedente=ordre[rang - 1] if rang else None,
+        suivante=ordre[rang + 1] if rang is not None and rang + 1 < len(ordre) else None,
+        rang=rang, en_attente=len(ordre),
+        segments=lambda texte: revue.segments(r, modele.nom, str(texte)),
     )
 
 
@@ -1128,11 +957,10 @@ def journal(r: Requete) -> Response:
     rendu = _rendu_document(r, modele, log) if log else None
     return r.page(
         "journal.html", nom=modele.nom, base=modele.base.manifest, rendu=rendu,
-        commits=r.lecteur.historique(modele.nom, HISTORIQUE), historique=HISTORIQUE,
+        commits=[(c, pages.decrire_commit(c.sujet)[0], pages.sujet_lisible(c.sujet))
+                 for c in r.lecteur.historique(modele.nom, HISTORIQUE)],
+        historique=HISTORIQUE, segments=lambda texte: revue.segments(r, modele.nom, str(texte)),
     )
-
-
-# --- graphe ------------------------------------------------------------------------
 
 
 #: Au-delà, la vue graphe d'une base n'est plus qu'une liste d'adjacence : une
@@ -1166,9 +994,21 @@ def _non_declarees(r: Requete, analyse) -> dict | None:
 
 def graphe(r: Requete) -> Response:
     analyse = analyser(r.lecteur, r.visibles_tries())
-    figure = disposer(list(analyse.bases), [(a.source, a.cible, a.references, a) for a in analyse.aretes])
+    # Surface du nœud proportionnelle au logarithme du nombre de documents : une
+    # base de 2 500 fiches ne doit pas écraser celle de six.
+    tailles = {nom: len(r.lecteur.modele(nom).concepts()) for nom in analyse.bases}
+    rayons = {nom: round(16 + 6 * math.log10(1 + n), 1) for nom, n in tailles.items()}
+    figure = disposer(list(analyse.bases), [(a.source, a.cible, a.references, a) for a in analyse.aretes], rayons=rayons)
+    # Seules les contradictions sont colorées : une référence hors des `cites`
+    # qu'une base déclare, ou un cycle de déclarations. Une référence observée
+    # chez une base qui ne déclare rien n'en est pas une.
+    contradictions = {(b, c) for b, c, _ in analyse.hors_cites} | {
+        (cycle[i], cycle[(i + 1) % len(cycle)]) for cycle in analyse.cycles for i in range(len(cycle))}
     titres = {nom: r.hub.registry.get(nom).manifest.title for nom in analyse.bases}
     return r.page(
-        "graphe.html", analyse=analyse, figure=figure, titres=titres,
+        "graphe.html", analyse=analyse, figure=figure, titres=titres, tailles=tailles,
+        contradictions=contradictions, indices={n: i for i, n in enumerate(analyse.bases)},
+        legende_epaisseurs=[(n, epaisseur_de(n)) for n in (10, 100, 500)],
+        legende_rayons=[(n, round(16 + 6 * math.log10(1 + n), 1)) for n in (10, 100, 1000)],
         non_declarees=_non_declarees(r, analyse),
     )

@@ -1,12 +1,12 @@
 {% extends "page.html" %}
-{% import "macros.html" as m %}
+{% import "macros.html" as m with context %}
 {% block titre %}{{ vue.titre }}{% endblock %}
 {% block fil %}{{ m.fil([(base.title, url_base(nom))], vue.titre) }}{% endblock %}
 {% block contenu %}
 <main class="principal">
   <h1>{{ vue.titre }}</h1>
   {{ m.onglets(nom, 'base') }}
-  <p class="criteres-lus">Vue « {{ vue.sorte }} » déclarée par le profil de la base — critères : {{ criteres.decrire() }} ; {{ total }} document(s).</p>
+  <p class="criteres-lus">Vue « {{ vue.sorte }} » déclarée par le profil de la base — critères : {{ criteres.decrire() }} ; {{ total|nb('fiche') }}.</p>
   {% if inconnues %}<p class="alerte">Clés de filtre inconnues, ignorées : {{ inconnues|join(', ') }}.</p>{% endif %}
   {% if erreur %}<p class="alerte">{{ erreur }}</p>{% endif %}
   {% if vue.sorte == 'list' %}
@@ -39,7 +39,7 @@
       <thead><tr><th>Document</th><th>Date</th><th>Origine</th><th>Âge</th></tr></thead>
       <tbody>
       {% for t, f in fraicheur %}
-      <tr><td><a href="{{ url_doc(nom, t.doc.chemin) }}">{{ t.doc.titre }}</a></td><td>{{ f.date|date }}</td><td>{{ f.origine }}</td><td>{{ ((maintenant - f.date).days / 30.44)|round(0)|int }} mois</td></tr>
+      <tr><td><a href="{{ url_doc(nom, t.doc.chemin) }}">{{ t.doc.titre }}</a></td><td>{{ f.date|date }}</td><td>{{ origines[f.origine] }}</td><td>{{ ((maintenant - f.date).days / 30.44)|round(0)|int }} mois</td></tr>
       {% endfor %}
       </tbody>
     </table>

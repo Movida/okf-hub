@@ -198,9 +198,14 @@ def _web(config: HubConfig, args: argparse.Namespace) -> int:
         return 2
     hub = HubServer(config)
     application = Hub(hub.registry, web, lambda: hub._silent_rescan("web"))
-    # Charge les modèles en arrière-plan : la première page ne paie pas les
-    # quelques secondes d'un hub de plusieurs milliers de documents.
-    threading.Thread(target=application.lecteur.modeles, name="prechauffage", daemon=True).start()
+    # Charge les modèles et les dates de commit en arrière-plan : la première
+    # page ne paie pas les quelques secondes d'un hub de plusieurs milliers de
+    # documents, ni le `git log` d'un gros historique pour les dérives.
+    def prechauffer() -> None:
+        for nom in application.lecteur.modeles():
+            application.lecteur.derives(nom)
+
+    threading.Thread(target=prechauffer, name="prechauffage", daemon=True).start()
     mode = "équipe" if web.equipe else "local"
     hublog.info(f"web : démarrage en mode {mode} sur http://{web.host}:{web.port}/")
     print(f"okf-hub web — mode {mode} — http://{web.host}:{web.port}/", file=sys.stderr)

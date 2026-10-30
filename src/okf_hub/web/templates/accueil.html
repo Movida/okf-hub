@@ -1,24 +1,73 @@
 {% extends "page.html" %}
+{% import "macros.html" as m with context %}
 {% block titre %}Bases{% endblock %}
 {% block contenu %}
-<main class="principal large">
+<main class="principal pleine">
   <h1>Bases de connaissance</h1>
-  {% if not bases %}
+  {% if en_attente %}
+  {# Une information, pas un appel à l'action : rien ne se tranche ici. #}
+  <p class="information-revue"><a href="/propositions"><strong>{{ en_attente|nb('proposition attend', 'propositions attendent') }} une revue</strong> <span aria-hidden="true">→</span></a>
+    <span class="note">La revue se fait hors de cette interface, par le rôle gestionnaire (<code>okf-review</code>){% if attente_jours is not none and attente_jours >= 3 %} ; la plus ancienne attend depuis {{ attente_jours|nb('jour') }}{% endif %}.</span></p>
+  {% endif %}
+  {% if bases|length > 1 %}
+  <p class="tri-cartes note">Ordre : {% for cle, libelle in [('action', 'à traiter d’abord'), ('nom', 'nom'), ('taille', 'taille'), ('activite', 'activité récente')] %}{% if ordre == cle %}<strong aria-current="true">{{ libelle }}</strong>{% else %}<a href="/?ordre={{ cle }}">{{ libelle }}</a>{% endif %}{% if not loop.last %} · {% endif %}{% endfor %}</p>
+  {% endif %}
+  {% macro carte(b) %}
+    <li class="carte {{ couleur(b.nom) }}{% if b.du_hub %} du-hub{% endif %}">
+      <h2><a href="{{ url_base(b.nom) }}">{{ b.titre }}</a></h2>
+      <p class="nom-base"><span class="pastille-base" aria-hidden="true"></span><code>{{ b.nom }}</code>{% if b.gouvernance == 'draft' %} <a class="badge brouillon" href="{{ url_page(b.nom, 'gouvernance') }}" title="{{ glossaire['gouvernance-brouillon'][1] }}"><span aria-hidden="true">✎</span> gouvernance en brouillon</a>{% endif %}</p>
+      <p class="phrase"{% if b.phrase|resume != b.phrase %} title="{{ b.phrase }}"{% endif %}>{{ b.phrase|resume }}</p>
+      <dl class="chiffres">
+        <div><dt>{{ m.terme('fiche', 'fiches') }}</dt><dd>{{ b.fiches }}</dd></div>
+        <div{% if not b.en_attente %} class="zero"{% endif %}><dt>{{ m.terme('a-trancher') }}</dt><dd>{% if b.en_attente %}<a class="a-traiter" href="{{ url_page(none, 'propositions', base=b.nom) }}">{{ b.en_attente }}</a>{% else %}0{% endif %}</dd></div>
+        <div{% if not b.a_reverifier %} class="zero"{% endif %}><dt>{{ m.terme('a-reverifier') }}</dt><dd>{% if b.a_reverifier %}<a class="a-traiter" href="{{ url_page(b.nom, 'explorer', amont='1') }}">{{ b.a_reverifier }}</a>{% else %}0{% endif %}</dd></div>
+      </dl>
+      {% if b.en_attente %}<p class="commande"><code>okf-review inventory {{ b.nom }}</code> <button type="button" class="copier" hidden data-copier="okf-review inventory {{ b.nom }}" aria-label="Copier la commande de revue de {{ b.nom }}">copier</button></p>{% endif %}
+      <p class="pied">{% if b.dernier_commit %}<a href="{{ url_page(b.nom, 'journal') }}" title="{{ b.dernier_commit.sujet }}">dernier commit {{ b.dernier_commit.date|quand }}</a>{% elif b.journal %}<a href="{{ url_page(b.nom, 'journal') }}">journal du {{ b.journal }}</a>{% endif %}</p>
+    </li>
+  {% endmacro %}
+  {% if not bases and not bases_du_hub %}
   <p>Aucune base ne vous est ouverte sur ce hub.</p>
   {% else %}
-  <ul class="bases">
-    {% for b in bases %}
-    <li>
-      <h2><a href="{{ url_base(b.nom) }}">{{ b.titre }}</a> <code>{{ b.nom }}</code>{% if b.gouvernance == 'draft' %} <span class="badge brouillon">gouvernance en brouillon</span>{% endif %}</h2>
-      <p>{{ b.description }}</p>
-      <p class="chiffres">
-        <span>{{ b.documents }} document(s)</span>
-        <a href="{{ url_page(b.nom, 'propositions', statut='pending') }}">{{ b.en_attente }} proposition(s) en attente</a>{% if b.plus_ancienne %}, la plus ancienne du {{ b.plus_ancienne|date }}{% endif %}
-        {% if b.journal %}<a href="{{ url_page(b.nom, 'journal') }}">journal : {{ b.journal }}</a>{% endif %}
-      </p>
-    </li>
-    {% endfor %}
+  <ul class="cartes">
+    {% for b in bases %}{{ carte(b) }}{% endfor %}
   </ul>
+  {% if bases_du_hub %}
+  <details class="section-repliee">
+    <summary><h2 class="bases-du-hub">Bases du hub <span class="note">— {{ bases_du_hub|length }}, sur l'outil lui-même</span></h2></summary>
+    <p class="note">Elles décrivent le hub lui-même : comment chercher, ce que ses utilisateurs en disent.</p>
+    <ul class="cartes">
+      {% for b in bases_du_hub %}{{ carte(b) }}{% endfor %}
+    </ul>
+  </details>
+  {% endif %}
+  {% for regle in regles %}
+  <details class="aiguillage section-repliee">
+    <summary><h2>Où va une information ? <span class="note">— la règle que suivent les agents entre {% for b in regle.bases %}<code>{{ b }}</code>{% if not loop.last %}{{ ' et ' if loop.revindex == 2 else ', ' }}{% endif %}{% endfor %}</span></h2></summary>
+    {% set etapes = regle.lignes|selectattr('cibles')|list %}
+    {% if etapes|length == regle.lignes|length %}
+    <ol class="arbre">
+      {% for l in etapes %}
+      {% if l.contexte and loop.first %}<li class="contexte">{{ l.contexte }}</li>{% endif %}
+      <li class="etape">
+        <span class="question">{{ l.question }} ?</span>
+        <span class="branche-oui"><span class="oui">oui</span> <span class="fleche" aria-hidden="true">→</span> {% for c in l.cibles %}<a class="puce-base {{ couleur(c) }}" href="{{ url_base(c) }}"><span class="pastille-base" aria-hidden="true"></span>{{ c }}</a>{% endfor %}</span>
+      </li>
+      {# Le contexte d'une étape suivante (« une proposition par base ») vaut pour la suite : une note sous le « non ». #}
+      {% if not loop.last %}<li class="non" aria-label="sinon"><span>non</span>{% if etapes[loop.index].contexte %} <em class="note-etape">— {{ etapes[loop.index].contexte }}</em>{% endif %}</li>{% endif %}
+      {% endfor %}
+    </ol>
+    {% else %}
+    <ol class="regle">
+      {% for l in regle.lignes %}
+      <li><span class="condition">{{ l.condition }}</span>{% if l.cibles %} <span class="fleche" aria-hidden="true">→</span> {% for c in l.cibles %}<a class="puce-base {{ couleur(c) }}" href="{{ url_base(c) }}"><span class="pastille-base" aria-hidden="true"></span>{{ c }}</a>{% endfor %}{% endif %}</li>
+      {% endfor %}
+    </ol>
+    {% endif %}
+    <p class="note">Leurs descriptions répètent cette règle, mot pour mot : elle est écrite pour qu'un agent choisisse la bonne base, et se lit ici une fois.</p>
+    <details class="texte-origine"><summary>Texte d'origine</summary><p>{{ regle.phrase }}</p></details>
+  </details>
+  {% endfor %}
   {% endif %}
 </main>
 {% endblock %}

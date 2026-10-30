@@ -20,7 +20,8 @@ verified:
     at: 2026-10-29T00:00:00Z
     note: >-
       ajout de kb_find (rév. 4.5) : établir une existence ou une absence par
-      critères, en un appel, au lieu de reformuler des recherches
+      critères, en un appel, au lieu de reformuler des recherches ; texte comme
+      critère et amont modifié (rév. 4.6)
 ---
 
 # Chercher et lire, sans gaspiller de contexte
@@ -124,9 +125,13 @@ c'est `kb_find` qu'il faut appeler :
 kb_find  count_by: "type"                          → quels types existent ici
 kb_find  type: "Procédure", under: "exploitation"   → total exact ; zéro est une réponse
 kb_find  links_to: "<base>:/<chemin>"               → qui cite ce document, entre bases compris
+kb_find  query: "sauvegarde", type: "Procédure"     → le texte devient un critère parmi d'autres
+kb_find  upstream_changed: true                     → ce qui cite un document d'amont modifié depuis
 ```
 
-Son total par base est **exact**, même quand la liste est tronquée. Si un type
+Son total par base est **exact**, même quand la liste est tronquée. Avec
+`query`, un document qui ne contient pas *tous* les termes n'est pas retenu :
+c'est un filtre, pas une recherche qui se rabat sur une partie des mots. Si un type
 ne trouve rien nulle part, l'outil rappelle les types présents : vérifie
 l'orthographe avant de conclure. Un zéro obtenu sur le bon type, le bon
 sous-chemin, est la preuve d'absence que plusieurs recherches plein texte ne

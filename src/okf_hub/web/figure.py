@@ -7,7 +7,8 @@ les nœuds sans aucune arête vont sur une ligne à part, sous le cercle. Chaque
 arête est un arc légèrement courbé vers sa gauche — deux arêtes opposées ne se
 superposent donc jamais —, d'épaisseur croissante avec son poids, et son
 étiquette est posée *sur* l'arc, dans une pastille, avec une infobulle qui
-nomme les deux extrémités.
+nomme les deux extrémités ; une étiquette qui en toucherait une autre, ou un
+nœud, glisse le long de son arc.
 """
 
 from __future__ import annotations
@@ -33,6 +34,7 @@ class Noeud:
     etiquette_x: float = 0.0
     etiquette_y: float = 0.0
     ancrage: str = "middle"
+    rayon: float = 30.0
     """`text-anchor` de l'étiquette : posée vers l'extérieur du cercle, là où
     n'arrive aucun arc."""
 
@@ -93,9 +95,13 @@ def disposer(
     *,
     rayon_noeud: int = 30,
     ordonne: bool = True,
+    rayons: dict[str, float] | None = None,
 ) -> Figure:
     """`aretes` : (source, cible, poids, données). `ordonne=False` garde l'ordre
-    donné (des chemins de documents, que leur ordre regroupe par dossier)."""
+    donné (des chemins de documents, que leur ordre regroupe par dossier).
+    `rayons` : le rayon de chaque nœud, s'il varie (par exemple selon la taille
+    d'une base) ; sinon `rayon_noeud` pour tous."""
+    rayons = rayons or {}
     relies = {a for a, b, _, _ in aretes} | {b for a, b, _, _ in aretes}
     sur_cercle = [n for n in noms if n in relies]
     isoles = [n for n in noms if n not in relies]
@@ -111,26 +117,67 @@ def disposer(
     for i, nom in enumerate(sur_cercle):
         angle = -math.pi / 2 + 2 * math.pi * i / max(n, 1)
         x, y = centre + rayon * math.cos(angle), centre + rayon * math.sin(angle)
-        noeuds.append(_etiquetee(nom, x, y, math.cos(angle), math.sin(angle), rayon_noeud, n > 1))
+        noeuds.append(_etiquetee(nom, x, y, math.cos(angle), math.sin(angle), rayons.get(nom, rayon_noeud), n > 1))
     hauteur = largeur if sur_cercle else 0
     isoles_y = None
     if isoles:
         pas = largeur / (len(isoles) + 1)
         isoles_y = hauteur + (10 if sur_cercle else 0)
         y = isoles_y + rayon_noeud + 24
-        noeuds += [_etiquetee(nom, pas * (i + 1), y, 0.0, 1.0, rayon_noeud, False, isole=True)
+        noeuds += [_etiquetee(nom, pas * (i + 1), y, 0.0, 1.0, rayons.get(nom, rayon_noeud), False, isole=True)
                    for i, nom in enumerate(isoles)]
         hauteur = int(y + rayon_noeud + 36)
 
     position = {nd.cle: (nd.x, nd.y) for nd in noeuds}
-    poids_max = max((p for _, _, p, _ in aretes), default=1) or 1
+    rayon_de = {nd.cle: nd.rayon for nd in noeuds}
+    geometries = [(_courbe(position[source], position[cible], rayon_de[source], rayon_de[cible]), source, cible, poids, donnees)
+                  for source, cible, poids, donnees in aretes if source != cible]
+    # Les étiquettes des arcs les plus lourds d'abord : elles gardent le milieu
+    # de leur arc ; les autres glissent le long du leur si la place est prise.
+    obstacles = [(nd.x, nd.y, nd.rayon + 12) for nd in noeuds]
+    places: dict[int, tuple[float, float]] = {}
+    for i in sorted(range(len(geometries)), key=lambda i: -geometries[i][3]):
+        courbe = geometries[i][0]
+        places[i] = _place_d_etiquette(courbe, obstacles + [(x, y, ECART_ETIQUETTES) for x, y in places.values()])
     arcs = []
-    for source, cible, poids, donnees in aretes:
-        if source == cible:
-            continue
-        arcs.append(_arc(source, cible, position[source], position[cible], poids, poids_max,
-                         rayon_noeud, donnees))
+    for i, ((a, c, b), source, cible, poids, donnees) in enumerate(geometries):
+        ex, ey = places[i]
+        arcs.append(Arc(source, cible, f"M {a[0]:.1f} {a[1]:.1f} Q {c[0]:.1f} {c[1]:.1f} {b[0]:.1f} {b[1]:.1f}",
+                        epaisseur_de(poids), round(ex, 1), round(ey, 1), donnees))
     return Figure(int(largeur), int(hauteur), rayon_noeud, tuple(noeuds), tuple(arcs), isoles_y)
+
+
+#: Distance minimale entre deux étiquettes d'arcs, en unités de la figure.
+ECART_ETIQUETTES = 34.0
+_POSITIONS_SUR_L_ARC = (0.5, 0.42, 0.58, 0.34, 0.66, 0.27, 0.73)
+
+
+def epaisseur_de(poids: float) -> float:
+    """Épaisseur d'un arc selon son poids, sur une échelle absolue (la même
+    d'une figure à l'autre, donc lisible dans une légende) : racine carrée,
+    bornée. 6 références : 2,2 ; 50 : 4,5 ; 440 : 11,5."""
+    return round(min(14.0, 1.0 + 0.5 * math.sqrt(max(poids, 0))), 2)
+
+
+def _point(courbe, t: float) -> tuple[float, float]:
+    """B(t) d'une courbe quadratique (A, C, B)."""
+    (ax, ay), (cx, cy), (bx, by) = courbe
+    u = 1 - t
+    return u * u * ax + 2 * u * t * cx + t * t * bx, u * u * ay + 2 * u * t * cy + t * t * by
+
+
+def _place_d_etiquette(courbe, obstacles) -> tuple[float, float]:
+    """La première position le long de l'arc, en partant du milieu, qui ne
+    touche aucun obstacle ; à défaut, la plus dégagée."""
+    meilleure, marge_max = _point(courbe, 0.5), -math.inf
+    for t in _POSITIONS_SUR_L_ARC:
+        x, y = _point(courbe, t)
+        marge = min((math.hypot(x - ox, y - oy) - r for ox, oy, r in obstacles), default=math.inf)
+        if marge >= 0:
+            return x, y
+        if marge > marge_max:
+            meilleure, marge_max = (x, y), marge
+    return meilleure
 
 
 def _etiquetee(nom, x, y, dx, dy, rayon_noeud, radial, isole=False) -> Noeud:
@@ -138,7 +185,7 @@ def _etiquetee(nom, x, y, dx, dy, rayon_noeud, radial, isole=False) -> Noeud:
     direction depuis le centre), ou dessous pour un nœud hors cercle."""
     if not radial:
         dx, dy = 0.0, 1.0
-    marge = rayon_noeud + 8
+    marge = rayon_noeud + 8  # le rayon de ce nœud
     ex, ey = x + dx * marge, y + dy * marge
     if dx > 0.35:
         ancrage = "start"
@@ -148,10 +195,12 @@ def _etiquetee(nom, x, y, dx, dy, rayon_noeud, radial, isole=False) -> Noeud:
         ancrage = "middle"
     # Ligne de base : au-dessous d'un nœud du bas, au-dessus d'un nœud du haut.
     ey += 13 if dy > 0.35 else (-2 if dy < -0.35 else 4)
-    return Noeud(nom, round(x, 1), round(y, 1), isole, round(ex, 1), round(ey, 1), ancrage)
+    return Noeud(nom, round(x, 1), round(y, 1), isole, round(ex, 1), round(ey, 1), ancrage, rayon_noeud)
 
 
-def _arc(source, cible, p1, p2, poids, poids_max, rayon_noeud, donnees) -> Arc:
+def _courbe(p1, p2, rayon_source, rayon_cible):
+    """(A, C, B) : l'arc quadratique d'une arête, extrémités ramenées au bord
+    des nœuds."""
     (x1, y1), (x2, y2) = p1, p2
     dx, dy = x2 - x1, y2 - y1
     longueur = math.hypot(dx, dy) or 1.0
@@ -159,19 +208,11 @@ def _arc(source, cible, p1, p2, poids, poids_max, rayon_noeud, donnees) -> Arc:
     nx, ny = -dy / longueur, dx / longueur
     cx = (x1 + x2) / 2 + nx * COURBURE * longueur
     cy = (y1 + y2) / 2 + ny * COURBURE * longueur
+
     # Extrémités ramenées au bord des nœuds, le long des tangentes de l'arc.
     def bord(px, py, vers_x, vers_y, marge):
         vx, vy = vers_x - px, vers_y - py
         norme = math.hypot(vx, vy) or 1.0
         return px + vx / norme * marge, py + vy / norme * marge
 
-    ax, ay = bord(x1, y1, cx, cy, rayon_noeud + 2)
-    bx, by = bord(x2, y2, cx, cy, rayon_noeud + 6)
-    # Étiquette au milieu de la courbe : B(1/2) = (P0 + 2C + P2) / 4.
-    ex, ey = (ax + 2 * cx + bx) / 4, (ay + 2 * cy + by) / 4
-    epaisseur = 1.2 + 3.0 * math.log1p(poids) / math.log1p(poids_max) if poids_max > 0 else 1.2
-    return Arc(
-        source, cible,
-        f"M {ax:.1f} {ay:.1f} Q {cx:.1f} {cy:.1f} {bx:.1f} {by:.1f}",
-        round(epaisseur, 2), round(ex, 1), round(ey, 1), donnees,
-    )
+    return bord(x1, y1, cx, cy, rayon_source + 2), (cx, cy), bord(x2, y2, cx, cy, rayon_cible + 6)

@@ -323,10 +323,16 @@ valeurs (spec § 5.8). Là où `kb_search` dit *où l'on parle* d'un sujet,
 | `links_to` | `string` | — | Documents qui citent `<base>:/<chemin>` ; un chemin seul si une seule base est interrogée. |
 | `older_than_months` | `integer` | — | 1 à 600 : fraîcheur plus ancienne, les plus anciens d'abord. |
 | `count_by` | `string` | — | `type`, `tags`, `section`, une facette déclarée par le profil, ou un champ : effectifs au lieu de la liste. |
+| `query` | `string` | — | Le texte contient **tous** ces termes (casse ignorée). Un filtre : sans le repli en OU de `kb_search`. |
+| `links_to_depth` | `integer` | 1 | 1 à 3, avec `links_to` : les documents qui citent ceux qui citent la cible… Sommaires et journaux ne propagent pas. |
+| `upstream_changed` | `boolean` | — | Documents qui citent un document d'une autre base modifié (commit) après leur propre dernier commit, ou dernière vérification. |
+| `sort` | `string` | voir ci-dessous | `path`, `relevance` (avec `query`), `oldest`, `most_cited`, `reaudit` (âge en mois × (1 + citations), doublé si l'amont a changé). |
 | `max_results` | `integer` | 50 | 1 à 200, toutes bases confondues, réparti comme `kb_search`. |
 
 Les critères se cumulent (ET). `index.md` et `log.md` ne sont ni listés ni
 comptés : ce sont des sommaires et des journaux, pas des concepts (OKF § 3.1).
+Tri par défaut : par chemin (le degré d'abord sous `links_to`), les plus anciens
+d'abord sous `older_than_months`, par pertinence sous `query`.
 
 **Sortie — liste**
 
@@ -341,7 +347,9 @@ Le total est **toujours exact**, même quand la liste est tronquée
 (`[liste incomplète : N document(s) non affiché(s) — les totaux ci-dessus sont exacts …]`).
 Sous `older_than_months`, chaque ligne porte la date et son origine
 (`verified`, `generated`, `sources`, `commit`, `fichier`) ; sous `links_to`, un
-lien venu d'une section de rôle `upstream` est marqué `— amont`.
+lien venu d'une section de rôle `upstream` est marqué `— amont`. Selon les
+critères et le tri s'ajoutent `— degré N`, `— cité par N`, `— priorité N` et
+`— amont modifié : <base>:/<chemin> le <date>`.
 
 **Zéro, et pas une faute de frappe**
 
@@ -367,7 +375,8 @@ observée hors du vocabulaire déclaré porte `(hors vocabulaire déclaré)`.
 
 **Sortie structurée.** L'outil déclare un `outputSchema` : le résultat porte
 aussi, en `structuredContent`, les mêmes documents et effectifs
-(`{criteria, count_by, bases: [{base, total, documents | counts}]}`). C'est la
+(`{criteria, count_by, bases: [{base, total, documents | counts}]}` ; un document
+porte au besoin `upstream_changed`, `cited_by`, `reaudit_score`, `depth`). C'est la
 voie des programmes — une autre interface lit les données sans analyser le
 texte. Le client MCP officiel valide ces données contre le schéma.
 
@@ -620,6 +629,9 @@ kb_read    base=… path=… section=…       → le contenu utile, pas le fich
 kb_find  base=… count_by=type                 → quels types existent ici ?
 kb_find  base=… type=Procédure under=…        → total exact ; zéro est une réponse
 kb_find  base=… links_to="produit-x:/…"       → qui, chez nous, décline ce concept ?
+kb_find  base=… query="sauvegarde" type=Procédure  → texte et critères en un appel
+kb_find  base=… upstream_changed=true         → ce qui est à revérifier, l'amont ayant changé
+kb_find  base=… sort="reaudit"                → par où commencer un ré-audit
 ```
 
 **Contribuer un fait nouveau**

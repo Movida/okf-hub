@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import datetime as dt
 import posixpath
+import re
 import subprocess
 import threading
 import time
@@ -41,7 +42,7 @@ from .. import hublog
 from ..mdutil import Heading, parse_document, parse_headings
 from ..registry import Base, Registry
 from ..search import RESERVED_NAMES
-from .confiance import COMMIT, FICHIER, UTC, date_declaree
+from .confiance import COMMIT, FICHIER, UTC, VERIFIED, date_declaree
 from .liens import ANCRE, EXTERNE, HORS_CORPUS, INTERBASE, INTERNE, REFUSE, Cible, Lien, extraire
 from .profil import Profil, charger_profil
 
@@ -189,6 +190,24 @@ class Commit:
     sujet: str
 
 
+@dataclass(frozen=True)
+class Derive:
+    """Une fiche cite un document d'une autre base modifié après elle.
+
+    « Après elle » : après son dernier commit, ou sa dernière vérification si
+    elle est plus récente. La fiche n'a donc pas été relue depuis que ce qu'elle
+    cite a changé (§ 5 bis.1, rév. 4.6).
+    """
+
+    base: str
+    chemin: str
+    date_cible: dt.datetime
+    date_doc: dt.datetime
+    amont: bool
+    """La référence est dans une section de rôle `upstream` : la fiche *décline*
+    ce document, elle ne fait pas que le mentionner."""
+
+
 @dataclass
 class _Entree:
     modele: BaseModele
@@ -229,6 +248,7 @@ class Lecteur:
         self._generation = 0
         self._entrants: tuple[tuple, Mapping] | None = None
         self._dates: dict[str, tuple[tuple, Mapping[str, dt.datetime]]] = {}
+        self._derives: dict[str, tuple[tuple, Mapping[str, tuple[Derive, ...]]]] = {}
 
     # --- modèles --------------------------------------------------------------
 
@@ -331,6 +351,84 @@ class Lecteur:
             self._entrants = (cle, fige)
         return fige
 
+    def dependants(
+        self, nom: str, chemin: str, profondeur: int = 1, bases: frozenset[str] | None = None
+    ) -> list[list[tuple[str, str]]]:
+        """Les documents qui citent celui-ci, par degré : ceux qui le citent, puis
+        ceux qui citent ceux-là… (« si cette fiche est fausse, quoi d'autre l'est »).
+
+        Un sommaire ou un journal (`index.md`, `log.md`) cite sans dépendre : il
+        n'en fait pas partie. `bases` : celles dont les citations comptent — un
+        visiteur ne voit pas l'impact par une base qui lui est fermée.
+        """
+        index = self._index_entrants()
+        vus = {(nom, chemin)}
+        niveau = [(nom, chemin)]
+        degres: list[list[tuple[str, str]]] = []
+        for _ in range(profondeur):
+            suivant = []
+            for cible in niveau:
+                for e in index.get(cible, ()):
+                    source = (e.base, e.chemin)
+                    if source in vus or posixpath.basename(e.chemin) in RESERVED_NAMES:
+                        continue
+                    if bases is not None and e.base not in bases:
+                        continue
+                    vus.add(source)
+                    suivant.append(source)
+            if not suivant:
+                break
+            degres.append(sorted(suivant))
+            niveau = suivant
+        return degres
+
+    def citations(self, nom: str, chemin: str, bases: frozenset[str] | None = None) -> int:
+        """Nombre de documents distincts qui citent celui-ci (sommaires exclus)."""
+        degres = self.dependants(nom, chemin, 1, bases)
+        return len(degres[0]) if degres else 0
+
+    def derives(self, nom: str) -> Mapping[str, tuple[Derive, ...]]:
+        """Pour chaque fiche de la base, les documents d'autres bases qu'elle cite
+        et qui ont changé après elle. Dates de commit : un `git log` par base,
+        en cache par HEAD ; le résultat aussi."""
+        modeles = self.modeles()
+        heads = tuple((n, _git_head(m.base.root)) for n, m in modeles.items())
+        cle = (tuple((n, m.generation) for n, m in modeles.items()), heads)
+        with self._verrou:
+            deja = self._derives.get(nom)
+            if deja is not None and deja[0] == cle:
+                return deja[1]
+        modele = modeles[nom]
+        dates_ici = self.dates_commit(nom)
+        dates: dict[str, Mapping[str, dt.datetime]] = {}
+        out: dict[str, tuple[Derive, ...]] = {}
+        for doc in modele.concepts():
+            repere = dates_ici.get(doc.chemin) or dt.datetime.fromtimestamp(doc.mtime, UTC)
+            declaree = date_declaree(doc.frontmatter)
+            if declaree is not None and declaree[1] == VERIFIED and declaree[0] > repere:
+                repere = declaree[0]
+            trouvees: dict[tuple[str, str], Derive] = {}
+            for lien in doc.liens:
+                if lien.cible.sorte != INTERBASE:
+                    continue
+                cible = cible_document(resoudre(lien.cible, modeles), modeles)
+                if cible is None or cible[0] == nom:
+                    continue
+                if cible[0] not in dates:
+                    dates[cible[0]] = self.dates_commit(cible[0])
+                changee = dates[cible[0]].get(cible[1])
+                if changee is None or changee <= repere:
+                    continue
+                amont = modele.profil.role_de_section(lien.section) == "upstream"
+                avant = trouvees.get(cible)
+                trouvees[cible] = Derive(cible[0], cible[1], changee, repere, amont or bool(avant and avant.amont))
+            if trouvees:
+                out[doc.chemin] = tuple(sorted(trouvees.values(), key=lambda d: d.date_cible, reverse=True))
+        fige = MappingProxyType(out)
+        with self._verrou:
+            self._derives[nom] = (cle, fige)
+        return fige
+
     # --- dates ----------------------------------------------------------------
 
     def dates_commit(self, nom: str) -> Mapping[str, dt.datetime]:
@@ -363,10 +461,21 @@ class Lecteur:
         sortie = _git(base.root, "log", "-1", "--format=%cI", "--", rel)
         return _date_git(sortie.strip()) if sortie else None
 
-    def historique(self, nom: str, nombre: int = 30) -> list[Commit]:
-        """Les derniers commits du dépôt de la base, du plus récent au plus ancien."""
+    def historique(
+        self, nom: str, nombre: int = 30, *, chemin: str | None = None,
+        depuis: dt.datetime | None = None, jusqu_a: dt.datetime | None = None,
+    ) -> list[Commit]:
+        """Les derniers commits du dépôt de la base — ou ceux qui ont touché un
+        document, ou ceux d'une période —, du plus récent au plus ancien."""
         base = self.registry.get(nom)
-        sortie = _git(base.root, "log", f"-n{nombre}", "--format=%cI%x1f%h%x1f%s")
+        args = ["log", f"-n{nombre}", "--format=%cI%x1f%h%x1f%s"]
+        if depuis is not None:
+            args.append(f"--since={depuis.isoformat()}")
+        if jusqu_a is not None:
+            args.append(f"--until={jusqu_a.isoformat()}")
+        if chemin is not None:
+            args += ["--", (base.corpus_dir / chemin).relative_to(base.root).as_posix()]
+        sortie = _git(base.root, *args)
         commits = []
         for ligne in (sortie or "").splitlines():
             date, _, reste = ligne.partition("\x1f")
@@ -473,6 +582,50 @@ def _git(root: Path, *args: str) -> str | None:
     if proc.returncode != 0:
         return None
     return proc.stdout.decode("utf-8", errors="replace")
+
+
+@dataclass(frozen=True)
+class EtatDepot:
+    branche: str | None
+    amont: str | None
+    """Branche suivie sur le remote, s'il y en a une."""
+    en_avance: int
+    en_retard: int
+    modifies: int
+    """Fichiers modifiés ou non suivis dans l'arbre de travail."""
+
+
+_BRANCHE = re.compile(r"^## (?P<branche>[^.\s]+)(?:\.\.\.(?P<amont>\S+))?(?: \[(?P<ecart>[^\]]+)\])?")
+
+
+def etat_depot(root: Path) -> EtatDepot | None:
+    """Ce que `git status` dit du dépôt d'une base — en lecture seule. Le hub ne
+    synchronise rien avec le remote (§ 4.5) : une base peut en diverger sans que
+    rien d'autre ne le montre."""
+    sortie = _git(root, "status", "--porcelain=v1", "--branch")
+    if sortie is None:
+        return None
+    lignes = sortie.splitlines()
+    m = _BRANCHE.match(lignes[0]) if lignes else None
+    avance = retard = 0
+    if m and m.group("ecart"):
+        for partie in m.group("ecart").split(","):
+            mot, _, nombre = partie.strip().partition(" ")
+            if mot == "ahead":
+                avance = int(nombre)
+            elif mot == "behind":
+                retard = int(nombre)
+    return EtatDepot(
+        branche=m.group("branche") if m else None,
+        amont=m.group("amont") if m else None,
+        en_avance=avance, en_retard=retard,
+        modifies=sum(1 for l in lignes[1:] if l.strip()),
+    )
+
+
+def tete(root: Path) -> str | None:
+    """Le commit HEAD d'un dépôt, ou None : la clé de ce qui dépend de son historique."""
+    return _git_head(root)
 
 
 def _git_head(root: Path) -> str | None:

@@ -344,3 +344,54 @@ def test_le_moteur_ne_cree_rien_dans_les_depots(hub, make_bundle):
     lecteur.fraicheur(modele, modele.docs["d.md"])
     lecteur.historique("base-a")
     assert git(b.root, "status", "--porcelain", "--ignored") == ""
+
+
+# --- rév. 4.6 : dérive amont, impact, état du dépôt -----------------------------------
+
+
+def _commit_date(depot, date: str, message: str = "modif") -> None:
+    import os
+    import subprocess
+
+    env = {**os.environ, "GIT_AUTHOR_DATE": date, "GIT_COMMITTER_DATE": date}
+    subprocess.run(["git", "-C", str(depot), "-c", "user.name=t", "-c", "user.email=t@l",
+                    "-c", "commit.gpgsign=false", "commit", "-qam", message], check=True, env=env)
+
+
+def test_derive_amont_apres_la_fiche(hub, make_bundle):
+    amont = _base(make_bundle, "produit-x", docs={"s.md": "# S\n", "t.md": "# T\n"})
+    aval = _base(make_bundle, "installation-x", docs={
+        "f.md": "# Amont\n\n[s](produit-x:/s.md) et [t](produit-x:/t.md)\n"})
+    (amont.root / "knowledge" / "s.md").write_text("# S\n\nChangé.\n", encoding="utf-8")
+    _commit_date(amont.root, "2099-01-01T00:00:00Z", "s change")
+    lecteur = Lecteur(_registre(hub), intervalle=0)
+    derives = lecteur.derives("installation-x")
+    assert [(d.base, d.chemin) for d in derives["f.md"]] == [("produit-x", "s.md")]
+    # Le cache tient tant que rien ne bouge ; un nouveau commit de la fiche la remet à jour.
+    assert lecteur.derives("installation-x") is derives
+    (aval.root / "knowledge" / "f.md").write_text("# Amont\n\nRelue.\n", encoding="utf-8")
+    _commit_date(aval.root, "2099-06-01T00:00:00Z", "f relue")
+    assert lecteur.derives("installation-x") == {}
+
+
+def test_dependants_par_degre_sans_les_sommaires(hub, make_bundle):
+    _base(make_bundle, docs={
+        "a.md": "# A\n", "b.md": "[a](/a.md)\n", "c.md": "[b](/b.md)\n", "d.md": "[c](/c.md)\n",
+        "index.md": "[a](/a.md) [b](/b.md)\n",
+    })
+    lecteur = Lecteur(_registre(hub))
+    assert lecteur.dependants("base-a", "a.md", 3) == [[("base-a", "b.md")], [("base-a", "c.md")], [("base-a", "d.md")]]
+    assert lecteur.dependants("base-a", "a.md", 1) == [[("base-a", "b.md")]]
+    assert lecteur.citations("base-a", "a.md") == 1  # index.md ne compte pas
+    assert lecteur.dependants("base-a", "a.md", 3, bases=frozenset()) == []
+
+
+def test_etat_du_depot(hub, make_bundle):
+    from okf_hub.lecture.modele import etat_depot
+
+    b = _base(make_bundle, docs={"d.md": "x\n"})
+    etat = etat_depot(b.root)
+    assert (etat.branche, etat.amont, etat.modifies) == ("main", None, 0)
+    (b.root / "knowledge" / "nouveau.md").write_text("y\n", encoding="utf-8")
+    assert etat_depot(b.root).modifies == 1
+    assert etat_depot(hub[0]) is None  # pas un dépôt git

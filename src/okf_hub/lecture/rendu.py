@@ -71,6 +71,9 @@ class Contexte:
     """`sources[].id` du frontmatter : une note `[^id]` sans définition y renvoie."""
     image_vers: Callable[[Cible], str | None] | None = None
     """Adresse d'une image du corpus ; None : l'image n'est pas affichée."""
+    proposition_vers: Callable[[str], str | None] | None = None
+    """Adresse de la page d'une proposition d'après son id ; un id écrit dans le
+    texte devient alors un lien."""
 
 
 @dataclass(frozen=True)
@@ -117,6 +120,9 @@ def _rendre_source(self, tokens, idx, options, env) -> str:
 
 def _rendre_lien(self, tokens, idx, options, env) -> str:
     jeton = tokens[idx]
+    if jeton.meta.get("moteur"):
+        # Lien posé par le moteur lui-même (id de proposition) : déjà résolu.
+        return self.renderToken(tokens, idx, options, env)
     href = jeton.attrGet("href") or ""
     contexte: Contexte = env["okf"]
     cible = classer(str(href), contexte.base, contexte.chemin)
@@ -156,6 +162,111 @@ def _rendre_image(self, tokens, idx, options, env) -> str:
     )
 
 
+#: Un id de proposition (§ 5.5), et un chemin de fiche écrit en code.
+_ID_PROPOSITION = re.compile(r"\bprop-\d{4}-\d{2}-\d{2}-[0-9a-f]{4}\b")
+_SECTION_EN_CODE = re.compile(r"^#{1,6}\s+(\S.*)$")
+_CHEMIN_EN_CODE = re.compile(r"^(?:[a-z0-9-]+:/[^\s`]+|/?[\w.-]+(?:/[\w.-]+)*\.md|/[\w.-]+(?:/[\w.-]+)*/)$")
+
+
+def _rendre_code(self, tokens, idx, options, env) -> str:
+    """Un chemin de fiche écrit en code (`dossier/fiche.md`), s'il existe,
+    devient un lien : c'est ainsi que les propositions et bien des fiches
+    désignent un document."""
+    jeton = tokens[idx]
+    code = f"<code>{escapeHtml(jeton.content)}</code>"
+    contexte: Contexte | None = env.get("okf")
+    ouverts = sum(1 if t.type == "link_open" else -1 if t.type == "link_close" else 0 for t in tokens[:idx])
+    if contexte is None or ouverts > 0:
+        return code  # déjà dans un lien : pas de lien dans un lien
+    # « `# Terrain` » : un renvoi à une section de la fiche, écrit comme son titre —
+    # sauf si le paragraphe cite un autre document, dont ce peut être la section.
+    section = _SECTION_EN_CODE.match(jeton.content)
+    ailleurs = any(t.type == "link_open" and not str(t.attrGet("href") or "").startswith("#") for t in tokens)
+    if section and not ailleurs and ancre(section.group(1)) in env.get("ancres", ()):
+        return f'<a class="ancre" href="#{escapeHtml(ancre(section.group(1)))}">{code}</a>'
+    if not _CHEMIN_EN_CODE.match(jeton.content):
+        return code
+    brut = jeton.content if (jeton.content.startswith("/") or ":/" in jeton.content) else "/" + jeton.content
+    cible = classer(brut, contexte.base, contexte.chemin)
+    if cible.sorte not in ("interne", "interbase"):
+        return code
+    lien = contexte.lien_vers(cible)
+    if lien.href is None:
+        return code
+    return f'<a class="{escapeHtml(lien.classe)}" href="{escapeHtml(lien.href)}">{code}</a>'
+
+
+def _liens_automatiques(state) -> None:
+    """Règle de cœur : un id de proposition écrit dans le texte (hors lien et hors
+    code) devient un lien vers sa page, si l'interface la connaît."""
+    contexte: Contexte | None = state.env.get("okf")
+    if contexte is None or contexte.proposition_vers is None:
+        return
+    for bloc in state.tokens:
+        if bloc.type != "inline" or not bloc.children:
+            continue
+        enfants, dans_un_lien = [], 0
+        for jeton in bloc.children:
+            if jeton.type == "link_open":
+                dans_un_lien += 1
+            elif jeton.type == "link_close":
+                dans_un_lien -= 1
+            if jeton.type != "text" or dans_un_lien or "prop-" not in jeton.content:
+                enfants.append(jeton)
+                continue
+            position = 0
+            for m in _ID_PROPOSITION.finditer(jeton.content):
+                url = contexte.proposition_vers(m.group(0))
+                if url is None:
+                    continue
+                if m.start() > position:
+                    enfants.append(_texte(jeton.content[position:m.start()]))
+                ouvre = Token("link_open", "a", 1)
+                ouvre.attrs = {"href": url, "class": "proposition"}
+                ouvre.meta = {"moteur": True}
+                enfants += [ouvre, _texte(m.group(0)), Token("link_close", "a", -1)]
+                position = m.end()
+            if position == 0:
+                enfants.append(jeton)
+            elif position < len(jeton.content):
+                enfants.append(_texte(jeton.content[position:]))
+        bloc.children = enfants
+
+
+def _marquer_le_chapo(jetons: list[Token]) -> None:
+    """Un premier paragraphe tout entier en italique est un chapô : la page le
+    met en avant (classe `chapo`) au lieu d'en faire un long bloc penché."""
+    if len(jetons) < 3 or jetons[0].type != "paragraph_open" or jetons[1].type != "inline":
+        return
+    enfants = [e for e in (jetons[1].children or ()) if not (e.type == "text" and not e.content.strip())]
+    if len(enfants) >= 3 and enfants[0].type == "em_open" and enfants[-1].type == "em_close" and \
+            sum(1 for e in enfants if e.type == "em_open") == 1:
+        jetons[0].attrSet("class", "chapo")
+
+
+def _rendre_fin_de_titre(self, tokens, idx, options, env) -> str:
+    """Un permalien après chaque titre : `#` à côté du texte, pour copier
+    l'adresse d'une section sans passer par le sommaire."""
+    ouverture = next((tokens[j] for j in range(idx - 1, -1, -1) if tokens[j].type == "heading_open"), None)
+    ident = ouverture.attrGet("id") if ouverture is not None else None
+    lien = (f' <a class="permalien" href="#{escapeHtml(str(ident))}" aria-label="Lien vers cette section">#</a>'
+            if ident else "")
+    return f"{lien}</{tokens[idx].tag}>\n"
+
+
+def _texte_du_titre(jeton: Token) -> str:
+    """Le texte d'un titre tel qu'il se lit, sans sa syntaxe (`code`, *emphase*,
+    liens) : celui du sommaire."""
+    morceaux = [c.content for c in (jeton.children or ()) if c.type in ("text", "code_inline")]
+    return "".join(morceaux).strip() or jeton.content
+
+
+def _texte(contenu: str) -> Token:
+    jeton = Token("text", "", 0)
+    jeton.content = contenu
+    return jeton
+
+
 def _construire() -> MarkdownIt:
     md = (
         MarkdownIt("commonmark", {"html": False, "maxNesting": MAX_IMBRICATION})
@@ -167,6 +278,9 @@ def _construire() -> MarkdownIt:
     md.add_render_rule("link_open", _rendre_lien)
     md.add_render_rule("image", _rendre_image)
     md.add_render_rule("source_ref", _rendre_source)
+    md.add_render_rule("code_inline", _rendre_code)
+    md.add_render_rule("heading_close", _rendre_fin_de_titre)
+    md.core.ruler.push("liens_automatiques", _liens_automatiques)
     # Compile les chaînes de règles maintenant, une fois, plutôt qu'au premier
     # rendu de plusieurs fils à la fois.
     md.parse("", {"okf": None})
@@ -226,6 +340,40 @@ def _encadrer(jetons: list[Token], roles: Mapping[str, str]) -> list[Token]:
     return out
 
 
+#: Au-delà, la liste d'une section `upstream` se replie : vingt fiches amont en
+#: tête de page cachent ce que la fiche dit elle-même.
+REPLI_AMONT = 10
+
+
+def _replier(jetons: list[Token], roles: Mapping[str, str]) -> list[Token]:
+    """Replie dans un `<details>` toute liste de premier niveau de plus de
+    `REPLI_AMONT` éléments, dans une section de rôle `upstream`."""
+    out: list[Token] = []
+    section: int | None = None  # niveau du titre de la section amont en cours
+    i = 0
+    while i < len(jetons):
+        jeton = jetons[i]
+        if jeton.type == "heading_open":
+            niveau = int(jeton.tag[1])
+            if section is not None and niveau <= section:
+                section = None
+            if i + 1 < len(jetons) and roles.get(normalize_heading(jetons[i + 1].content)) == "upstream":
+                section = niveau
+        elif section is not None and jeton.type in ("bullet_list_open", "ordered_list_open") and jeton.level == 0:
+            fin = next(j for j in range(i + 1, len(jetons))
+                       if jetons[j].type == jeton.type.replace("_open", "_close") and jetons[j].level == 0)
+            elements = sum(1 for t in jetons[i:fin] if t.type == "list_item_open" and t.level == 1)
+            if elements > REPLI_AMONT:
+                out.append(_balise(f'<details class="repli"><summary>{elements} éléments</summary>\n'))
+                out.extend(jetons[i:fin + 1])
+                out.append(_balise("</details>\n"))
+                i = fin + 1
+                continue
+        out.append(jeton)
+        i += 1
+    return out
+
+
 def rendre(
     corps: str,
     contexte: Contexte,
@@ -249,11 +397,13 @@ def rendre(
         and normalize_heading(jetons[1].content) == normalize_heading(titre)
     ):
         jetons = jetons[3:]
+    env["ancres"] = frozenset(str(j.attrGet("id")) for j in jetons if j.type == "heading_open" and j.attrGet("id"))
+    _marquer_le_chapo(jetons)
     if roles:
-        jetons = _encadrer(jetons, roles)
+        jetons = _encadrer(_replier(jetons, roles), roles)
     sommaire = []
     for i, j in enumerate(jetons):
         if j.type == "heading_open" and j.tag in ("h1", "h2", "h3") and i + 1 < len(jetons):
-            sommaire.append((int(j.tag[1]), jetons[i + 1].content, str(j.attrGet("id") or "")))
+            sommaire.append((int(j.tag[1]), _texte_du_titre(jetons[i + 1]), str(j.attrGet("id") or "")))
     html = _MD.renderer.render(jetons, _MD.options, env)
     return Rendu(Markup(html), tuple(sommaire), _niveau_atteint(jetons) >= MAX_IMBRICATION - 1)
