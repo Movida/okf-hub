@@ -126,7 +126,11 @@ def run(registry: Registry, arguments: dict) -> str:
                 )
             writer.add("\n".join(lines))
 
+    # Pas de paramètre `base` ici : la voie qui existe pour savoir si un sujet
+    # est déjà proposé est la recherche (rév. 4.7), pas une liste plus longue.
     return writer.render(
-        "[résultats tronqués : listes de propositions en attente incomplètes — "
-        "utilisez kb_list par base ou consultez proposals/pending/]"
+        f"[résultats tronqués : {writer.dropped} liste(s) de propositions en "
+        f"attente omise(s) — pour savoir si un sujet est déjà proposé, "
+        f"kb_search sur ce sujet avec include_pending: true ; pour ce qu'a "
+        f"déposé un contributeur, kb_proposal_status avec submitted_by]"
     )

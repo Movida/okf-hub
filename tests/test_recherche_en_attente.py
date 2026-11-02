@@ -272,6 +272,25 @@ def test_kb_list_sans_date_lisible_compte_sans_dater(hub, make_bundle, registry)
     assert "propositions en attente : 1" in out and "la plus ancienne" not in out
 
 
+def test_la_troncature_de_kb_list_conseille_une_voie_qui_existe(hub, make_bundle, registry):
+    b = base(make_bundle, registry, {"a.md": "# A\n"})
+    pending = b.root / "proposals" / "pending"
+    pending.mkdir(parents=True)
+    for i in range(120):
+        (pending / f"prop-2026-01-01-{i:04x}.md").write_text(
+            f"---\nid: prop-2026-01-01-{i:04x}\ntype: observation\n"
+            f"concerns: {'sujet très long ' * 12}{i}\n---\n\ncorps\n",
+            encoding="utf-8",
+        )
+    out = list_tool.run(registry, {"include_pending_concerns": True})
+    note = out.splitlines()[-1]
+    assert note.startswith("[résultats tronqués : 1 liste(s) de propositions en attente omise(s)")
+    assert "kb_list par base" not in note
+    # Chaque voie conseillée existe : l'outil, et le paramètre qu'elle nomme.
+    assert "kb_search" in note and "include_pending" in search_tool.SCHEMA["properties"]
+    assert "kb_proposal_status" in note and "submitted_by" in proposal_status_tool.SCHEMA["properties"]
+
+
 def test_kb_list_ne_touche_pas_aux_propositions(hub, make_bundle, registry):
     b = base(make_bundle, registry, {"a.md": "# A\n"})
     deposer(registry, "produit-x", "sujet", "contenu")

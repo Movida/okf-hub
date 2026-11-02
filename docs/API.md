@@ -118,6 +118,12 @@ Avec `include_pending_concerns`, un second bloc par base suit :
 
 Les listes de `concerns` sont **tronquées en priorité** : les résumés de bases
 sont toujours émis en entier, les concerns seulement si le budget le permet.
+La troncature le dit, avec le nombre de listes omises et les deux voies qui
+existent pour aller plus loin — `kb_list` n'a pas de paramètre de base :
+
+```
+[résultats tronqués : 1 liste(s) de propositions en attente omise(s) — pour savoir si un sujet est déjà proposé, kb_search sur ce sujet avec include_pending: true ; pour ce qu'a déposé un contributeur, kb_proposal_status avec submitted_by]
+```
 
 Sans aucune base enregistrée, la sortie explique comment en importer une.
 
@@ -357,6 +363,20 @@ pour couper court à une tentative de lecture qui ne peut pas aboutir. Ce
 diagnostic supplémentaire ne s'applique **jamais** aux tentatives d'évasion
 (`..`, symlink sortant) : leur message reste inchangé, opaque — un chemin qui
 sort de `corpus-dir` par ce biais garde exactement le refus d'aujourd'hui.
+
+**Chemin préfixé par `corpus-dir`.** Cas particulier du précédent : le fichier
+trouvé à partir de la racine du bundle est le document du corpus lui-même, le
+chemin répétant `corpus-dir` en tête — typiquement recopié d'une arborescence
+de `GOVERNANCE.md` qui montre le dépôt entier. Le `NOT_FOUND` donne alors le
+chemin à passer, vérifié par la même résolution confinée :
+
+```
+kb_read base=produit-x path="knowledge/procedures/sso.md"
+→ ERROR: NOT_FOUND: document 'knowledge/procedures/sso.md' introuvable dans la base 'produit-x' : les chemins sont relatifs à corpus-dir ('knowledge'), et celui-ci le répète en tête. Le document existe : path='procedures/sso.md'.
+```
+
+Un chemin préfixé vers un document absent, ou vers un fichier exclu du corpus,
+reçoit le message générique.
 
 ---
 

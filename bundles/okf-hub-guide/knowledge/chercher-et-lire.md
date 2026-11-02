@@ -27,7 +27,7 @@ verified:
     note: >-
       ajout des propositions en attente dans la recherche, sur demande, après
       le corpus et marquées « non intégré » ; ancienneté de la file dans kb_list
-      (rév. 4.7)
+      (rév. 4.7) ; chemins relatifs au corpus, sans son répertoire en tête
 ---
 
 # Chercher et lire, sans gaspiller de contexte
@@ -118,6 +118,11 @@ document.
 kb_search  → "  L120-124 § reconnexion sso"
 kb_read    → section: "reconnexion sso"
 ```
+
+Un chemin part toujours de la **racine du corpus**, pas de celle du dépôt. Une
+arborescence montrée par une gouvernance commence parfois par le répertoire du
+corpus : retire-le. Si tu l'oublies, la lecture échoue en te donnant le bon
+chemin.
 
 Le corps d'un document cite parfois une autre base par un lien littéral,
 `[libellé](produit-x:/chemin.md)`. Ce n'est pas réservé au rendu

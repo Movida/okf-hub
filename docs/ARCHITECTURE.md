@@ -864,6 +864,7 @@ usage réel (`referentiel-x/AGENTS.md` : « c'est arrivé »).
 | `base` en désaccord avec le préfixe du lien | Le préfixe du lien gagne, `base` est ignoré pour cet appel | C'est exactement le scénario d'usage : une session qui lit une base rencontre un lien vers une autre et le recopie tel quel, sans recomposer l'appel à la main. |
 | Où enrichir le message `NOT_FOUND` | Seulement quand le chemin, résolu sous `corpus-dir`, n'y existe pas — jamais quand la résolution sort de `corpus-dir` (`..`, symlink) | Ces deux échecs empruntent des branches distinctes du code existant. Enrichir uniquement la première laisse le mécanisme de confinement du § 5.3 — celui que gardent `test_traversee_de_chemin_rejetee` et `test_symlink_sortant_du_corpus_rejete` — byte pour byte inchangé : aucune information sur le système de fichiers hôte ne peut fuiter par ce biais. |
 | Portée de la vérification « fichier réel ailleurs » | Confinée à `self.root` (racine du bundle), par une résolution canonique et une vérification d'inclusion indépendantes — même mécanique que le confinement à `corpus-dir` | Un chemin qui, une fois recalculé depuis la racine du bundle, s'évaderait lui aussi (via `..` ou un symlink) ne déclenche pas le message enrichi : il retombe silencieusement sur le message générique. |
+| Fichier « réel ailleurs » qui est dans le corpus (2026-11-02) | Si le fichier trouvé depuis la racine du bundle est sous `corpus-dir`, c'est le document lui-même, préfixe en double : le message donne son chemin relatif au corpus, après l'avoir fait passer par `resolve_document` ; un fichier exclu ou introuvable retombe sur le message générique | Le message de 2026-09-10 rangeait ce cas parmi les fichiers « source ou de travail, hors du corpus » : il aidait à trouver le bon chemin en en donnant une raison fausse (relevé par la roadmap d'`okf-hub-feedback`, reproduit sur trois bases dont `GOVERNANCE.md` montre l'arborescence du dépôt). La suggestion passe le même confinement qu'une lecture : elle ne peut désigner que ce qu'un `kb_read` lirait. |
 
 **Aucun écart assumé.** Les deux ajouts sont strictement additifs à ce que la
 spec encadre : `kb_read` reste un outil de lecture confiné à `corpus-dir`
@@ -871,8 +872,8 @@ spec encadre : `kb_read` reste un outil de lecture confiné à `corpus-dir`
 peut lire, seulement ce qu'elle peut comprendre d'un échec ou enchaîner sans
 recomposer un appel à la main.
 
-Tests : `tests/test_read.py`, sections « liens interbases » et « diagnostic
-hors-corpus ».
+Tests : `tests/test_read.py`, sections « liens interbases », « diagnostic
+hors-corpus » et « chemin préfixé par corpus-dir ».
 
 ---
 
@@ -964,7 +965,7 @@ arrive en tête.
 |---|---|---|
 | Corriger le message qui suggérait « réduisez max_results » | Chaque appelant de `BudgetedWriter.render()` fournit sa propre note ; celle de `kb_search` nomme la reformulation comme seul levier et dit explicitement que `max_results` n'en est pas un | L'ancien message par défaut était un conseil qui ne pouvait pas marcher pour le scénario qu'il visait — `kb_list` et `kb_proposal_status` avaient déjà leur propre note, correcte pour leur paramètre (`limit`) ; seul `kb_search` héritait du défaut fautif. |
 | Corriger le mécanisme d'arrêt (remplissage « meilleur effort ») | **Non retenu**, pour `kb_search` comme pour les deux autres outils | Un remplissage au mieux ferait de la taille d'un résultat un second critère de sélection, sans rapport avec sa pertinence : les résultats affichés cesseraient d'être un **préfixe du classement** — un petit résultat moins pertinent pourrait apparaître alors qu'un gros résultat mieux classé a été sauté. Décision du propriétaire : préserver cette propriété plutôt que mieux remplir le budget. Piste écartée pour l'instant (extraits bornés par résultat, indépendamment du budget global) : voir § 9, « Extraits bornés par résultat dans `kb_search` n'est pas fait » — à reprendre après lecture de la spec § 1.5 et § 5, pas tranchée ici. |
-| Portée du correctif de message | `kb_search` seul ; `BudgetedWriter` (donc `kb_list`, `kb_proposal_status`) inchangé | Rien dans le diagnostic ne montre un problème pour ces deux outils ; leurs notes de troncature existantes nomment déjà le bon paramètre (`limit`), pas `max_results`. |
+| Portée du correctif de message | `kb_search` seul ; `BudgetedWriter` (donc `kb_list`, `kb_proposal_status`) inchangé | Rien dans le diagnostic ne montre un problème pour ces deux outils ; leurs notes de troncature existantes ne renvoient pas à `max_results`. **Corrigé le 2026-11-02 :** celle de `kb_list` renvoyait à « kb_list par base », un paramètre qui n'existe pas ; elle nomme désormais `kb_search` avec `include_pending` et `kb_proposal_status` avec `submitted_by` (spec rév. 4.7, § 5.1), et un test vérifie que chaque paramètre qu'elle nomme est dans le schéma de son outil. |
 
 **Aucun écart assumé.** § 1.5 encadre le plafond (~4000 tokens, troncature
 signalée) sans prescrire l'algorithme d'arrêt ; l'arrêt définitif reste celui
@@ -1159,6 +1160,8 @@ pour vérifier la couverture sans relire la suite.
 | § 5.2 — seconde exception limitée à `pending/`, confinée, en lecture seule | `test_seules_les_propositions_en_attente_sont_cherchees`, `test_confinement_un_lien_symbolique_sortant_est_ignore`, `test_la_recherche_dans_les_propositions_n_ecrit_rien`, `test_proposal_status.py::test_proposals_reste_exclu_des_autres_outils` |
 | Résolution concurrente pendant la lecture ; longue file | `test_un_fichier_disparu_pendant_la_recherche_n_est_pas_une_erreur`, `test_une_longue_file_est_cherchee_par_lots` |
 | § 5.1 — date de la plus ancienne, sans date lisible, lecture seule | `test_kb_list_donne_la_date_de_la_plus_ancienne`, `test_kb_list_sans_date_lisible_compte_sans_dater`, `test_kb_list_ne_touche_pas_aux_propositions` |
+| § 5.1 — la troncature de `kb_list` renvoie à des voies qui existent | `test_la_troncature_de_kb_list_conseille_une_voie_qui_existe` |
+| `kb_read` — chemin préfixé par `corpus-dir` : le bon chemin, pas « source ou de travail » | `test_read.py::test_chemin_prefixe_par_corpus_dir_donne_le_bon_chemin`, `test_chemin_prefixe_par_un_corpus_dir_imbrique`, `test_chemin_prefixe_vers_un_document_absent_reste_generique`, `test_chemin_prefixe_vers_un_fichier_exclu_n_est_pas_suggere` ; de bout en bout dans `test_ce_qu_une_session_depose_est_visible_de_la_suivante_avant_la_revue` |
 | § 5 bis.1 — un moteur pour l'Explorer et `kb_search` | `test_web.py::test_explorer_et_kb_search_cherchent_les_propositions_avec_le_meme_moteur`, `test_web.py::test_explorer_cherche_aussi_les_propositions_en_attente` |
 | De bout en bout, vrai serveur en stdio : déposée par une session, vue de la suivante, intégrée après revue | `test_boucle_contribution.py::test_ce_qu_une_session_depose_est_visible_de_la_suivante_avant_la_revue` |
 

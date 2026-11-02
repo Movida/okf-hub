@@ -25,6 +25,18 @@ Le projet suit la version de la spécification qu'il implémente : `bundle-spec 
   pour vérifier un doublon avant dépôt.
 - Version 0.3.1.
 
+### Corrigé — deux messages qui égaraient
+
+- **Troncature de `kb_list`** : elle conseillait « kb_list par base », un
+  paramètre qui n'existe pas. Elle donne le nombre de listes omises et les
+  deux voies qui existent : `kb_search` avec `include_pending` sur le sujet,
+  `kb_proposal_status` avec `submitted_by`.
+- **`NOT_FOUND` de `kb_read` sur un chemin préfixé par `corpus-dir`**
+  (`knowledge/x.md` au lieu de `x.md`, recopié d'une arborescence de
+  `GOVERNANCE.md`) : il rangeait le document parmi les fichiers « source ou de
+  travail, hors du corpus ». Il dit maintenant que le préfixe est en double et
+  donne le chemin à passer, vérifié par la même résolution confinée.
+
 ### Ajouté — ce que la structure permet de déduire (spec rév. 4.6)
 
 - **`kb_find`** : `query` (le texte comme critère, en ET strict), `links_to_depth`

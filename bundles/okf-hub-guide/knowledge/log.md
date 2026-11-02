@@ -10,6 +10,8 @@ plus récent en premier. Le gestionnaire y ajoute une ligne à chaque intégrati
   plus ancienne (rév. 4.7).
 * **Proposer** : un doublon se vérifie par la recherche, propositions en
   attente comprises, plutôt que par la seule liste de leurs objets.
+* **Chercher et lire** : un chemin part de la racine du corpus, sans son
+  répertoire en tête ; la lecture qui l'oublie donne le bon chemin.
 
 ## 2026-10-29
 

@@ -136,25 +136,47 @@ class Base:
         """NOT_FOUND pour un document absent de corpus-dir.
 
         Enrichit le message si le même chemin, pris relatif à la **racine du
-        bundle** cette fois, désigne un fichier réel : cas vécu d'un champ de
-        frontmatter comme `source_xml`, relatif au bundle et pas à corpus-dir,
-        recopié tel quel dans `path` par une session. Sans cela, l'erreur est
-        indiscernable d'un chemin simplement fautif. La vérification est
-        indépendante et confinée à `self.root` (même mécanique qu'au § 5.3) :
-        un chemin qui s'évade de corpus-dir *sans* rester dans le bundle
-        (`..`, symlink sortant) ne passe jamais par ici et garde son message
-        opaque d'aujourd'hui.
+        bundle** cette fois, désigne un fichier réel. Deux cas, que le message
+        distingue :
+
+        - ce fichier est **dans le corpus** : le chemin commençait par
+          corpus-dir lui-même, préfixe en double — typiquement recopié d'une
+          arborescence de `GOVERNANCE.md` qui montre le dépôt. Le message donne
+          le chemin à passer, vérifié par la même résolution confinée ;
+        - il est **hors du corpus** : cas vécu d'un champ de frontmatter comme
+          `source_xml`, relatif au bundle et pas à corpus-dir, recopié tel quel
+          dans `path` par une session.
+
+        Sans cela, l'erreur est indiscernable d'un chemin simplement fautif. La
+        vérification est indépendante et confinée à `self.root` (même mécanique
+        qu'au § 5.3) : un chemin qui s'évade de corpus-dir *sans* rester dans le
+        bundle (`..`, symlink sortant) ne passe jamais par ici et garde son
+        message opaque d'aujourd'hui.
         """
         sibling = (self.root / candidate).resolve()
         if self.root in sibling.parents and sibling.is_file():
             corpus_rel = self.corpus_dir.relative_to(self.root).as_posix()
-            return ToolError(
-                NOT_FOUND,
-                f"document '{rel}' introuvable dans le corpus de la base '{self.name}' "
-                f"(corpus-dir='{corpus_rel}'), mais un fichier existe à ce chemin relatif "
-                f"à la racine du dépôt de la base : probablement un fichier source ou de "
-                f"travail, hors du corpus consultable via kb_read."
-            )
+            if self.corpus_dir in sibling.parents:
+                juste = sibling.relative_to(self.corpus_dir).as_posix()
+                try:
+                    self.resolve_document(juste)
+                except ToolError:
+                    pass
+                else:
+                    return ToolError(
+                        NOT_FOUND,
+                        f"document '{rel}' introuvable dans la base '{self.name}' : les "
+                        f"chemins sont relatifs à corpus-dir ('{corpus_rel}'), et celui-ci "
+                        f"le répète en tête. Le document existe : path='{juste}'."
+                    )
+            else:
+                return ToolError(
+                    NOT_FOUND,
+                    f"document '{rel}' introuvable dans le corpus de la base '{self.name}' "
+                    f"(corpus-dir='{corpus_rel}'), mais un fichier existe à ce chemin relatif "
+                    f"à la racine du dépôt de la base : probablement un fichier source ou de "
+                    f"travail, hors du corpus consultable via kb_read."
+                )
         return ToolError(NOT_FOUND, f"document '{rel}' introuvable dans la base '{self.name}'")
 
     # --- propositions -------------------------------------------------------

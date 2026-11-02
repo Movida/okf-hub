@@ -255,3 +255,46 @@ def test_traversee_de_chemin_ne_beneficie_pas_du_message_enrichi(hub, make_bundl
     assert exc.value.code == NOT_FOUND
     assert "hors du corpus consultable via kb_read" not in exc.value.message
     assert "hors du corpus de la base" in exc.value.message
+
+
+# --- chemin préfixé par corpus-dir (rév. 4.7, message du NOT_FOUND) -----------
+
+
+def test_chemin_prefixe_par_corpus_dir_donne_le_bon_chemin(hub, make_bundle, registry):
+    # Une arborescence de GOVERNANCE.md montre le dépôt, préfixe du corpus
+    # compris : recopié tel quel, le chemin le répète. Le fichier est bien le
+    # document du corpus, pas un fichier source ou de travail.
+    _base_with(make_bundle, registry, {"dossier/note.md": "# note\n"})
+    with pytest.raises(ToolError) as exc:
+        read_tool.run(registry, {"base": "ma-base", "path": "knowledge/dossier/note.md"})
+    assert exc.value.code == NOT_FOUND
+    assert "source ou de travail" not in exc.value.message
+    assert "corpus-dir ('knowledge')" in exc.value.message
+    assert "path='dossier/note.md'" in exc.value.message
+    # Le chemin donné se lit.
+    assert "# note" in read_tool.run(registry, {"base": "ma-base", "path": "dossier/note.md"})
+
+
+def test_chemin_prefixe_par_un_corpus_dir_imbrique(hub, make_bundle, registry):
+    b = make_bundle("ma-base", name="ma-base", git_init=False, create_corpus=False, corpus_dir="docs/kb")
+    b.doc("a.md", "# A\n", corpus="docs/kb")
+    b.init_git()
+    registry.scan()
+    with pytest.raises(ToolError) as exc:
+        read_tool.run(registry, {"base": "ma-base", "path": "docs/kb/a.md"})
+    assert "corpus-dir ('docs/kb')" in exc.value.message and "path='a.md'" in exc.value.message
+
+
+def test_chemin_prefixe_vers_un_document_absent_reste_generique(hub, make_bundle, registry):
+    _base_with(make_bundle, registry, {"note.md": "# note\n"})
+    with pytest.raises(ToolError) as exc:
+        read_tool.run(registry, {"base": "ma-base", "path": "knowledge/absent.md"})
+    assert exc.value.message == "document 'knowledge/absent.md' introuvable dans la base 'ma-base'"
+
+
+def test_chemin_prefixe_vers_un_fichier_exclu_n_est_pas_suggere(hub, make_bundle, registry):
+    b = _base_with(make_bundle, registry, {"note.md": "# note\n"})
+    (b.root / "knowledge" / "CLAUDE.md").write_text("consignes\n", encoding="utf-8")
+    with pytest.raises(ToolError) as exc:
+        read_tool.run(registry, {"base": "ma-base", "path": "knowledge/CLAUDE.md"})
+    assert "path=" not in exc.value.message and "source ou de travail" not in exc.value.message

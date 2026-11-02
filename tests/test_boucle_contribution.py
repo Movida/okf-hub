@@ -312,11 +312,18 @@ def test_ce_qu_une_session_depose_est_visible_de_la_suivante_avant_la_revue(
         return {
             "avec": _texte(await session.call_tool(
                 "kb_search", {"base": nom, "query": "QZ-8841", "include_pending": True})),
+            "prefixe": await session.call_tool(
+                "kb_read", {"base": nom, "path": "knowledge/reprise.md"}),
         }
 
     apres = anyio.run(_dialogue, hub_root, relire)
     assert "### reprise.md — Reprise" in apres["avec"]
     assert pid not in apres["avec"] and "aucune ne répond" in apres["avec"]
+    # Le chemin recopié avec son préfixe de corpus : le NOT_FOUND donne le bon.
+    assert apres["prefixe"].is_error
+    erreur = _texte(apres["prefixe"])
+    assert erreur.startswith("ERROR: NOT_FOUND:") and "path='reprise.md'" in erreur
+    assert "source ou de travail" not in erreur
 
 
 @pytest.mark.skipif(

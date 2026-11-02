@@ -667,7 +667,11 @@ Si `include_pending_concerns` : ajoute la liste des couples
 (`id`, `type`, `concerns`) des propositions pendantes — permet à un contributeur
 d'éviter les doublons, et au gestionnaire d'inventorier à moindre coût. Sortie
 soumise au plafond transverse (**tronquer les listes de concerns en priorité**,
-en le signalant).
+en le signalant). **(rév. 4.7)** Le signalement renvoie à une voie qui existe :
+`kb_search` avec `include_pending` sur le sujet qu'on veut vérifier (§ 5.2),
+`kb_proposal_status` pour un contributeur — `kb_list` n'a pas de paramètre de
+base, et n'en reçoit pas : on vérifie un sujet en le cherchant, pas en
+allongeant une liste.
 
 La **description de l'outil** énumère les noms et titres des bases connues
 (régénérée à chaque rescan) — c'est ce qui permet le routage sans appel
@@ -1686,7 +1690,7 @@ d'exclusions du § 5.2 reçoit une seconde exception, en lecture seule.
 
 | § amendé | Objet |
 |---|---|
-| § 5.1 | Date de la plus ancienne proposition en attente |
+| § 5.1 | Date de la plus ancienne proposition en attente ; la troncature des concerns renvoie à une voie qui existe |
 | § 5.2 | `include_pending` : propositions en attente cherchées, après le corpus, marquées « non intégré » ; seconde exception à la liste d'exclusions |
 | § 5.5 | Vérifier un doublon par la recherche |
 | § 5.7 | Une exception sur deux |
@@ -1700,7 +1704,8 @@ unique où une proposition passerait devant un document du corpus mieux classé
 (elle retirerait des résultats revus à qui active l'option) ; le corps entier
 des propositions (§ 5.7 : l'`id` et les extraits suffisent à reconnaître un
 sujet) ; chercher aussi `accepted/` et `rejected/` (une proposition intégrée se
-lit dans le corpus, une rejetée a été écartée par la revue) ; une cadence de
+lit dans le corpus, une rejetée a été écartée par la revue) ; un paramètre
+`base` pour `kb_list` (un sujet se vérifie en le cherchant) ; une cadence de
 revue imposée par le hub (la revue reste à l'initiative de l'humain, § 7 ; la
 date de la plus ancienne la rend visible).
 
