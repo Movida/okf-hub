@@ -31,7 +31,7 @@ import math
 import posixpath
 import re
 from collections import Counter, defaultdict
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 import yaml
 from starlette.applications import Starlette
@@ -41,7 +41,7 @@ from starlette.staticfiles import StaticFiles
 
 from .. import governance
 from ..errors import ToolError
-from ..lecture.confiance import confiance, instant
+from ..lecture.confiance import confiance, instant, mois_avant
 from ..lecture.graphe import analyser, cycles
 from ..lecture.liens import ANCRE, EXTERNE, INTERBASE, INTERNE
 from ..lecture.modele import CHARGEUR, DOC, BaseModele, Doc, resoudre
@@ -780,9 +780,15 @@ def vue(r: Requete) -> Response:
     erreur = None
     try:
         criteres = lire_criteres({k: filtre.get(k) for k in CLES_CRITERES})
-        trouves = filtrer(r.lecteur, modele, criteres, cible=explorer._cible(r, [modele.nom], criteres), bases=r.visibles)
+        # Vue `freshness` : le seuil d'ancienneté ne vaut que pour une date
+        # déclarée. Appliqué par `filtrer`, il écartait les fiches sans date de
+        # source dont le dernier commit est récent — or un commit n'est pas une
+        # confrontation (§ 3.5) : le seuil est appliqué plus bas, par la vue.
+        selection = replace(criteres, older_than_months=None) if declaree.sorte == "freshness" else criteres
+        trouves = filtrer(r.lecteur, modele, selection, cible=explorer._cible(r, [modele.nom], criteres), bases=r.visibles)
     except ToolError as exc:
         criteres, trouves, erreur = Criteres(), [], exc.message
+    total = len(trouves)
     contexte = {"groupes": [], "chronologie": [], "graphe": [], "fraicheur": [], "sans_date": [],
                 "figure": None, "etiquettes": {}}
     profil = modele.profil
@@ -832,22 +838,29 @@ def vue(r: Requete) -> Response:
         champ = profil.champ_du_role("provenance")
         a_preuve = {v for v, d in (champ.valeurs.items() if champ else []) if d.preuve}
         dates = r.lecteur.dates_commit(modele.nom)
+        seuil = (mois_avant(dt.datetime.now(dt.timezone.utc), criteres.older_than_months)
+                 if criteres.older_than_months else None)
         for t in trouves:
             # Une base qui déclare des preuves ne re-vérifie que ce qui en a une :
             # le reste n'a pas de source à confronter (§ 5 bis.1).
             if a_preuve and str(t.doc.frontmatter.get(champ.nom)) not in a_preuve:
                 continue
             f = t.fraicheur or r.lecteur.fraicheur(modele, t.doc, dates)
-            (contexte["fraicheur"] if f.origine in ("verified", "generated", "sources") or not a_preuve
-             else contexte["sans_date"]).append((t, f))
+            if a_preuve and f.origine not in ("verified", "generated", "sources"):
+                # Une preuve exigée, aucune date déclarée : jamais confrontée
+                # qu'on sache, donc à re-vérifier quel que soit le seuil.
+                contexte["sans_date"].append((t, f))
+            elif seuil is None or f.date < seuil:
+                contexte["fraicheur"].append((t, f))
         contexte["fraicheur"].sort(key=lambda x: (x[1].date, x[0].doc.chemin))
+        total = len(contexte["fraicheur"]) + len(contexte["sans_date"])
     return r.page(
         "vue.html",
         nom=modele.nom,
         base=modele.base.manifest,
         vue=declaree,
         criteres=criteres,
-        total=len(trouves),
+        total=total,
         erreur=erreur,
         inconnues=inconnues,
         panneau=_panneau(r, modele),

@@ -43,7 +43,7 @@
       {% endfor %}
       </tbody>
     </table>
-    {% if sans_date %}<h2>Sans date de source</h2><p class="note">Leur provenance exige une preuve, mais aucune vérification, production ni source n'est datée.</p>
+    {% if sans_date %}<h2>Sans date de source</h2><p class="note">Leur provenance exige une preuve, mais aucune vérification, production ni source n'est datée : elles figurent ici quel que soit le seuil, leur dernier commit n'étant pas une confrontation.</p>
     <ul class="documents">{% for t, f in sans_date %}{{ m.doc_ligne(nom, t.doc, '(sans type)', 'dernier ' ~ f.origine ~ ' : ' ~ f.date|date) }}{% endfor %}</ul>{% endif %}
   {% endif %}
 </main>

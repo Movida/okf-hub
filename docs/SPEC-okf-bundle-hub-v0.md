@@ -30,10 +30,10 @@
 > **(rév. 4.5)**. La **rév. 4.6** (§ 3.5, § 5.8, § 5 bis) étend la
 > consultation à ce que la structure des bases permet de déduire — dérive amont,
 > impact, priorité de ré-audit, manques — et réunit recherche et critères ;
-> mention **(rév. 4.6)**. La **rév. 4.7** (§ 5.1, § 5.2, § 5.5, § 5.7,
-> § 5 bis, § 8) rend les propositions en attente cherchables par `kb_search`,
-> sur demande et marquées « non intégré », et date la file dans `kb_list` ;
-> mention **(rév. 4.7)**.
+> mention **(rév. 4.6)**. La **rév. 4.7** (§ 3.5, § 5.1, § 5.2, § 5.5,
+> § 5.7, § 5.8, § 5 bis, § 8) rend les propositions en attente cherchables par
+> `kb_search`, sur demande et marquées « non intégré », et date la file dans
+> `kb_list` ; mention **(rév. 4.7)**.
 
 Document d'implémentation, révision 4.1 — révision 4 (version finale pour
 implémentation, intégrant les retours des trois relectures croisées), amendée
@@ -393,7 +393,13 @@ vocabulaire déclaré est marquée.
 documents retenus), `freshness` (les plus anciens d'abord). `filter` prend les
 critères de `kb_find` (§ 5.8). Une table de types écrite à la main dans un
 `index.md`, ou une page générée par un script de la base, peut céder la place à
-une vue quand celle-ci répond la même chose.
+une vue quand celle-ci répond la même chose. **(rév. 4.7)** Dans une vue
+`freshness`, une fiche dont la provenance déclare une preuve mais qui ne porte
+aucune date — ni vérification, ni production, ni source — est listée à part,
+« sans date de source », **quel que soit `older_than_months`** : son dernier
+commit n'est pas une confrontation. Le seuil ne vaut que pour une date
+déclarée. `kb_find` garde la fraîcheur du § 5 bis.1, dernier commit compris,
+avec son origine.
 
 ### 3.6 Références entre bases (rév. 4.5)
 
@@ -1004,7 +1010,10 @@ de documents qui citent, la priorité de ré-audit, et les documents d'amont
 modifiés depuis. Sous `count_by`, les effectifs par valeur, déclarées et nulles
 comprises, valeurs hors vocabulaire marquées. Si un `type` ne trouve rien dans
 aucune base interrogée, les types présents sont rappelés : une faute de frappe
-ne passe pas pour une absence. Plafond transverse, le total restant exact.
+ne passe pas pour une absence. **(rév. 4.7)** Un type que le profil déclare et
+qu'aucun document ne porte n'est pas une faute de frappe : la réponse le dit, et
+l'absence ne passe pas pour une erreur. Plafond transverse, le total restant
+exact.
 
 **Sortie structurée.** L'outil déclare un `outputSchema` et rend les mêmes
 documents et effectifs en `structuredContent`, pour qu'une autre interface les
@@ -1696,6 +1705,7 @@ d'exclusions du § 5.2 reçoit une seconde exception, en lecture seule.
 | § 5.7 | Une exception sur deux |
 | § 5 bis.1, § 5 bis.2 | Un seul moteur pour l'Explorer et `kb_search` ; ce que l'interface montre au-delà de MCP, révisé |
 | § 8 | Affirmation non revue lue comme de la connaissance |
+| § 3.5, § 5.8 | Correctifs relevés sur le premier profil de base réel : vue `freshness`, les fiches sans date de source quel que soit le seuil ; un type déclaré sans document n'est pas une faute de frappe |
 
 Non retenu : l'option activée par défaut (la sortie changerait pour qui ne la
 demande pas, et le non-revu s'inviterait dans chaque réponse) ; un classement

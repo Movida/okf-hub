@@ -990,6 +990,16 @@ fixe le contrat (§ 5.1, § 5.2) ; ce qui suit est ce qu'elle laissait ouvert.
 | Moteur | `search.run_search_pending`, avec `run_search` sur une fonction commune (`_search`) ; l'Explorer l'appelle en ET strict | Un seul moteur (§ 5 bis.1). L'Explorer cherchait les propositions en Python (`re`, `casefold`) : une expression ripgrep acceptée pour le corpus y était refusée (« syntaxe Python ») et la casse ne suivait pas les mêmes règles. |
 | Date de `kb_list` | `submitted-at` lu par `lecture.confiance.instant`, en UTC, le jour seul ; une proposition sans date lisible est comptée sans être datée | Les trois formes se rencontrent (chaîne quotée, horodatage non quoté que PyYAML rend en `datetime`, absente). `kb_list` lit désormais le frontmatter de chaque proposition en attente à chaque appel, et une seule fois même avec `include_pending_concerns` : 19 ms pour 28 propositions sur le poste de développement (2026-11-02), soit environ 0,2 s pour une file de 260 ; `safe_load` conservé, comme dans tous les outils. |
 
+**Correctifs relevés sur le premier profil de base réel (2026-11-02).** Une
+base pilote déclarant des provenances à preuve a fait voir trois défauts de la
+rév. 4.5 :
+
+| Point | Décision | Motif |
+|---|---|---|
+| Vue `freshness` et seuil | La vue appelle `filtrer` sans `older_than_months`, puis applique le seuil elle-même, aux seules dates déclarées ; une fiche à preuve sans date va dans « sans date de source » quel que soit le seuil | `filtrer` appliquait le seuil à la fraîcheur du § 5 bis.1, qui retombe sur le dernier commit : une fiche jamais confrontée mais commitée récemment sortait de la vue « à re-vérifier » (18 fiches sur 116 dans la base pilote), contre la conception (`CONCEPTION-consultation.md` : « dernier commit n'est pas dernière confrontation »). `kb_find` n'est pas touché : sa fraîcheur est celle du § 5 bis.1, dont il dit l'origine, et la notion de preuve est celle de la vue (§ 3.5). |
+| Rôles de `section` dans la description de `kb_find` | Énumérés depuis `profil.ROLES_SECTION_ORDRE`, l'ordre du § 3.5 ; un test compare aussi la ligne d'`API.md` | Écrite à la main, la description avait oublié `gaps` (rév. 4.6), que le code acceptait. |
+| Type déclaré sans document | Message propre (« déclaré par le profil… : aucun document de ce type ») au lieu du rappel des types présents — seulement si aucun document de la base ne porte ce type, pas quand d'autres critères les écartent | Le rappel faisait passer une absence réelle pour une faute de frappe, l'inverse de ce qu'il protège. |
+
 **Aucun écart assumé** : la rév. 4.7 de la spec décrit ce qui est fait.
 
 ---
@@ -1163,6 +1173,8 @@ pour vérifier la couverture sans relire la suite.
 | § 5.1 — la troncature de `kb_list` renvoie à des voies qui existent | `test_la_troncature_de_kb_list_conseille_une_voie_qui_existe` |
 | `kb_read` — chemin préfixé par `corpus-dir` : le bon chemin, pas « source ou de travail » | `test_read.py::test_chemin_prefixe_par_corpus_dir_donne_le_bon_chemin`, `test_chemin_prefixe_par_un_corpus_dir_imbrique`, `test_chemin_prefixe_vers_un_document_absent_reste_generique`, `test_chemin_prefixe_vers_un_fichier_exclu_n_est_pas_suggere` ; de bout en bout dans `test_ce_qu_une_session_depose_est_visible_de_la_suivante_avant_la_revue` |
 | § 5 bis.1 — un moteur pour l'Explorer et `kb_search` | `test_web.py::test_explorer_et_kb_search_cherchent_les_propositions_avec_le_meme_moteur`, `test_web.py::test_explorer_cherche_aussi_les_propositions_en_attente` |
+| § 3.5 — vue `freshness` : fiches sans date de source quel que soit le seuil | `test_web.py::test_la_vue_fraicheur_garde_les_fiches_sans_date_de_source` |
+| § 5.8 — un type déclaré sans document n'est pas une faute de frappe ; tous les rôles de section décrits | `test_find.py::test_un_type_declare_sans_document_n_est_pas_une_faute_de_frappe`, `test_la_description_de_section_enumere_tous_les_roles` |
 | De bout en bout, vrai serveur en stdio : déposée par une session, vue de la suivante, intégrée après revue | `test_boucle_contribution.py::test_ce_qu_une_session_depose_est_visible_de_la_suivante_avant_la_revue` |
 
 Exécution :

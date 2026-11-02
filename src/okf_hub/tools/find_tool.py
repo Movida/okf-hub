@@ -16,6 +16,7 @@ from __future__ import annotations
 from ..errors import INVALID_INPUT, NOT_FOUND, ToolError
 from ..lecture.modele import Lecteur, cible_document, resoudre
 from ..lecture.liens import INTERBASE, classer
+from ..lecture.profil import ROLES_SECTION_ORDRE
 from ..lecture.requete import (
     CLES_CRITERES,
     SANS_TYPE,
@@ -75,7 +76,7 @@ SCHEMA = {
             "description": (
                 "Le document a une section de ce titre (casse et formatage ignorés), "
                 "ou d'un titre que le profil de la base range sous ce rôle "
-                "(warnings, observations, upstream, procedure)."
+                f"({', '.join(ROLES_SECTION_ORDRE)})."
             ),
         },
         "without_section": {
@@ -366,6 +367,10 @@ def _rappel_des_types(lecteur: Lecteur, nom: str, demande: str) -> str:
     modele = lecteur.modele(nom)
     _, effectifs = compter(modele.concepts(), "type", modele.profil)
     presents = [e for e in effectifs if e.nombre]
+    if demande in modele.profil.types and all(e.valeur != demande for e in presents):
+        # Un type du vocabulaire déclaré (§ 3.5) n'est pas une faute de frappe :
+        # zéro est alors la réponse, sans liste qui la ferait douter.
+        return f"[type « {demande} » déclaré par le profil de '{nom}' : aucun document de ce type]"
     if not presents:
         return f"[aucun type « {demande} » : la base ne type aucun document]"
     liste = ", ".join(f"{e.valeur} ({e.nombre})" for e in presents[:TYPES_RAPPELES_MAX])

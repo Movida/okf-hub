@@ -48,7 +48,10 @@ from ..mdutil import normalize_heading
 #: Rôles reconnus — liste fermée, tenue par la spec (§ 3.5). Une base n'en
 #: invente pas : elle en demande un par un retour d'usage.
 ROLES_CHAMP = frozenset({"provenance", "aliases", "start", "end", "version", "identifier"})
-ROLES_SECTION = frozenset({"warnings", "observations", "upstream", "procedure", "gaps"})
+#: Rôles de section, dans l'ordre du tableau du § 3.5 : la description du
+#: paramètre `section` de kb_find les énumère d'ici, pour ne pas en oublier.
+ROLES_SECTION_ORDRE = ("warnings", "observations", "upstream", "procedure", "gaps")
+ROLES_SECTION = frozenset(ROLES_SECTION_ORDRE)
 
 SORTES_VUE = ("list", "timeline", "graph", "freshness")
 

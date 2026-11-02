@@ -25,6 +25,17 @@ Le projet suit la version de la spécification qu'il implémente : `bundle-spec 
   pour vérifier un doublon avant dépôt.
 - Version 0.3.1.
 
+### Corrigé — relevé sur le premier profil de base réel
+
+- **Vue `freshness`** : une fiche dont la provenance exige une preuve, sans
+  aucune date de source, disparaissait de la vue dès que son dernier commit
+  était plus récent que `older_than_months`. Elle est listée « sans date de
+  source » quel que soit le seuil, qui ne vaut que pour une date déclarée.
+- **`kb_find`** : la description de `section` nomme tous les rôles, `gaps`
+  compris, tirés de la liste du code ; un type que le profil déclare et
+  qu'aucun document ne porte est dit tel, au lieu d'un rappel des types
+  présents qui le faisait passer pour une faute de frappe.
+
 ### Corrigé — deux messages qui égaraient
 
 - **Troncature de `kb_list`** : elle conseillait « kb_list par base », un

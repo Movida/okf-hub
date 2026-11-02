@@ -80,6 +80,35 @@ def test_le_rappel_des_types_se_tait_si_le_type_existe_ailleurs(bases):
     assert "types présents" not in sortie
 
 
+def test_un_type_declare_sans_document_n_est_pas_une_faute_de_frappe(bases):
+    """Zéro sur un type du vocabulaire déclaré est une réponse : pas de liste des
+    types présents, qui la ferait passer pour une faute de frappe."""
+    sortie = _run(bases, base="installation-x", type="Décision")
+    assert sortie.startswith("0 document(s) dans 'installation-x'")
+    assert "[type « Décision » déclaré par le profil de 'installation-x' : aucun document de ce type]" in sortie
+    assert "types présents" not in sortie
+    # Déclaré et présent, mais écarté par un autre critère : « aucun document de
+    # ce type » serait faux, le rappel des types reste.
+    sortie = _run(bases, base="installation-x", type="Incident", under="exploitation")
+    assert "déclaré par le profil" not in sortie and "Incident (1)" in sortie
+
+
+def test_la_description_de_section_enumere_tous_les_roles():
+    """Écrite à la main, elle avait oublié `gaps` (rév. 4.6) : elle est tirée de
+    la liste des rôles, et API.md doit les nommer tous aussi."""
+    from pathlib import Path
+
+    from okf_hub.lecture.profil import ROLES_SECTION, ROLES_SECTION_ORDRE
+
+    assert set(ROLES_SECTION_ORDRE) == ROLES_SECTION
+    description = find_tool.SCHEMA["properties"]["section"]["description"]
+    api = (Path(__file__).resolve().parents[1] / "docs" / "API.md").read_text(encoding="utf-8")
+    ligne = next(l for l in api.splitlines() if l.startswith("| `section` |") and "rôle" in l)
+    for role in ROLES_SECTION:
+        assert role in description, role
+        assert f"`{role}`" in ligne, role
+
+
 def test_criteres_cumules(bases):
     assert "1 document(s)" in _run(bases, base="installation-x", tags=["env:prod"], type="Procédure")
     assert "exploitation/p2.md" in _run(bases, base="installation-x", fields={"provenance": "terrain"})

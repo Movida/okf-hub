@@ -393,7 +393,7 @@ valeurs (spec § 5.8). Là où `kb_search` dit *où l'on parle* d'un sujet,
 | `type` | `string` | — | Valeur exacte du champ `type`. |
 | `tags` | `string[]` | — | Tous requis, forme exacte (`env:prod`). |
 | `fields` | `{champ: string \| boolean}` | — | Valeur exacte (appartenance si le champ est une liste) ; `true` : présent ; `false` : absent. |
-| `section` | `string` | — | Le document a une section de ce titre (même normalisation que `kb_read`), ou d'un titre que le profil range sous ce rôle (`warnings`, `observations`, `upstream`, `procedure`). |
+| `section` | `string` | — | Le document a une section de ce titre (même normalisation que `kb_read`), ou d'un titre que le profil range sous ce rôle (`warnings`, `observations`, `upstream`, `procedure`, `gaps`). |
 | `without_section` | `string` | — | L'inverse. |
 | `under` | `string` | — | Sous-chemin du corpus, lu comme un répertoire : `exploitation` ne couvre pas `exploitation-ancien/`. |
 | `links_to` | `string` | — | Documents qui citent `<base>:/<chemin>` ; un chemin seul si une seule base est interrogée. |
@@ -435,7 +435,10 @@ critères et le tri s'ajoutent `— degré N`, `— cité par N`, `— priorité
 ```
 
 Les types présents ne sont rappelés que si le type ne se trouve dans **aucune**
-des bases interrogées.
+des bases interrogées. Un type que le profil d'une base **déclare** mais
+qu'aucun de ses documents ne porte n'est pas une faute de frappe : la réponse le
+dit, sans liste (`[type « Décision » déclaré par le profil de 'installation-x' :
+aucun document de ce type]`).
 
 **Sortie — effectifs**
 

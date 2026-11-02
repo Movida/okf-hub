@@ -186,6 +186,26 @@ def test_vues_declarees(bases):
     assert client.get("/b/installation-x/-/vues/9").status_code == 404
 
 
+def test_la_vue_fraicheur_garde_les_fiches_sans_date_de_source(bases):
+    """Le seuil `older_than_months` ne s'applique qu'à une date déclarée : une
+    fiche dont la provenance exige une preuve, sans aucune date de source, est
+    listée « sans date de source » même si son dernier commit est d'hier."""
+    racine = bases.get("installation-x").root
+    (racine / "knowledge" / "h.md").write_text(
+        "---\ntype: Procédure\ntitle: Fiche H\nprovenance: interne\nresource: doc\n---\n# Fiche H\n",
+        encoding="utf-8")
+    (racine / "knowledge" / "k.md").write_text(
+        "---\ntype: Procédure\ntitle: Fiche K\nprovenance: terrain\n---\n# Fiche K\n", encoding="utf-8")
+    git(racine, "add", "-A")
+    git(racine, "commit", "-q", "-m", "fiches récentes")
+    page = _client(bases).get("/b/installation-x/-/vues/3").text.split("<aside")[0]
+    table, _, sans_date = page.partition("Sans date de source")
+    assert "Fiche F" in table                       # source de 2020 : plus vieille que le seuil
+    assert "Fiche H" in sans_date                   # preuve exigée, aucune date : quel que soit le seuil
+    assert "Fiche K" not in page                    # « terrain » : rien à confronter
+    assert "2 fiches" in page
+
+
 def test_recherche_plein_texte(bases):
     html = _client(bases).get("/explorer?q=attention").text
     assert "<mark>Attention</mark>" in html and "§" in html
