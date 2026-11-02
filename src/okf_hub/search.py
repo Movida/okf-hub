@@ -6,6 +6,7 @@ import json
 import re
 import shutil
 import subprocess
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -90,24 +91,52 @@ def _rg_binary() -> str:
 
 
 def _run_rg(pattern: str, root: Path, *, fixed: bool) -> dict[str, list[int]]:
-    """Exécute ripgrep et retourne {chemin absolu: [numéros de ligne]}.
+    """Exécute ripgrep sur un répertoire du corpus et retourne
+    {chemin absolu: [numéros de ligne]}.
 
     Le format `--json` est préféré au format ligne `path:line:text` : ce dernier
     est ambigu dès qu'un chemin contient un « : ».
     """
+    options = ["--glob", "*.md"]
+    for glob in _EXCLUDE_GLOBS:
+        options += ["--glob", glob]
+    return _rg(pattern, fixed, options, [str(root)])
+
+
+#: Fichiers passés à un même appel de ripgrep : la ligne de commande reste très
+#: en deçà de `ARG_MAX`, même pour une file de plusieurs milliers de propositions.
+FILES_PER_RG_CALL = 500
+
+
+def _run_rg_files(pattern: str, files: list[Path], *, fixed: bool) -> dict[str, list[int]]:
+    """Exécute ripgrep sur une liste **explicite** de fichiers (rév. 4.7).
+
+    Sert aux propositions en attente : la liste vient de `Base.proposal_files`,
+    qui en fait le confinement (§ 5.3) — ripgrep ne lit rien d'autre, et ne
+    reçoit donc aucun glob. Un fichier déplacé vers `accepted/` entre la liste
+    et la lecture (une résolution concurrente, § 4.4.d) n'est pas une erreur
+    d'entrée : il est ignoré.
+    """
+    hits: dict[str, list[int]] = {}
+    for i in range(0, len(files), FILES_PER_RG_CALL):
+        lot = [str(f) for f in files[i : i + FILES_PER_RG_CALL]]
+        hits.update(_rg(pattern, fixed, [], lot, missing_ok=True))
+    return hits
+
+
+def _rg(
+    pattern: str, fixed: bool, options: list[str], targets: list[str], *, missing_ok: bool = False
+) -> dict[str, list[int]]:
     argv = [
         _rg_binary(),
         "--json",
         "--ignore-case",
         "--no-ignore",  # indépendance vis-à-vis des .gitignore du bundle
-        "--glob",
-        "*.md",
+        *options,
     ]
-    for glob in _EXCLUDE_GLOBS:
-        argv += ["--glob", glob]
     if fixed:
         argv.append("--fixed-strings")
-    argv += ["--regexp", pattern, "--", str(root)]
+    argv += ["--regexp", pattern, "--", *targets]
 
     try:
         proc = subprocess.run(
@@ -118,14 +147,19 @@ def _run_rg(pattern: str, root: Path, *, fixed: bool) -> dict[str, list[int]]:
     except OSError as exc:
         raise ToolError(IO_ERROR, f"ripgrep n'a pas pu être lancé : {exc}") from exc
 
+    stdout = proc.stdout.decode("utf-8", errors="replace")
     if proc.returncode not in (0, 1):
-        stderr = proc.stderr.decode("utf-8", errors="replace").strip()
-        # Une expression régulière invalide est une erreur d'entrée, pas une
-        # défaillance : le message de ripgrep est remonté tel quel (§ 5.2).
-        raise ToolError(INVALID_INPUT, stderr or f"ripgrep a échoué (code {proc.returncode})")
+        # Code 2 avec un bilan (`summary`) : la recherche a eu lieu, un fichier
+        # nommé a seulement disparu entre-temps. Sans bilan, ripgrep n'a rien
+        # cherché — l'expression est en cause.
+        if not (missing_ok and '"type":"summary"' in stdout):
+            stderr = proc.stderr.decode("utf-8", errors="replace").strip()
+            # Une expression régulière invalide est une erreur d'entrée, pas une
+            # défaillance : le message de ripgrep est remonté tel quel (§ 5.2).
+            raise ToolError(INVALID_INPUT, stderr or f"ripgrep a échoué (code {proc.returncode})")
 
     hits: dict[str, list[int]] = {}
-    for raw in proc.stdout.decode("utf-8", errors="replace").splitlines():
+    for raw in stdout.splitlines():
         if not raw.startswith("{"):
             continue
         try:
@@ -147,11 +181,12 @@ def _run_rg(pattern: str, root: Path, *, fixed: bool) -> dict[str, list[int]]:
     return hits
 
 
-def _merge(target: dict[str, DocHits], hits: dict[str, list[int]], base: Base) -> None:
+def _merge(target: dict[str, DocHits], hits: dict[str, list[int]], retenir: Callable[[str], bool]) -> None:
     for path, lines in hits.items():
-        # Filtrage de vérité : la liste d'exclusions transverse (§ 5.2) est
-        # appliquée par le hub, pas déléguée aux globs de ripgrep.
-        if base.is_excluded(Path(path), is_dir=False):
+        # Filtrage de vérité, appliqué par le hub et non délégué aux globs de
+        # ripgrep : la liste d'exclusions transverse (§ 5.2) pour le corpus, la
+        # liste confinée de `Base.proposal_files` pour les propositions.
+        if not retenir(path):
             continue
         doc = target.get(path)
         if doc is None:
@@ -174,6 +209,10 @@ class SearchOutcome:
     docs: list[DocHits]
     partial: bool
     """True si le repli OR a été utilisé (aucun document ne contient tous les termes)."""
+    total: int = 0
+    """Documents qui répondent, avant la coupe à `max_results`."""
+    examined: int = 0
+    """Propositions examinées (`run_search_pending` seulement)."""
 
     @property
     def reserved_count(self) -> int:
@@ -185,25 +224,60 @@ def run_search(base: Base, query: str, mode: str, max_results: int) -> SearchOut
     corpus = base.corpus_dir
     if not corpus.is_dir():
         return SearchOutcome([], False)
+    return _search(
+        query, mode, max_results,
+        lambda motif, fixed: _run_rg(motif, corpus, fixed=fixed),
+        lambda path: not base.is_excluded(Path(path), is_dir=False),
+    )
 
+
+def run_search_pending(base: Base, query: str, mode: str, max_results: int) -> SearchOutcome:
+    """La même recherche, dans les propositions en attente (§ 5.2, rév. 4.7).
+
+    Seconde exception à la liste d'exclusions transverse, en lecture seule : les
+    fichiers lus sont ceux de `Base.proposal_files("pending")`, qui les résout et
+    les confine à `proposals/pending/` — un lien symbolique sortant n'y figure
+    pas, et ripgrep ne lit que cette liste. Même dialecte, même ET strict puis
+    repli en OU, même classement que le corpus : `kb_search` (`include_pending`)
+    et l'Explorer de l'interface web (§ 5 bis.1) en sont les deux appelants.
+    """
+    files = base.pending_files()
+    if not files:
+        return SearchOutcome([], False)
+    permis = {str(f) for f in files}
+    issue = _search(
+        query, mode, max_results,
+        lambda motif, fixed: _run_rg_files(motif, files, fixed=fixed),
+        permis.__contains__,
+    )
+    issue.examined = len(files)
+    return issue
+
+
+def _search(
+    query: str,
+    mode: str,
+    max_results: int,
+    chercher: Callable[[str, bool], dict[str, list[int]]],
+    retenir: Callable[[str], bool],
+) -> SearchOutcome:
     if mode == "regex":
-        hits = _run_rg(query, corpus, fixed=False)
         docs: dict[str, DocHits] = {}
-        _merge(docs, hits, base)
+        _merge(docs, chercher(query, False), retenir)
         ranked = sorted(
             docs.values(), key=lambda d: (d.reserved, -d.match_count, str(d.path))
         )
-        return SearchOutcome(ranked[:max_results], False)
+        return SearchOutcome(ranked[:max_results], False, len(ranked))
 
     terms = split_terms(query)
     if not terms:
         raise ToolError(INVALID_INPUT, "query vide")
 
-    per_term: list[dict[str, list[int]]] = [_run_rg(t, corpus, fixed=True) for t in terms]
+    per_term: list[dict[str, list[int]]] = [chercher(t, True) for t in terms]
 
     docs = {}
     for hits in per_term:
-        _merge(docs, hits, base)
+        _merge(docs, hits, retenir)
 
     # AND strict d'abord : documents touchant *tous* les termes.
     # `d.reserved` en tête de clé : les sommaires et journaux passent derrière
@@ -211,11 +285,11 @@ def run_search(base: Base, query: str, mode: str, max_results: int) -> SearchOut
     strict = [d for d in docs.values() if d.terms_hit == len(terms)]
     if strict:
         ranked = sorted(strict, key=lambda d: (d.reserved, -d.match_count, str(d.path)))
-        return SearchOutcome(ranked[:max_results], False)
+        return SearchOutcome(ranked[:max_results], False, len(ranked))
 
     # Repli OR : classement par nombre de termes touchés, puis densité.
     ranked = sorted(
         docs.values(),
         key=lambda d: (d.reserved, -d.terms_hit, -d.density, -d.match_count, str(d.path)),
     )
-    return SearchOutcome(ranked[:max_results], bool(ranked))
+    return SearchOutcome(ranked[:max_results], bool(ranked), len(ranked))

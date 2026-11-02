@@ -5,6 +5,26 @@ Le projet suit la version de la spécification qu'il implémente : `bundle-spec 
 
 ## [Non publié]
 
+### Ajouté — les propositions en attente, visibles avant la revue (spec rév. 4.7)
+
+- **`kb_search` : `include_pending`** (faux par défaut). Cherche aussi dans
+  `proposals/pending/` des bases visées, par la même recherche que le corpus.
+  Ce qui n'est pas revu passe après ce qui l'est : les propositions ne prennent
+  que ce que le corpus laisse de `max_results`, et viennent après tous ses
+  résultats, sous le même plafond de sortie ; chacune est marquée « non
+  intégré », avec son id, son type, son objet et sa date de dépôt, et ses
+  extraits ne portent que sur son corps. Sans l'option, la sortie ne change pas
+  d'un octet. Seconde exception, en lecture seule, à la liste d'exclusions du
+  § 5.2, confinée par `Base.proposal_files` comme `kb_proposal_status`.
+- **`kb_list`** : la date de la plus ancienne proposition en attente de chaque
+  base, à côté de leur nombre.
+- **Explorer** : les propositions en attente y sont cherchées par le même moteur
+  que `kb_search` — une expression ripgrep n'y est plus refusée comme
+  « syntaxe Python » —, et la page donne l'appel MCP correspondant.
+- La description de `kb_propose` renvoie à `kb_search` avec `include_pending`
+  pour vérifier un doublon avant dépôt.
+- Version 0.3.1.
+
 ### Ajouté — ce que la structure permet de déduire (spec rév. 4.6)
 
 - **`kb_find`** : `query` (le texte comme critère, en ET strict), `links_to_depth`

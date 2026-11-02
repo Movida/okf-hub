@@ -9,6 +9,12 @@ applies-to: "rév. 4.1"
 generated:
   by: "claude-code/opus-5"
   at: 2026-08-30T00:00:00Z
+verified:
+  - by: claude-code/opus-5.5
+    at: 2026-11-02T00:00:00Z
+    note: >-
+      vérifier un doublon par la recherche, propositions en attente comprises
+      (rév. 4.7), plutôt que par la seule liste de leurs objets
 ---
 
 # Déposer une proposition, et en relire le verdict
@@ -22,7 +28,7 @@ mets rien en forme. La mise en forme est le travail du gestionnaire.
 ```
 kb_governance  → ce que cette base exige d'une proposition
 kb_search      → que dit le corpus aujourd'hui sur ce sujet ?
-kb_list        → quelqu'un l'a-t-il déjà signalé ?   (option des concerns en attente)
+                 et, propositions en attente comprises : quelqu'un l'a-t-il déjà signalé ?
 kb_propose     → le dépôt. Note l'identifiant retourné.
 ```
 
@@ -34,6 +40,15 @@ peux pas deviner.
 `kb_search` avant de proposer sert à deux choses : savoir si ton fait **contredit**
 un document existant — ce qui change le type de ta proposition — et pouvoir citer
 le document concerné, ce qui fait gagner du temps à la revue.
+
+Demande-lui aussi les **propositions en attente** : la même recherche lit alors
+ce que d'autres sessions ont déposé et qu'aucune revue n'a encore intégré. Ces
+résultats viennent après ceux du corpus, chacun marqué « non intégré ». Si ton
+fait y figure déjà, ne le redépose pas tel quel : un doublon coûte une revue.
+Dépose seulement ce qui manque — une source de plus, une correction —, en citant
+l'identifiant de la proposition existante dans tes sources. La liste des objets
+en attente que donne `kb_list` aide aussi, mais elle ne lit que les objets, pas
+le texte, et c'est elle qui est coupée la première quand la file est longue.
 
 ## Choisir la base avant de déposer
 

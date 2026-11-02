@@ -22,6 +22,12 @@ verified:
       ajout de kb_find (rév. 4.5) : établir une existence ou une absence par
       critères, en un appel, au lieu de reformuler des recherches ; texte comme
       critère et amont modifié (rév. 4.6)
+  - by: claude-code/opus-5.5
+    at: 2026-11-02T00:00:00Z
+    note: >-
+      ajout des propositions en attente dans la recherche, sur demande, après
+      le corpus et marquées « non intégré » ; ancienneté de la file dans kb_list
+      (rév. 4.7)
 ---
 
 # Chercher et lire, sans gaspiller de contexte
@@ -40,8 +46,9 @@ kb_read    → la section utile, pas le fichier
 `kb_list` n'est en général **pas** nécessaire au début : les descriptions des
 outils énumèrent déjà les bases connues avec leur objet. C'est fait pour que tu
 routes ta requête sans dépenser un appel. Appelle `kb_list` quand tu as besoin du
-nombre de documents, des propositions en attente, ou quand une base vient d'être
-importée.
+nombre de documents, des propositions en attente — et de la date de la plus
+ancienne, qui dit depuis quand la revue n'a pas eu lieu —, ou quand une base
+vient d'être importée.
 
 ## Choisir la base
 
@@ -83,6 +90,22 @@ change le classement, y change quelque chose.
 **Ce que la recherche n'est pas** : un moyen de compter. Un mot cité entre
 backticks dans un document de conventions sera trouvé comme s'il était une vraie
 occurrence. Elle sert à trouver, jamais à dénombrer.
+
+## Ce qui attend la revue
+
+Par défaut, la recherche ne lit que le corpus : ce qui a été revu. Ce que
+d'autres sessions ont déposé et qui attend la revue n'y est pas — parfois depuis
+plusieurs jours. Si ton sujet est récent (un incident de la veille, un numéro de
+ticket) ou si tu t'apprêtes à proposer, demande-lui d'inclure les propositions
+en attente.
+
+Elles arrivent **après tous les résultats du corpus**, et ne leur prennent
+aucune place : la part revue de la réponse est celle que tu aurais eue sans
+elles. Chacune est marquée « non intégré », avec son identifiant, son type, son
+objet et sa date de dépôt, puis des extraits de son texte. Ce sont des
+**affirmations que personne n'a encore vérifiées** : utiles pour ne pas refaire
+une enquête ni déposer un doublon, jamais à citer comme un fait établi. Tu ne
+peux pas les lire en entier ; leur état se consulte par `kb_proposal_status`.
 
 ## Lire une section, pas un document
 

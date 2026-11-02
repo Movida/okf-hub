@@ -3,6 +3,14 @@
 Historique des changements du corpus, groupé par date (convention OKF § 9), le
 plus récent en premier. Le gestionnaire y ajoute une ligne à chaque intégration.
 
+## 2026-11-02
+
+* **Chercher et lire** : la recherche lit aussi, sur demande, les propositions
+  en attente — après le corpus, marquées « non intégré » ; `kb_list` date la
+  plus ancienne (rév. 4.7).
+* **Proposer** : un doublon se vérifie par la recherche, propositions en
+  attente comprises, plutôt que par la seule liste de leurs objets.
+
 ## 2026-10-29
 
 * **Chercher et lire** : `kb_find` prend aussi le texte comme critère (`query`, en

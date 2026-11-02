@@ -89,7 +89,7 @@
   {% if en_attente %}
   <section class="en-attente">
     <h2>Dans les propositions en attente <span class="note">— non revues</span></h2>
-    <p class="note">Ce que des sessions ont déposé et qu'aucune revue n'a encore intégré : à lire comme une affirmation à vérifier, pas comme de la connaissance. MCP ne les cherche pas (<code>kb_search</code> ne lit que le corpus).</p>
+    <p class="note">Ce que des sessions ont déposé et qu'aucune revue n'a encore intégré : à lire comme une affirmation à vérifier, pas comme de la connaissance. Par MCP, sur demande seulement, marquées « non intégré » : <code>{{ appel_en_attente }}</code></p>
     <ul>{% for p in en_attente %}{% set e = p.entree %}<li><a href="{{ url_page(p.base, 'propositions/' ~ e.id) }}"><code>{{ e.id }}</code></a> {% if nb_bases > 1 %}<code>{{ p.base }}</code> {% endif %}({{ e.frontmatter.get('type', '?') }}) — {{ e.frontmatter.get('concerns', '') }}</li>{% endfor %}</ul>
   </section>
   {% elif criteres.query and examinees %}

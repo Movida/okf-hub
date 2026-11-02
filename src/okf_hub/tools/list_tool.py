@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import datetime as dt
 from dataclasses import dataclass
+from pathlib import Path
 
+from ..lecture.confiance import instant
 from ..mdutil import parse_document
-from ..registry import Base, Registry
+from ..registry import Registry
 from ..textutil import BudgetedWriter, truncate_chars
 from .common import optional_bool, read_text
 
@@ -35,7 +38,8 @@ def description(registry: Registry) -> str:
     bases = registry.ordered()
     head = (
         "Liste les bases de connaissance disponibles sur ce hub, avec leur "
-        "objet, leur nombre de documents et le nombre de propositions en attente."
+        "objet, leur nombre de documents, le nombre de propositions en attente "
+        "et la date de la plus ancienne."
     )
     if not bases:
         return head + " Aucune base n'est actuellement enregistrée."
@@ -50,24 +54,36 @@ class _Pending:
     id: str
     type: str
     concerns: str
+    submitted_at: dt.datetime | None
 
 
-def _pending_entries(base: Base) -> list[_Pending]:
+def _pending_entries(files: list[Path]) -> list[_Pending]:
     out: list[_Pending] = []
-    for path in base.pending_files():
+    for path in files:
         try:
             doc = parse_document(read_text(path))
         except OSError:
             continue
-        fm = doc.frontmatter or {}
+        fm = doc.frontmatter if isinstance(doc.frontmatter, dict) else {}
         out.append(
             _Pending(
                 id=str(fm.get("id") or path.stem),
                 type=str(fm.get("type") or "?"),
                 concerns=str(fm.get("concerns") or "(non renseigné)"),
+                submitted_at=instant(fm.get("submitted-at")),
             )
         )
     return out
+
+
+def _oldest(entries: list[_Pending]) -> str | None:
+    """Date (UTC) de la plus ancienne proposition en attente (rév. 4.7), d'après
+    `submitted-at` (§ 6.1). Une proposition sans date lisible est comptée, pas
+    datée."""
+    dates = [e.submitted_at for e in entries if e.submitted_at is not None]
+    if not dates:
+        return None
+    return min(dates).astimezone(dt.timezone.utc).date().isoformat()
 
 
 def run(registry: Registry, arguments: dict) -> str:
@@ -85,12 +101,13 @@ def run(registry: Registry, arguments: dict) -> str:
     for base in bases:
         m = base.manifest
         pending = base.pending_files()
-        pending_by_base[base.name] = []
-        block = [
-            f"## {m.name} — {m.title}",
-            m.description,
-            f"documents : {base.count_documents()} | propositions en attente : {len(pending)}",
-        ]
+        entries = _pending_entries(pending)
+        pending_by_base[base.name] = entries
+        counts = f"documents : {base.count_documents()} | propositions en attente : {len(pending)}"
+        oldest = _oldest(entries)
+        if oldest:
+            counts += f" (la plus ancienne : {oldest})"
+        block = [f"## {m.name} — {m.title}", m.description, counts]
         if m.version:
             block.insert(2, f"version : {m.version}")
         writer.add("\n".join(block))
@@ -99,7 +116,7 @@ def run(registry: Registry, arguments: dict) -> str:
         # Les listes de concerns sont tronquées en priorité (§ 5.1) : elles ne
         # sont ajoutées qu'une fois tous les résumés de bases émis.
         for base in bases:
-            entries = _pending_entries(base)
+            entries = pending_by_base[base.name]
             if not entries:
                 continue
             lines = [f"### propositions en attente — {base.name}"]

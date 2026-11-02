@@ -260,7 +260,9 @@ def test_lien_symbolique_sortant_ignore(base, registry, tmp_path):
 
 
 def test_proposals_reste_exclu_des_autres_outils(base, registry):
-    """B1 est la seule exception à la liste d'exclusions du § 5.2."""
+    """B1 et `kb_search` avec `include_pending` (rév. 4.7) sont les deux seules
+    exceptions à la liste d'exclusions du § 5.2 : sans l'option, la recherche
+    ne voit pas les propositions, et `kb_read` ne les lit jamais."""
     from okf_hub.tools import read_tool, search_tool
 
     pid = propose(registry)

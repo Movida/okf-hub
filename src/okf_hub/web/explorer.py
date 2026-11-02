@@ -10,8 +10,10 @@ de la liste, les critères actifs se retirent d'un clic, et la page donne la
 même requête en MCP, où les deux outils restent distincts (§ 1.5).
 
 Les propositions **en attente** sont cherchées à part et marquées non revues :
-ce qu'une session a appris est ainsi visible de la suivante avant la revue,
-sans toucher à la liste d'exclusions du § 5.2, qui ne vaut que pour MCP.
+ce qu'une session a appris est ainsi visible de la suivante avant la revue. Le
+moteur est celui de `kb_search` avec `include_pending` (§ 5.2, rév. 4.7) — même
+dialecte, même confinement par `Base.proposal_files` : ce que voit l'humain est
+ce que lit l'agent (§ 5 bis.1).
 """
 
 from __future__ import annotations
@@ -27,7 +29,7 @@ from ..lecture.liens import INTERBASE, INTERNE, classer
 from ..lecture.modele import CHARGEUR, cible_document, resoudre
 from ..lecture.requete import SANS_TYPE, TRIS, Criteres, filtrer, lire_criteres
 from ..mdutil import PREAMBLE_LABEL, heading_at_line, parse_document, parse_headings
-from ..search import split_terms
+from ..search import run_search_pending, split_terms
 from ..tools.search_tool import CONTEXT_LINES, MAX_EXCERPTS_PER_DOC
 from ..lecture.rendu import ancre
 from .commun import SUGGESTIONS_MAX, Requete, page_demandee, url_page
@@ -386,30 +388,35 @@ def _repartition(r: Requete, items, noms: list[str], adresses: _Adresses) -> lis
 def _propositions_en_attente(r: Requete, noms: list[str], criteres: Criteres) -> tuple[list[dict], int]:
     """Propositions en attente dont le texte contient la recherche — ce que des
     sessions ont appris et qu'aucune revue n'a encore intégré. (résultats, nombre
-    de propositions en attente examinées)."""
+    de propositions en attente examinées).
+
+    Même moteur que `kb_search` avec `include_pending` (rév. 4.7), mais en ET
+    strict comme le texte du corpus ici : le repli en OU n'est pas un filtre.
+    Une expression invalide a déjà été refusée par la recherche dans le corpus,
+    qui la précède dans le même dialecte."""
     if not criteres.query:
         return [], 0
-    if criteres.query_regex:
-        try:
-            motif = re.compile(criteres.query, re.IGNORECASE)
-        except re.error:
-            r.avis.append("expression non comprise pour les propositions en attente (syntaxe Python) : non cherchées")
-            return [], 0
-        touche = lambda texte: bool(motif.search(texte))
-    else:
-        termes = [t.casefold() for t in split_terms(criteres.query)]
-        touche = lambda texte: all(t in texte.casefold() for t in termes)
+    mode = "regex" if criteres.query_regex else "keyword"
     trouvees, examinees = [], 0
     for nom in noms:
-        collecte, corps = r.hub.propositions(nom)
-        for e in collecte.entries:
-            if e.status != "pending":
-                continue
-            examinees += 1
-            texte = corps.get(e.id, "")
-            if touche(texte):
+        issue = run_search_pending(r.modele(nom).base, criteres.query, mode, 10**9)
+        examinees += issue.examined
+        if issue.partial or not issue.docs:
+            continue
+        collecte, _ = r.hub.propositions(nom)
+        par_chemin = {str(e.path): e for e in collecte.entries if e.status == "pending"}
+        for d in issue.docs:
+            e = par_chemin.get(str(d.path))
+            if e is not None:
                 trouvees.append({"base": nom, "entree": e})
     return trouvees, examinees
+
+
+def _appel_en_attente(noms: list[str], criteres: Criteres) -> str:
+    """La recherche dans les propositions en attente, écrite pour MCP."""
+    base = f'base="{noms[0]}"' if len(noms) == 1 else ("base=" + str(noms) if len(noms) < 4 else 'base="*"')
+    mode = ', mode="regex"' if criteres.query_regex else ""
+    return f'kb_search({base}, query="{criteres.query}"{mode}, include_pending=true)'
 
 
 def _appel_mcp(noms: list[str], criteres: Criteres, une_base: bool) -> str:
@@ -496,6 +503,7 @@ def explorer(r: Requete) -> Response:
         resultats=resultats, page=page, pages=pages, par_page=PAR_PAGE, adresses=adresses,
         actifs=_actifs(adresses, params), repartition=_repartition(r, items, noms, adresses),
         en_attente=en_attente, examinees=examinees, appel=_appel_mcp(noms, criteres, une_base is not None),
+        appel_en_attente=_appel_en_attente(noms, criteres) if criteres.query else None,
         suggestions=suggestions, exemples=_exemples(r, noms, suggestions),
         tris=LIBELLES_TRI, sans_type=SANS_TYPE, par_base=par_base, groupe=groupe,
         regrouper=adresses.avec("groupe", "base") if not groupe else adresses.sans("groupe", "base"),

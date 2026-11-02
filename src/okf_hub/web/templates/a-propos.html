@@ -17,7 +17,7 @@
     <thead><tr><th>Page</th><th>Outil MCP</th></tr></thead>
     <tbody>
       <tr><td>Bases</td><td><code>kb_list</code></td></tr>
-      <tr><td>Explorer</td><td><code>kb_find</code> (critères) et <code>kb_search</code> (texte) — la page donne l'appel équivalent</td></tr>
+      <tr><td>Explorer</td><td><code>kb_find</code> (critères) et <code>kb_search</code> (texte ; avec <code>include_pending</code>, les propositions en attente) — la page donne l'appel équivalent</td></tr>
       <tr><td>Une fiche</td><td><code>kb_read</code>, et <code>kb_find links_to</code> pour les liens entrants</td></tr>
       <tr><td>Gouvernance</td><td><code>kb_governance</code></td></tr>
       <tr><td>Propositions</td><td><code>kb_proposal_status</code></td></tr>
@@ -28,7 +28,7 @@
   <h2>Où elle va au-delà, et pourquoi</h2>
   <ul>
     <li><strong>Le corps des propositions</strong> est affiché ; <code>kb_proposal_status</code> ne le rend pas, par économie de tokens. Ce texte est une affirmation déposée par une session, à vérifier — pas de la connaissance.</li>
-    <li><strong>Les propositions en attente sont cherchées</strong> par l'Explorer, et nommées sur les fiches qu'elles mentionnent, toujours marquées « non revues ». MCP ne les cherche pas : son § 5.2 les exclut de la recherche.</li>
+    <li><strong>Les propositions en attente sont nommées sur les fiches qu'elles mentionnent</strong>, toujours marquées « non revues ». L'Explorer les cherche à chaque recherche ; MCP, sur demande seulement (<code>kb_search</code> avec <code>include_pending</code>, même moteur, résultats marqués « non intégré »), et sans les rattacher à aucune fiche.</li>
     <li><strong>L'historique git</strong> (journal, histoire d'une fiche, chronologie) et l'<strong>état des dépôts</strong> (commits non poussés) : MCP n'expose pas git.</li>
     <li>Sur MCP aussi, <code>kb_find</code> sait ce que cette interface montre en données : texte, amont modifié, impact par degré, priorité de ré-audit.</li>
   </ul>

@@ -11,7 +11,7 @@ séparés clonés dans `bases/` (non versionnés ici).
 
 | Document | Quand le lire |
 |---|---|
-| [`docs/SPEC-okf-bundle-hub-v0.md`](docs/SPEC-okf-bundle-hub-v0.md) | **La spécification. Elle fait autorité.** Rév. 4.5 : chaque amendement est intégré section par section, son § 12 en donne la carte. Tous les renvois « § x.y » du code y renvoient. À lire avant toute modification de comportement. |
+| [`docs/SPEC-okf-bundle-hub-v0.md`](docs/SPEC-okf-bundle-hub-v0.md) | **La spécification. Elle fait autorité.** Rév. 4.7 : chaque amendement est intégré section par section, son § 12 en donne la carte. Tous les renvois « § x.y » du code y renvoient. À lire avant toute modification de comportement. |
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | Pourquoi le code est ce qu'il est : choix d'implémentation, mécanismes de correction, **écarts assumés**, traçabilité test ↔ exigence. |
 | [`docs/API.md`](docs/API.md) | Contrat exact des huit outils `kb_*` : schémas, sorties, erreurs, séquences typiques. |
 | [`docs/J0-verification-okf.md`](docs/J0-verification-okf.md) | Ce que dit la spec OKF externe, et les trois points où elle diverge de celle du hub. |
@@ -75,9 +75,11 @@ consommatrice.
 **Une nouvelle capacité d'écriture ne va pas dans `tools/`.** La surface MCP
 exposée aux sessions consommatrices se limite à `kb_propose`, confiné à
 `proposals/pending/`. Ce qui touche au corpus vit dans `review.py`, invoqué en
-ligne de commande. `kb_proposal_status` *lit* `proposals/` — c'est la seule
-exception à la liste d'exclusions du § 5.2, en lecture seule, et le confinement
-passe par `Base.proposal_files`, pas par l'outil.
+ligne de commande. `kb_proposal_status` *lit* `proposals/`, et `kb_search` avec
+`include_pending` *lit* `proposals/pending/` (rév. 4.7) — les deux seules
+exceptions à la liste d'exclusions du § 5.2, en lecture seule ; le confinement
+passe par `Base.proposal_files`, pas par l'outil. Une troisième se remonte au
+propriétaire de la spec.
 
 **Une base ne se versionne jamais dans `bases/`.** `gitops.commit_paths` exécute
 `git -C <racine du bundle>` : une base qui ne serait qu'un sous-répertoire du

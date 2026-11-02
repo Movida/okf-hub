@@ -65,7 +65,9 @@ src/okf_hub/
 ├── locking.py      flock() par base, fd neuf par acquisition, .git/info/exclude.
 ├── gitops.py       Index temporaire depuis HEAD, identité explicite, trailers,
 │                   synchronisation de l'index partagé.
-├── search.py       ripgrep, ET strict puis repli OU, déclassement des sommaires.
+├── search.py       ripgrep, ET strict puis repli OU, déclassement des sommaires ;
+│                   la même recherche dans les propositions en attente, sur la
+│                   liste confinée de Base.proposal_files (rév. 4.7).
 ├── review.py       Moteur du rôle gestionnaire : réconciliation, plan, résolution
 │                   d'une suite de plans (reprenable, `--checks`, rév. 4.4), et
 │                   `verify` : plans rejoués sur une copie jetable du hub, puis
@@ -269,8 +271,10 @@ déposé à la main dans `accepted/` avec `status: pending` reste lisible.
 résout canoniquement chaque candidat et vérifie son inclusion stricte dans
 `proposals/<statut>/` — même mécanique que `resolve_document` pour le corpus. Un
 lien symbolique déposé dans `pending/` et pointant hors du bundle est ignoré.
-C'est ce qui permet d'affirmer que l'exception à la liste d'exclusions du § 5.2
-ne perce pas le confinement.
+C'est ce qui permet d'affirmer que les deux exceptions à la liste d'exclusions
+du § 5.2 — cet outil, et `kb_search` avec `include_pending` (rév. 4.7), qui
+reçoit de `Base.proposal_files("pending")` la liste des fichiers qu'il passe à
+ripgrep — ne percent pas le confinement.
 
 ---
 
@@ -968,6 +972,27 @@ d'avant, seul le message change pour ne plus recommander un remède inopérant.
 
 ---
 
+## 6 decies. Décisions d'implémentation de la rév. 4.7 — les propositions en attente
+
+Origine : la roadmap d'`okf-hub-feedback` (« `kb_search` ne voit pas les
+propositions en attente ») et la décision du propriétaire du 2026-11-02. La spec
+fixe le contrat (§ 5.1, § 5.2) ; ce qui suit est ce qu'elle laissait ouvert.
+
+| Point | Décision | Motif |
+|---|---|---|
+| Nom de l'option | `include_pending`, booléen, faux par défaut | Le pendant de `include_pending_concerns` de `kb_list` : le même mot pour la même file. |
+| Partage de `max_results` | Le corpus d'abord : `allocate_quota` sur le corpus avec `max_results`, puis sur les propositions avec le reliquat | La sortie normale reste un préfixe exact de la sortie avec l'option. Une part réservée aux propositions retirerait des résultats revus à qui les demande ; un classement unique mettrait du non-revu devant du revu. Coût assumé : une requête générique qui remplit le plafond ne liste aucune proposition — le nombre de celles qui répondent est dit, avec le remède (relever `max_results`, qui ici agit, ou préciser). |
+| Place dans la sortie | Après tous les groupes du corpus ; une ligne d'avertissement, puis un groupe par base ; en-têtes forcés, résultats sous budget | Base par base, les propositions d'une base passeraient devant le corpus de la suivante. Forcés, les en-têtes donnent le nombre même quand le plafond de caractères est atteint. |
+| Confinement | `Base.proposal_files("pending")` donne la liste ; ripgrep reçoit ces fichiers explicitement, sans glob ni parcours de répertoire ; les résultats sont refiltrés sur cette liste | La mécanique de `kb_proposal_status` (§ 4.3 ci-dessus). Les globs d'exclusion du corpus (`!**/proposals/**`) n'ont pas à être retournés : ripgrep ne cherche que ce qu'on lui nomme. |
+| Résolution concurrente | ripgrep sort en code 2 **avec** un bilan (`summary`) quand un fichier nommé a disparu : accepté ; sans bilan, l'expression est en cause → `INVALID_INPUT` | Une proposition déplacée vers `accepted/` entre la liste et la lecture n'est pas une erreur d'entrée (§ 4.4.d : lecture sans verrou). Lots de 500 fichiers par appel : loin de `ARG_MAX`, même pour une file de plusieurs milliers. |
+| Extraits | Corps seulement ; les champs du frontmatter touchés sont nommés (`trouvé dans le frontmatter : concerns, sources`) ; pas de `§` | L'en-tête dit déjà l'id, le type, l'objet et la date : recopier le frontmatter ajoutait une dizaine de lignes par résultat. Un `§` inviterait à un `kb_read` qui ne peut pas aboutir. |
+| Moteur | `search.run_search_pending`, avec `run_search` sur une fonction commune (`_search`) ; l'Explorer l'appelle en ET strict | Un seul moteur (§ 5 bis.1). L'Explorer cherchait les propositions en Python (`re`, `casefold`) : une expression ripgrep acceptée pour le corpus y était refusée (« syntaxe Python ») et la casse ne suivait pas les mêmes règles. |
+| Date de `kb_list` | `submitted-at` lu par `lecture.confiance.instant`, en UTC, le jour seul ; une proposition sans date lisible est comptée sans être datée | Les trois formes se rencontrent (chaîne quotée, horodatage non quoté que PyYAML rend en `datetime`, absente). `kb_list` lit désormais le frontmatter de chaque proposition en attente à chaque appel, et une seule fois même avec `include_pending_concerns` : 19 ms pour 28 propositions sur le poste de développement (2026-11-02), soit environ 0,2 s pour une file de 260 ; `safe_load` conservé, comme dans tous les outils. |
+
+**Aucun écart assumé** : la rév. 4.7 de la spec décrit ce qui est fait.
+
+---
+
 ## 7. Traçabilité — exigence de test → test
 
 La spec liste des tests obligatoires par jalon (§ 10.2). Table de correspondance,
@@ -1121,6 +1146,21 @@ pour vérifier la couverture sans relire la suite.
 | § 5 bis.2 (rév. 4.6) — aiguillage en arbre, ordre des cartes, palette en liste groupée | `test_accueil_en_cartes_avec_l_aiguillage_commun`, `test_accueil_ordre_des_cartes`, `test_saut_palette_et_titre_exact_d_abord` |
 | § 5 bis.2 (rév. 4.6) — dates relatives et format unique, coupe des descriptions, glossaire lié, voyant en badge, commande de revue par carte | `test_dates_relatives_et_format_unique`, `test_resume_coupe_a_une_fin_de_phrase`, `test_accueil_glossaire_voyant_et_commande` |
 | § 5 bis.2 (rév. 4.6) — dossier paginé, index long renvoyé, fiches citantes comptées comme l'impact, sujets de commit, étiquettes d'arcs | `test_dossier_pagine_et_index_long_renvoye_a_sa_page`, `test_entrants_comptent_les_fiches_comme_l_impact`, `test_sujet_de_commit_lisible`, `test_etiquettes_d_arcs_ecartees` |
+
+### rév. 4.7 — les propositions en attente
+
+| Exigence | Test (`tests/test_recherche_en_attente.py`, sauf mention) |
+|---|---|
+| § 5.2 — sans l'option, sortie identique et `proposals/` non lu | `test_sans_l_option_la_sortie_est_identique_et_proposals_n_est_pas_lu`, `test_include_pending_doit_etre_un_booleen` |
+| § 5.2 — trouvée, marquée « non intégré », id, type, concerns, date ; corps seul, sans `§` | `test_une_proposition_en_attente_est_trouvee_et_marquee`, `test_un_extrait_de_proposition_ne_porte_pas_de_section` |
+| § 5.2 — le corpus d'abord : préfixe exact, plafond partagé, même budget | `test_le_corpus_passe_d_abord_et_reste_inchange`, `test_le_plafond_est_partage_et_le_corpus_le_remplit_d_abord`, `test_meme_budget_de_sortie_que_la_recherche_normale` |
+| § 5.2 — même recherche (regex, repli en OU) ; absence dite | `test_regex_et_repli_en_ou_dans_les_propositions`, `test_rien_dans_les_propositions_est_dit` |
+| § 5.2 — plusieurs bases : propositions après tout le corpus | `test_plusieurs_bases_propositions_apres_tout_le_corpus` |
+| § 5.2 — seconde exception limitée à `pending/`, confinée, en lecture seule | `test_seules_les_propositions_en_attente_sont_cherchees`, `test_confinement_un_lien_symbolique_sortant_est_ignore`, `test_la_recherche_dans_les_propositions_n_ecrit_rien`, `test_proposal_status.py::test_proposals_reste_exclu_des_autres_outils` |
+| Résolution concurrente pendant la lecture ; longue file | `test_un_fichier_disparu_pendant_la_recherche_n_est_pas_une_erreur`, `test_une_longue_file_est_cherchee_par_lots` |
+| § 5.1 — date de la plus ancienne, sans date lisible, lecture seule | `test_kb_list_donne_la_date_de_la_plus_ancienne`, `test_kb_list_sans_date_lisible_compte_sans_dater`, `test_kb_list_ne_touche_pas_aux_propositions` |
+| § 5 bis.1 — un moteur pour l'Explorer et `kb_search` | `test_web.py::test_explorer_et_kb_search_cherchent_les_propositions_avec_le_meme_moteur`, `test_web.py::test_explorer_cherche_aussi_les_propositions_en_attente` |
+| De bout en bout, vrai serveur en stdio : déposée par une session, vue de la suivante, intégrée après revue | `test_boucle_contribution.py::test_ce_qu_une_session_depose_est_visible_de_la_suivante_avant_la_revue` |
 
 Exécution :
 

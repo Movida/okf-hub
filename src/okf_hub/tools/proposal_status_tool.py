@@ -5,9 +5,11 @@ Lève la limitation v0 du § 6.2 : un contributeur MCP-only pouvait voir ce qui
 lisibles `proposals/accepted/` et `proposals/rejected/`.
 
 Lecture pure : aucun verrou, aucun état nouveau, git reste canonique. C'est
-aussi la **seule exception** à la liste d'exclusions transverse du § 5.2, qui
-retire `proposals/` des lectures — exception limitée à cet outil et en lecture
-seule ; le confinement passe par `Base.proposal_files` (§ 5.3).
+l'une des **deux exceptions** à la liste d'exclusions transverse du § 5.2, qui
+retire `proposals/` des lectures — l'autre est `kb_search` avec
+`include_pending`, qui ne lit que `pending/` (rév. 4.7). Toutes deux en lecture
+seule, et le confinement passe par `Base.proposal_files` (§ 5.3), pas par
+l'outil.
 """
 
 from __future__ import annotations

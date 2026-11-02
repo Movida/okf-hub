@@ -424,6 +424,30 @@ def test_explorer_cherche_aussi_les_propositions_en_attente(bases):
     html = _client(bases).get("/explorer?q=xz42").text
     assert "Aucun document du <strong>corpus</strong> ne répond" in html
     assert "Dans les propositions en attente" in html and "le serveur XZ42 redémarre" in html
+    # rév. 4.7 : MCP les cherche aussi, sur demande — la page donne l'appel.
+    assert "MCP ne les cherche pas" not in html
+    assert 'include_pending=true' in __import__("html").unescape(html)
+
+
+def test_explorer_et_kb_search_cherchent_les_propositions_avec_le_meme_moteur(bases):
+    """Un seul moteur (§ 5 bis.1, rév. 4.7) : une expression ripgrep que le
+    dialecte Python ne comprend pas (`\\p{N}`) trouve la même proposition dans
+    l'Explorer et par `kb_search` avec `include_pending`."""
+    from okf_hub.tools import propose_tool, search_tool
+
+    sortie = propose_tool.run(bases, {
+        "base": "installation-x", "type": "observation", "concerns": "code retour QW7 au démarrage",
+        "content": "Constaté : QW7.", "sources": ["s"], "confidence": "low",
+        "submitted_by": "human:test",
+    })
+    pid = next(l.split(":", 1)[1].strip() for l in sortie.splitlines() if l.startswith("id :"))
+    motif = r"QW\p{N}"
+    html = _client(bases).get("/b/installation-x/-/explorer", params={"q": motif, "mode": "regex"}).text
+    assert "syntaxe Python" not in html
+    assert "Dans les propositions en attente" in html and pid in html
+    mcp = search_tool.run(bases, {"base": "installation-x", "query": motif, "mode": "regex",
+                                  "include_pending": True})
+    assert pid in mcp and "non intégré" in mcp
 
 
 def test_un_filtre_incompris_est_signale(bases):

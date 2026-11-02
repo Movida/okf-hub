@@ -10,7 +10,7 @@
 > sont recensés dans [`ARCHITECTURE.md`](ARCHITECTURE.md), section « Écarts
 > assumés » — nulle part ailleurs.
 >
-> **Révision courante : 4.6.** L'amendement rév. 4.1 (premier retour d'usage
+> **Révision courante : 4.7.** L'amendement rév. 4.1 (premier retour d'usage
 > réel d'une session consommatrice, post-J5) a été intégré dans le corps du
 > texte, section par section, plutôt qu'annexé : les renvois « § x.y » du code
 > restent ainsi la seule adresse d'une exigence. Les passages issus de
@@ -30,7 +30,10 @@
 > **(rév. 4.5)**. La **rév. 4.6** (§ 3.5, § 5.8, § 5 bis) étend la
 > consultation à ce que la structure des bases permet de déduire — dérive amont,
 > impact, priorité de ré-audit, manques — et réunit recherche et critères ;
-> mention **(rév. 4.6)**.
+> mention **(rév. 4.6)**. La **rév. 4.7** (§ 5.1, § 5.2, § 5.5, § 5.7,
+> § 5 bis, § 8) rend les propositions en attente cherchables par `kb_search`,
+> sur demande et marquées « non intégré », et date la file dans `kb_list` ;
+> mention **(rév. 4.7)**.
 
 Document d'implémentation, révision 4.1 — révision 4 (version finale pour
 implémentation, intégrant les retours des trois relectures croisées), amendée
@@ -655,7 +658,10 @@ sortie à ~4 000 tokens (caractères/4), avec troncature signalée
 ```
 
 **Sortie :** pour chaque base : `name`, `title`, `description`, `version` (si
-présente), nombre de documents (définition § 2), nombre de propositions pending.
+présente), nombre de documents (définition § 2), nombre de propositions pending
+et **(rév. 4.7)** date de la plus ancienne, d'après son `submitted-at` (§ 6.1) :
+le retard de la revue se lit d'un coup d'œil. Une proposition sans date lisible
+est comptée, pas datée.
 
 Si `include_pending_concerns` : ajoute la liste des couples
 (`id`, `type`, `concerns`) des propositions pendantes — permet à un contributeur
@@ -676,7 +682,8 @@ préalable.
   "base": "string (requis)",
   "query": "string (requis)",
   "mode": "keyword | regex (défaut: keyword)",
-  "max_results": "int (défaut: 8, max: 25)"
+  "max_results": "int (défaut: 8, max: 25)",
+  "include_pending": "bool (défaut: false) — rév. 4.7, voir ci-dessous"
 }
 ```
 
@@ -704,6 +711,34 @@ passage par la table des headings, ce qui supprime un aller-retour sur les
 documents dépassant `read-toc-threshold`. Coût : quelques dizaines de caractères
 par extrait, dans le plafond existant.
 
+**Propositions en attente (rév. 4.7).** Avec `include_pending: true`, la
+recherche lit aussi `proposals/pending/` de chaque base visée — ce que des
+sessions ont déposé et qu'aucune revue n'a intégré. Désactivée par défaut :
+sans elle, la sortie est inchangée et rien n'est lu dans `proposals/`. Avec
+elle :
+
+- **même recherche** : même dialecte, même ET strict puis repli en OU, même
+  classement, appliqués aux propositions à part du corpus ;
+- **ce qui n'est pas revu passe après ce qui l'est**, partout. Dans le plafond
+  `max_results`, global, les propositions ne prennent que ce que le corpus
+  laisse ; dans la sortie, elles suivent tous les résultats du corpus, de toutes
+  les bases, sous le même budget transverse. Ce que la recherche normale aurait
+  rendu reste donc en tête, inchangé ;
+- **chaque résultat est marqué « non intégré »** et porte l'`id`, le `type`, le
+  `concerns` et le `submitted-at` de la proposition (§ 6.1), puis ses extraits.
+  Les extraits ne portent que sur le corps : une occurrence dans le frontmatter
+  est signalée par le nom du champ. Ils n'ont pas de heading de section :
+  `kb_read` ne lit pas les propositions. Le corps entier reste hors MCP (§ 5.7) ;
+- par base, le **nombre** de propositions qui répondent est toujours donné, même
+  quand le plafond n'en laisse lister aucune ; « aucune ne répond » est dit
+  aussi, avec le nombre de propositions examinées.
+
+Usage visé : avant `kb_propose`, savoir si un sujet est déjà proposé ; dans une
+enquête, ne pas refaire ce qu'une session a déjà déposé. Une proposition en
+attente reste une **affirmation à vérifier**, jamais une connaissance acquise :
+la frontière revu / non revu du § 1.3 est tenue par le marquage et par l'ordre,
+pas par l'invisibilité.
+
 **Liste d'exclusions transverse** (applicable à `kb_search`, `kb_read` et au
 comptage de documents de `kb_list`) : `proposals/`, `okf-bundle.yaml`,
 `GOVERNANCE.md`, `schema.yaml`, `CLAUDE.md`, `.okf-hub.lock`, `.git/`. Comme
@@ -711,9 +746,18 @@ comptage de documents de `kb_list`) : `proposals/`, `okf-bundle.yaml`,
 (§ 3.3), ces fichiers sont hors corpus par construction ; la liste sert de
 **défense en profondeur**.
 
-**Unique exception à cette liste (rév. 4.1) :** `kb_proposal_status` (§ 5.7) lit
-`proposals/`. Exception limitée à cet outil et **en lecture seule**, avec la même
-mécanique de confinement que le § 5.3.
+**Exceptions à cette liste — deux, en lecture seule :**
+
+1. **(rév. 4.1)** `kb_proposal_status` (§ 5.7) lit `proposals/` ;
+2. **(rév. 4.7)** `kb_search` avec `include_pending` lit `proposals/pending/`,
+   et rien d'autre de `proposals/` : une proposition résolue est soit dans le
+   corpus (`integrated-into`), soit écartée par la revue.
+
+Toutes deux avec la même mécanique de confinement que le § 5.3 : les fichiers
+lus sont ceux d'une liste résolue canoniquement et vérifiée incluse dans le
+répertoire de leur statut, un lien symbolique sortant n'y figure pas. Aucune
+autre exception n'est ouverte : `kb_read`, `kb_find` et le comptage de
+`kb_list` restent confinés au corpus.
 
 ### 5.3 kb_read
 
@@ -823,7 +867,8 @@ l'invariant d'audit. La description de l'outil n'a pas à la mentionner.
 **La déduplication n'est pas la responsabilité du contributeur ni de cet
 outil** : les doublons sont traités par le gestionnaire à la revue (§ 7.1).
 `kb_list` avec `include_pending_concerns` permet au contributeur diligent de
-vérifier avant, sans obligation.
+vérifier avant, sans obligation ; **(rév. 4.7)** `kb_search` avec
+`include_pending` le fait sur le sujet lui-même, texte des propositions compris.
 
 **Clarification normative sur `schema.yaml` (rév. 4.1).** À ajouter à la
 description MCP de l'outil et au README :
@@ -901,7 +946,8 @@ Fichier au frontmatter illisible → ignoré du résultat, avec mention
 `[N fichiers illisibles ignorés]` et journalisation.
 
 **Sécurité :** lecture confinée à `proposals/` (mécanique de confinement du
-§ 5.3). C'est la seule exception à la liste d'exclusions transverse du § 5.2.
+§ 5.3). C'est l'une des deux exceptions à la liste d'exclusions transverse du
+§ 5.2 ; l'autre, **(rév. 4.7)**, est `kb_search` avec `include_pending`.
 
 **Description de l'outil :** mentionne que `submitted_by` étant déclaratif
 (§ 8), le filtre retrouve les propositions **déclarées** sous ce nom, sans
@@ -979,7 +1025,8 @@ dernier commit. Il est invalidé quand un document du corpus ou le profil change
 (chemin, date et taille), vérifié au plus toutes les quelques secondes ; seule
 la base qui a changé est rechargée. La recherche plein texte reste ripgrep
 (§ 5.2) : le modèle ne porte que des métadonnées, ce n'est pas l'index dérivé du
-§ 10.3.
+§ 10.3. **(rév. 4.7)** La recherche dans les propositions en attente est la
+même pour `kb_search` (`include_pending`) et pour l'Explorer.
 
 **Fraîcheur d'un document**, toujours disponible, dans l'ordre : la plus
 récente vérification (`verified[].at`), `generated.at`, la plus récente source
@@ -1018,7 +1065,10 @@ sources, liens sortants et entrants, dérive amont, impact, histoire), vues
 déclarées, propositions, journal, graphe des bases. **(rév. 4.6)** L'**Explorer**
 réunit recherche plein texte et critères de `kb_find` — le texte en est un
 critère —, avec la répartition du résultat et la même requête en MCP ; les
-adresses `/trouver` et `/recherche` y redirigent. S'y ajoutent la
+adresses `/trouver` et `/recherche` y redirigent. **(rév. 4.7)** Les propositions
+en attente y sont cherchées à chaque recherche, par le moteur de `kb_search`
+avec `include_pending`, en ET strict comme le texte du corpus, et la page donne
+l'appel MCP correspondant. S'y ajoutent la
 **gouvernance** d'une base (l'équivalent de `kb_governance`, et ce que le moteur
 comprend de son profil), ses **manques** (documents attendus que des liens
 désignent, questions en attente, vocabulaire déclaré sans document, croisement
@@ -1055,7 +1105,7 @@ foi. La page d'état en donne la cause et le remède.
 | Ce qu'elle montre | MCP | Motif |
 |---|---|---|
 | Le corps d'une proposition | `kb_proposal_status` ne le rend pas (§ 5.7) | Économie de tokens côté agent ; un humain qui en juge a besoin du texte. Toujours présenté comme une affirmation à vérifier. |
-| Les propositions en attente, cherchées et nommées sur les fiches qu'elles mentionnent | Exclues de la recherche (§ 5.2) | Ce qu'une session a appris devient visible de la suivante avant la revue ; l'exclusion du § 5.2 garde le corpus revu de ce qui ne l'est pas, et la page les sépare et les marque « non revues ». |
+| Les propositions en attente, nommées sur les fiches qu'elles mentionnent, et cherchées à chaque recherche | **(rév. 4.7)** Cherchées sur demande seulement (`kb_search`, `include_pending`, § 5.2), rattachées à aucune fiche | Ce qu'une session a appris devient visible de la suivante avant la revue ; la page les sépare et les marque « non revues », comme MCP les marque « non intégré ». |
 | L'historique git, l'état des dépôts | Hors MCP | Git est canonique (§ 1.1) ; une base peut diverger de son remote sans que rien d'autre ne le dise (§ 4.5). |
 | Les relations entre propositions, la fiche qu'une proposition vise | Hors MCP | Une correction en attente doit se lire avant ce qu'elle corrige ; sans elle, la revue intègre une erreur déjà signalée. Déduites du texte, jamais déclarées. |
 La recherche montre tout le classement de `kb_search`, paginé, en extraits
@@ -1270,6 +1320,7 @@ dans ce cadre ; ce qui n'y résiste pas est marqué.
 | Traversée de chemin (`kb_read`, `kb_search`) | Résolution canonique + confinement dans `corpus-dir`. **Tests dédiés obligatoires.** |
 | Injection dans les commits/frontmatter via les champs de proposition | Rejet des retours à la ligne dans `concerns`, `submitted_by`, `sources` ; frontmatter sérialisé exclusivement par bibliothèque YAML (§ 5.5). Sans cela, les invariants d'audit (§ 6.2) seraient contournables par trailers forgés. **Tests dédiés obligatoires (J2).** |
 | Contenu de proposition malveillant/erroné | Une proposition est **inerte** : texte jamais exécuté, jamais intégré sans revue. Double barrière : règle « données non fiables » (§ 7.1.4) + confirmation humaine. |
+| Affirmation non revue lue comme de la connaissance **(rév. 4.7)** | `kb_search` ne lit `proposals/pending/` que sur demande explicite (`include_pending`, faux par défaut) ; les propositions passent après tout le corpus, chaque résultat est marqué « non intégré », la sortie le rappelle en tête de cette partie ; des extraits seulement, jamais le corps entier, sous le plafond transverse. Ce qu'une session y lit relève de la même règle que pour le gestionnaire : des données non fiables, jamais des instructions (§ 7.1.4). |
 | Injection de prompt via un bundle importé | **Risque réel et partiellement couvert en v0.** Trois vecteurs : (1) `title`/`description` du manifeste, injectés dans les descriptions d'outils MCP donc dans le contexte de toutes les sessions connectées, sans même ouvrir le bundle — atténué par la validation § 3.3, qui limite la surface sans l'éliminer ; (2) `GOVERNANCE.md`, injecté dans le contexte du gestionnaire ; (3) `CLAUDE.md`, dans celui de toute session ouvrant le dépôt. Importer un bundle v0 est sans risque d'**exécution**, mais pas sans risque d'**influence**. **Consigne v0 (README + template) : n'importer que des bundles de confiance, et relire manifeste, `GOVERNANCE.md` et `CLAUDE.md` avant le premier usage de tout bundle tiers.** [v1+] : revue d'import outillée, éventuellement bundles signés. |
 | Usurpation `submitted-by` | Non authentifié, documenté comme tel. [v1+] : jetons par contributeur ou signatures. |
 | Bundles tiers → exécution de code | `tools`/`skills` non chargés en v0 ; [v1+] : approbation explicite par outil + sous-processus confiné. **(rév. 4.3)** Les `governance.checks` d'une base (§ 3.3) sont du code de la base : jamais lancés par le serveur MCP, ni à la découverte, ni par une session consommatrice ; seulement par `okf-review verify` (sur une copie) et, **(rév. 4.4)** après des résolutions réelles, par `okf-review resolve --checks` (dans la base), invoqués par l'opérateur ou le gestionnaire, pour une base inscrite dans `trusted-checks` (§ 4.1). L'approbation porte sur la base, pas sur chaque commande : c'est le code de ses scripts qu'on approuve, et figer leurs lignes de commande ne figerait pas leur contenu. Le confinement est celui d'une copie jetable : aucune vraie base n'est atteignable par chemin relatif ; ce n'est pas un bac à sable contre un script malveillant, hors du modèle de menace v0. |
@@ -1609,14 +1660,53 @@ le périmètre de l'interface n'étaient dits nulle part.
 | § 5 bis.4 | Page d'état en mode équipe |
 
 Non retenu : chercher les propositions en attente depuis MCP (l'exclusion du
-§ 5.2 reste la frontière entre revu et non revu, pour les agents) ; un index de
+§ 5.2 reste la frontière entre revu et non revu, pour les agents — levé par la
+rév. 4.7, sur décision du propriétaire) ; un index de
 la dérive persistant (un `git log` par base, en cache par HEAD, suffit) ; un
 score de centralité calculé sur tout le graphe (le nombre de citations dit déjà
 l'essentiel, et s'explique).
 
+### rév. 4.7 — les propositions en attente, visibles avant la revue (post-J5-septies)
+
+Origine : retour d'usage du 27/10/2026 (« À arbitrer » de la roadmap
+d'`okf-hub-feedback`, « `kb_search` ne voit pas les propositions en attente »).
+Sur un hub de huit bases, 261 propositions attendaient la revue, les plus
+anciennes depuis huit jours ; un numéro de ticket que citait une proposition
+de la veille ne rendait aucun résultat. Ce qu'une session avait appris restait
+invisible à la suivante, qui refaisait l'enquête ou déposait un doublon. La
+rév. 4.6 avait écarté la recherche des propositions depuis MCP ; décision du
+propriétaire (02/11/2026) : « partir sur les solutions les plus propres ». Le
+conflit avec la rév. 4.6 est donc identifié et tranché, pas laissé à la règle
+de clôture.
+
+Aucun principe du § 1 ni mécanisme du § 4.4.b n'est touché : rien n'est écrit,
+aucun état n'est tenu, aucun verrou n'est pris (§ 4.4.d), et la frontière de
+confiance du § 1.3 porte sur l'écriture, que rien ne change. Seule la liste
+d'exclusions du § 5.2 reçoit une seconde exception, en lecture seule.
+
+| § amendé | Objet |
+|---|---|
+| § 5.1 | Date de la plus ancienne proposition en attente |
+| § 5.2 | `include_pending` : propositions en attente cherchées, après le corpus, marquées « non intégré » ; seconde exception à la liste d'exclusions |
+| § 5.5 | Vérifier un doublon par la recherche |
+| § 5.7 | Une exception sur deux |
+| § 5 bis.1, § 5 bis.2 | Un seul moteur pour l'Explorer et `kb_search` ; ce que l'interface montre au-delà de MCP, révisé |
+| § 8 | Affirmation non revue lue comme de la connaissance |
+
+Non retenu : l'option activée par défaut (la sortie changerait pour qui ne la
+demande pas, et le non-revu s'inviterait dans chaque réponse) ; un classement
+unique où une proposition passerait devant un document du corpus mieux classé
+(le revu d'abord, toujours) ; une part du plafond réservée aux propositions
+(elle retirerait des résultats revus à qui active l'option) ; le corps entier
+des propositions (§ 5.7 : l'`id` et les extraits suffisent à reconnaître un
+sujet) ; chercher aussi `accepted/` et `rejected/` (une proposition intégrée se
+lit dans le corpus, une rejetée a été écartée par la revue) ; une cadence de
+revue imposée par le hub (la revue reste à l'initiative de l'humain, § 7 ; la
+date de la plus ancienne la rend visible).
+
 ---
 
-*Fin de spécification (rév. 4.6).* **Toute déviation par rapport aux principes du
+*Fin de spécification (rév. 4.7).* **Toute déviation par rapport aux principes du
 § 1 ou aux mécanismes du § 4.4.b doit être remontée au propriétaire du projet
 avant implémentation.** En cas de conflit non identifié entre deux révisions,
 **la plus ancienne prévaut** et le conflit est remonté.

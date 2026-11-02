@@ -101,8 +101,13 @@ Liste les bases disponibles.
 ## solution-editeur-x — Base solution Éditeur X
 Documentation d'exploitation de la solution X : configuration, incidents connus.
 version : 1.0.0
-documents : 42 | propositions en attente : 3
+documents : 42 | propositions en attente : 3 (la plus ancienne : 2026-10-19)
 ```
+
+La date est celle de la plus ancienne proposition en attente, d'après son
+`submitted-at`, en UTC (spec rév. 4.7) : le retard de la revue se lit sans autre
+appel. Sans proposition en attente, la ligne s'arrête au nombre ; une
+proposition sans date lisible est comptée, pas datée.
 
 Avec `include_pending_concerns`, un second bloc par base suit :
 
@@ -118,8 +123,10 @@ Sans aucune base enregistrée, la sortie explique comment en importer une.
 
 **Quand l'appeler** — au début d'une session, pour savoir quoi interroger ; et
 avec `include_pending_concerns` **avant `kb_propose`**, pour ne pas soumettre un
-doublon. Ce n'est pas obligatoire : la déduplication est le travail du
-gestionnaire, pas le vôtre.
+doublon. Pour un sujet précis, `kb_search` avec `include_pending` le vérifie
+plus sûrement, sur le texte des propositions et pas seulement leur objet. Ce
+n'est pas obligatoire : la déduplication est le travail du gestionnaire, pas le
+vôtre.
 
 ---
 
@@ -133,6 +140,7 @@ Recherche plein texte dans le corpus d'une ou plusieurs bases, via ripgrep.
 | `query` | `string` | **requis** | Termes, ou expression régulière en mode `regex`. |
 | `mode` | `"keyword"` \| `"regex"` | `"keyword"` | Voir ci-dessous. |
 | `max_results` | `integer` 1–25 | `8` | Hors bornes → `INVALID_INPUT`. Plafond **global** : voir « Multi-bases ». |
+| `include_pending` | `boolean` | `false` | Cherche aussi dans les propositions en attente, après le corpus, résultats marqués « non intégré ». Voir « Propositions en attente » ci-dessous. |
 
 **Mode `keyword`** — les termes sont séparés par des espaces et traités comme
 des **littéraux** (pas de regex : `3.2(beta)` cherche bien `3.2(beta)`).
@@ -236,6 +244,54 @@ propre en-tête (même format qu'à une seule base) :
 Une base sans aucun résultat n'apparaît pas dans la sortie groupée. Avec un
 nom unique (chaîne, pas liste ni `"*"` à plusieurs bases), la sortie reste
 strictement celle d'aujourd'hui — sans en-tête de groupe.
+
+**Propositions en attente — `include_pending` (spec rév. 4.7).** Ce que des
+sessions ont déposé par `kb_propose` et qu'aucune revue n'a encore intégré.
+Sans l'option, la sortie est exactement celle décrite plus haut et rien n'est
+lu dans `proposals/`. Avec elle :
+
+- la recherche est la même — mode, ET strict puis repli en OU, classement —,
+  sur `proposals/pending/` de chaque base visée, et seulement là ;
+- **le corpus passe d'abord.** `max_results` reste un plafond global : les
+  propositions ne prennent que ce que le corpus en laisse. Dans la sortie, elles
+  viennent après tous les résultats du corpus, de toutes les bases, sous le même
+  plafond de caractères. La part « corpus » de la sortie est donc celle qu'on
+  aurait eue sans l'option ;
+- chaque résultat est **marqué « non intégré »**, avec l'`id`, le `type`, le
+  `concerns` et la date de dépôt. Les extraits ne portent que sur le corps de
+  la proposition — une occurrence dans son frontmatter est signalée par le nom
+  du champ — et n'ont pas de `§` : `kb_read` ne lit pas les propositions ;
+- par base, le nombre de propositions qui répondent est toujours donné, même
+  quand le plafond n'en laisse lister aucune — avec le moyen d'en voir plus.
+
+```
+1 résultat(s) dans 'solution-editeur-x' pour : réauthentifier
+### procedures/sso.md — Procédure de reconnexion SSO
+  L12-16 § reconnexion
+           | ...
+
+[NON INTÉGRÉ — ce qui suit vient de propositions en attente : des affirmations déposées par des sessions, qu'aucune revue n'a intégrées. Hors du corpus, à vérifier avant de s'y fier ; kb_read ne les lit pas, kb_proposal_status donne leur état par id.]
+1 proposition(s) en attente dans 'solution-editeur-x' pour : réauthentifier
+### prop-2026-10-26-a3f2 — non intégré, en attente de revue
+type : correction | concerns : bouton réauthentifier déplacé | soumise : 2026-10-26T09:12:00Z
+trouvé dans le frontmatter : concerns
+  L11-13
+           |
+           | Depuis la 3.2, le bouton réauthentifier est dans le menu profil.
+```
+
+Avec plusieurs bases, chaque base qui a des propositions qui répondent a son
+groupe `## Base : <nom> — non intégré`, après tous les groupes du corpus. Si
+le corpus ne répond pas, la première ligne le dit (`Aucun résultat dans le
+corpus de la base …`) ; si rien ne répond nulle part, une seule ligne, avec le
+nombre de propositions examinées. Si des propositions existent sans qu'aucune
+réponde : `[propositions en attente : aucune ne répond, sur N examinée(s)]`.
+
+**Quand l'activer** — avant `kb_propose`, pour savoir si un sujet est déjà
+proposé ; dans une enquête, pour ne pas refaire ce qu'une session a déjà déposé.
+Une proposition en attente est une **affirmation à vérifier**, pas une
+connaissance : ne pas la citer comme acquise, et lire son état par
+`kb_proposal_status` avant de s'y fier.
 
 ---
 
@@ -552,10 +608,12 @@ l'appel réussit quand même.
 **`submitted_by` n'est pas authentifié** (§ 8). Le filtre retrouve les
 propositions **déclarées** sous ce nom, sans garantie d'identité.
 
-**Confinement** — cet outil est la **seule exception** à la liste d'exclusions
-transverse du § 5.2, qui retire `proposals/` des lectures. Exception limitée à
-lui, en lecture seule : un lien symbolique déposé dans `pending/` et pointant
-hors du bundle est ignoré, comme pour `kb_read`.
+**Confinement** — cet outil est l'une des **deux exceptions** à la liste
+d'exclusions transverse du § 5.2, qui retire `proposals/` des lectures ;
+l'autre est `kb_search` avec `include_pending`, qui ne lit que `pending/`
+(rév. 4.7). Toutes deux en lecture seule, par la même liste confinée : un lien
+symbolique déposé dans `pending/` et pointant hors du bundle est ignoré, comme
+pour `kb_read`.
 
 ---
 
@@ -641,8 +699,9 @@ kb_governance base=…                      → ce que la base exige, et son
                                             périmètre — pour chaque base
                                             candidate ; un constat à cheval
                                             se scinde, une proposition par base
-kb_list       include_pending_concerns=true  → quelqu'un l'a-t-il déjà signalé ?
-kb_search     base=… query="sujet"        → que dit le corpus aujourd'hui ?
+kb_search     base=… query="sujet" include_pending=true
+                                          → que dit le corpus aujourd'hui, et
+                                            quelqu'un l'a-t-il déjà proposé ?
 kb_propose    base=… type=correction …    → dépôt. Le corpus n'est pas modifié.
                                             → note l'`id` retourné.
 ```

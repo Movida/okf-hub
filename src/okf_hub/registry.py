@@ -22,7 +22,9 @@ LOCK_FILENAME = ".okf-hub.lock"
 #: Liste d'exclusions transverse (§ 5.2), applicable à kb_search, kb_read et au
 #: comptage de documents de kb_list. Les contraintes sur corpus-dir (§ 3.3)
 #: mettent déjà ces fichiers hors corpus ; cette liste est une défense en
-#: profondeur. Chemins relatifs à la racine du *bundle*.
+#: profondeur. Chemins relatifs à la racine du *bundle*. Ses deux exceptions,
+#: en lecture seule, passent par `Base.proposal_files` : kb_proposal_status
+#: (§ 5.7) et kb_search avec include_pending (rév. 4.7).
 EXCLUDED_DIRS = frozenset({PROPOSALS_DIRNAME, ".git"})
 EXCLUDED_FILES = frozenset(
     {MANIFEST_FILENAME, "GOVERNANCE.md", "schema.yaml", "CLAUDE.md", LOCK_FILENAME}

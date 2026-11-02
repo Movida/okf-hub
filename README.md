@@ -210,8 +210,8 @@ uv run pytest -q
 
 | Outil | Rôle |
 |---|---|
-| `kb_list` | Bases disponibles, avec titre, objet, nombre de documents et de propositions en attente. `include_pending_concerns` ajoute les sujets en attente. |
-| `kb_search` | Recherche plein texte dans une base. Mode `keyword` (ET strict, repli automatique en OU signalé) ou `regex` (dialecte ripgrep). Chaque extrait porte le heading de sa section, après `§`, à reporter tel quel dans `kb_read`. |
+| `kb_list` | Bases disponibles, avec titre, objet, nombre de documents et de propositions en attente, et date de la plus ancienne. `include_pending_concerns` ajoute les sujets en attente. |
+| `kb_search` | Recherche plein texte dans une ou plusieurs bases. Mode `keyword` (ET strict, repli automatique en OU signalé) ou `regex` (dialecte ripgrep). Chaque extrait porte le heading de sa section, après `§`, à reporter tel quel dans `kb_read`. `include_pending` cherche aussi dans les propositions en attente, après le corpus, résultats marqués « non intégré ». |
 | `kb_read` | Lecture d'un document, ou d'une seule section. Au-delà du seuil, retourne la table des headings — `force: true` pour passer outre. |
 | `kb_find` | Documents par critères structurés — texte, type, tags, champs, présence ou absence d'une section, sous-chemin, documents qui en citent un autre (jusqu'au 3e degré), amont modifié depuis, ancienneté — triés au besoin par citations ou priorité de ré-audit, ou effectifs par valeur (`count_by`). Total exact par base : zéro est une réponse. Sortie structurée en plus du texte. |
 | `kb_governance` | Golden rules et schéma de frontmatter d'une base. Signale par un bandeau une gouvernance en `status: draft`. |
@@ -239,7 +239,9 @@ Un processus à part des instances MCP, sur le même moteur de lecture que
 leurs sources, leurs liens entrants et sortants — entre bases compris —, leur
 histoire (propositions intégrées, commits, propositions en attente qui les
 nomment), leur impact et la dérive de ce qu'ils citent. L'**Explorer** réunit
-recherche plein texte et critères de `kb_find`, avec la répartition du résultat ;
+recherche plein texte et critères de `kb_find`, avec la répartition du résultat,
+et cherche aussi dans les propositions en attente, par le même moteur que
+`kb_search` avec `include_pending` ;
 s'y ajoutent les vues déclarées par le profil d'une base, sa gouvernance, ses
 manques, ses propositions et son journal, une chronologie de tout le hub, le
 graphe des bases, l'état de la découverte et des dépôts, et une page « à

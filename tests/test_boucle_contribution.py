@@ -250,6 +250,75 @@ def test_le_rejet_est_lisible_avec_son_motif(hub, base_deployee, tmp_path):
     assert "golden rule 1" in verdict
 
 
+def test_ce_qu_une_session_depose_est_visible_de_la_suivante_avant_la_revue(
+    hub, base_deployee, tmp_path
+):
+    """Rév. 4.7 : une session dépose ; la suivante, dans un autre processus,
+    voit la file (kb_list, date de la plus ancienne) et trouve la proposition
+    par kb_search avec include_pending, marquée « non intégré » — sans l'option,
+    rien. Après la revue, le fait est dans le corpus et plus dans la file."""
+    hub_root, _ = hub
+    _, nom = base_deployee
+    sujet = "ticket QZ-8841 : délai de reprise"
+
+    async def deposer(session):
+        return _texte(await session.call_tool("kb_propose", {
+            "base": nom, "type": "observation", "concerns": sujet,
+            "content": "Le délai de reprise après QZ-8841 est de 40 minutes.",
+            "sources": ["session consommatrice, 2026-11-02"], "confidence": "high",
+            "submitted_by": "claude-code/opus-5.5",
+        }))
+
+    sortie = anyio.run(_dialogue, hub_root, deposer)
+    pid = next(l.split(":", 1)[1].strip() for l in sortie.splitlines() if l.startswith("id :"))
+    depot = pid.split("-", 1)[1][:10]  # prop-<AAAA-MM-JJ>-xxxx
+
+    async def chercher(session):
+        outils = {t.name: t for t in (await session.list_tools()).tools}
+        assert "include_pending" in outils["kb_search"].input_schema["properties"]
+        return {
+            "list": _texte(await session.call_tool("kb_list", {})),
+            "sans": _texte(await session.call_tool("kb_search", {"base": nom, "query": "QZ-8841"})),
+            "avec": _texte(await session.call_tool(
+                "kb_search", {"base": nom, "query": "QZ-8841", "include_pending": True})),
+        }
+
+    avant = anyio.run(_dialogue, hub_root, chercher)
+    # La base réelle peut avoir une file plus ancienne que ce dépôt, jamais plus
+    # récente : l'id et `submitted-at` viennent du même instant UTC.
+    plus_ancienne = avant["list"].split(f"## {nom} — ", 1)[1].split("la plus ancienne : ", 1)[1][:10]
+    assert plus_ancienne <= depot
+    assert "non intégré" not in avant["sans"] and pid not in avant["sans"]
+    assert f"### {pid} — non intégré, en attente de revue" in avant["avec"]
+    assert f"concerns : {sujet}" in avant["avec"]
+    assert "40 minutes" in avant["avec"]
+
+    plan = tmp_path / "plan.json"
+    plan.write_text(json.dumps({
+        "summary": "délai de reprise après QZ-8841",
+        "reviewed_by": "human:testeur",
+        "resolutions": [{"id": pid, "resolution": "accepted", "integrated_into": ["reprise.md"]}],
+        "edits": [{"path": "reprise.md", "content": "# Reprise\n\nAprès QZ-8841 : 40 minutes.\n"}],
+    }), encoding="utf-8")
+    resolution = subprocess.run(
+        [sys.executable, "-m", "okf_hub.review", "--hub-root", str(hub_root),
+         "resolve", nom, "--plan", str(plan)],
+        capture_output=True, text=True,
+        env={**os.environ, "PYTHONPATH": str(HUB_ROOT / "src")},
+    )
+    assert resolution.returncode == 0, resolution.stderr
+
+    async def relire(session):
+        return {
+            "avec": _texte(await session.call_tool(
+                "kb_search", {"base": nom, "query": "QZ-8841", "include_pending": True})),
+        }
+
+    apres = anyio.run(_dialogue, hub_root, relire)
+    assert "### reprise.md — Reprise" in apres["avec"]
+    assert pid not in apres["avec"] and "aucune ne répond" in apres["avec"]
+
+
 @pytest.mark.skipif(
     not (FEEDBACK_BUNDLE / "okf-bundle.yaml").is_file(),
     reason="bundle okf-hub-feedback non déployé sur ce hub",
