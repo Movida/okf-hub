@@ -1263,6 +1263,12 @@ manifeste du template et dans `INSTANTIATE.md`, appliqué en amont
 aucune clé pour le template : une clé de déploiement à usage unique a servi au
 push, puis a été supprimée des deux côtés.
 
+La rév. 4.5 aussi : le profil de base et `cites`, en commentaire dans
+`schema.yaml` et `okf-bundle.yaml`, et l'étape 6 d'`INSTANTIATE.md`, appliqués
+en amont le 2026-11-02 (`okf-bundle-template` 0aeb292, identique au patch),
+puis le patch retiré d'ici. `docs/patches/README.md` garde la règle pour le
+prochain.
+
 **L'index de recherche dérivé mérite un mot** : la spec dit de ne l'ajouter que
 si ripgrep devient *mesurablement* insuffisant. Mesure du 2026-10-13, sept bases
 installées (3 492 documents) : sur la plus grosse (2 476 documents), découverte
