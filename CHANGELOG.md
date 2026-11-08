@@ -5,6 +5,16 @@ Le projet suit la version de la spécification qu'il implémente : `bundle-spec 
 
 ## [Non publié]
 
+### Corrigé — la suite ne se chargeait plus en Python 3.11
+
+- **`lecture/profil.py`** : sept champs des dataclasses du profil prenaient
+  pour défaut un `MappingProxyType({})` partagé. Python 3.11 le tient pour un
+  défaut mutable, faute de `__hash__`, et refuse la classe dès l'import
+  (`ValueError: mutable default <class 'mappingproxy'>`) ; 3.12 l'accepte. La
+  CI était rouge en 3.11 depuis le 29/10/2026. Les défauts passent par
+  `field(default_factory=…)`, qui rend le même objet vide figé, comme
+  `web/acces.py` le faisait déjà.
+
 ### Ajouté — les propositions en attente, visibles avant la revue (spec rév. 4.7)
 
 - **`kb_search` : `include_pending`** (faux par défaut). Cherche aussi dans

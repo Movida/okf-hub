@@ -72,7 +72,7 @@ class Champ:
     description: str | None = None
     role: str | None = None
     requis: bool = False
-    valeurs: Mapping[str, Valeur] = _VIDE
+    valeurs: Mapping[str, Valeur] = field(default_factory=lambda: _VIDE)
 
 
 @dataclass(frozen=True)
@@ -87,7 +87,7 @@ class TypeDeclare:
 class Facette:
     nom: str
     libelle: str | None = None
-    valeurs: Mapping[str, str | None] = _VIDE
+    valeurs: Mapping[str, str | None] = field(default_factory=lambda: _VIDE)
     """Valeurs déclarées, dans l'ordre du profil, avec leur libellé éventuel."""
 
 
@@ -97,7 +97,7 @@ class Vue:
 
     titre: str
     sorte: str
-    filtre: Mapping = _VIDE
+    filtre: Mapping = field(default_factory=lambda: _VIDE)
     """Critères au format des paramètres de `kb_find`, validés à l'usage."""
     groupe: tuple[str, str] | None = None
     """('facet', nom), ('field', nom) ou ('type', '')."""
@@ -105,11 +105,11 @@ class Vue:
 
 @dataclass(frozen=True)
 class Profil:
-    champs: Mapping[str, Champ] = _VIDE
-    types: Mapping[str, TypeDeclare] = _VIDE
+    champs: Mapping[str, Champ] = field(default_factory=lambda: _VIDE)
+    types: Mapping[str, TypeDeclare] = field(default_factory=lambda: _VIDE)
     separateur: str | None = None
-    facettes: Mapping[str, Facette] = _VIDE
-    sections: Mapping[str, str] = _VIDE
+    facettes: Mapping[str, Facette] = field(default_factory=lambda: _VIDE)
+    sections: Mapping[str, str] = field(default_factory=lambda: _VIDE)
     """Titre de section normalisé → rôle."""
     vues: tuple[Vue, ...] = ()
     avertissements: tuple[str, ...] = ()
