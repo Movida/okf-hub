@@ -5,6 +5,27 @@ Le projet suit la version de la spécification qu'il implémente : `bundle-spec 
 
 ## [Non publié]
 
+### Modifié — la fusion de frontmatter recopie les lignes non ciblées
+
+- **`okf-review`, `edits[].frontmatter`** : ruamel n'émet plus que les champs
+  ciblés ; tout le reste du bloc est recopié de la source, par lignes entières,
+  aux bornes que donne le composeur. Un frontmatter valide que ruamel ne
+  reproduit pas au caractère près — `generated: { by: …, at: … }`, la notation
+  d'OKF (§ 13.1), une valeur alignée `a:   1`, une indentation inhabituelle —
+  était refusé (« normalisation résiduelle ») : il est accepté, et ses lignes
+  non ciblées restent telles quelles. Décision du propriétaire du 2026-11-08 :
+  OKF n'exige qu'un YAML valide, le hub doit accepter toute fiche OKF valide
+  sans la réécrire. Écart consigné dans `ARCHITECTURE.md` § 5.4.
+- **Garde** : un contrôle de plus, par deux découpages indépendants de la
+  source et du résultat, exige que tout ce qui n'est pas le corps d'un champ
+  ciblé soit identique ligne à ligne. Il couvre une ligne vide supprimée dans
+  l'épilogue du bloc, que la comparaison par champ ne voyait pas. Les autres
+  contrôles sont inchangés.
+- **Mesure** : 682 fusions sur les cinq bases installées, résultat identique à
+  l'octet près ; 38 pages normalisées à la main le 2026-10-25, reprises dans
+  leur version d'avant : 76 fusions refusées avant, 76 acceptées après, chaque
+  fichier intact à la ligne ajoutée près.
+
 ### Corrigé — la suite ne se chargeait plus en Python 3.11
 
 - **`lecture/profil.py`** : sept champs des dataclasses du profil prenaient

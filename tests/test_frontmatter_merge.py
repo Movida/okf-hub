@@ -19,7 +19,7 @@ import yaml
 
 from conftest import git
 from test_review import BASE_DOC, depose
-from okf_hub import review
+from okf_hub import frontmatter, review
 from okf_hub.errors import INVALID_INPUT, ToolError
 from okf_hub.frontmatter import merge_frontmatter
 from okf_hub.mdutil import parse_document
@@ -296,8 +296,6 @@ def test_frontmatter_delimite_mais_vide():
         ("fiche:\n  <<: {x: 1}\n", "clé de fusion"),
         ("a: [1,\n", "illisible"),
         ("a: !weird 3\n", "illisible"),
-        ("a:   1\nb: 2\n", "normalisation résiduelle"),
-        ("tags:\n      - a\n      - b\n", "normalisation résiduelle"),
     ],
 )
 def test_refus_explicite(bloc, motif):
@@ -308,6 +306,105 @@ def test_refus_explicite(bloc, motif):
     assert motif in exc.value.message
     # Le message renvoie vers un chemin conforme, pas vers un contournement.
     assert "content" in exc.value.message and "§ 1.7" in exc.value.message
+
+
+# --- formes valides que ruamel ne reproduit pas (2026-11-08) ------------------
+#
+# Jusqu'au 2026-11-08, la fusion réémettait tout le bloc et refusait un
+# frontmatter dont ruamel ne redonnait pas le texte au caractère près. OKF
+# n'exige qu'un YAML valide et écrit lui-même `generated: { by, at }` : le hub
+# recopie désormais les lignes non ciblées et n'émet que les champs ciblés
+# (ARCHITECTURE.md § 5.4).
+
+FLOW_ESPACE = (
+    "---\n"
+    "title: T\n"
+    "generated: { by: claude-code/opus-5.5, at: 2026-11-08T00:00:00Z }\n"
+    "status: stable\n"
+    "---\n\ncorps\n"
+)
+
+
+def test_un_flow_espace_non_cible_est_conserve():
+    obtenu = merge_frontmatter(FLOW_ESPACE, {"last-verified": "2026-11-08"})
+    assert obtenu == (
+        "---\n"
+        "title: T\n"
+        "generated: { by: claude-code/opus-5.5, at: 2026-11-08T00:00:00Z }\n"
+        "status: stable\n"
+        "last-verified: '2026-11-08'\n"
+        "---\n\ncorps\n"
+    )
+
+
+def test_un_flow_espace_cible_est_reecrit_en_flow():
+    obtenu = merge_frontmatter(
+        FLOW_ESPACE, {"generated": {"by": "human:relecteur", "at": "2026-11-09T00:00:00Z"}}
+    )
+    assert obtenu == (
+        "---\n"
+        "title: T\n"
+        "generated: {by: human:relecteur, at: '2026-11-09T00:00:00Z'}\n"
+        "status: stable\n"
+        "---\n\ncorps\n"
+    )
+
+
+@pytest.mark.parametrize(
+    "bloc, updates, attendu",
+    [
+        # Valeur alignée : ruamel réécrit `a: 1`.
+        ("a:   1\nb: 2\n", {"ajout": "valeur"}, "a:   1\nb: 2\najout: valeur\n"),
+        ("a:   1\nb: 2\n", {"b": 3}, "a:   1\nb: 3\n"),
+        # Indentation absente des configurations essayées.
+        ("tags:\n      - a\n      - b\n", {"ajout": "valeur"},
+         "tags:\n      - a\n      - b\najout: valeur\n"),
+        # Ciblée, la liste sort dans l'indentation de l'émetteur : c'est un
+        # contenu neuf, et le champ suivant reste intact.
+        ("tags:\n      - a\n      - b\nx: 1\n", {"tags": ["c"]}, "tags:\n- c\nx: 1\n"),
+    ],
+)
+def test_une_mise_en_forme_non_reproduite_n_est_plus_refusee(bloc, updates, attendu):
+    obtenu = merge_frontmatter(f"---\n{bloc}---\n\ncorps\n", updates)
+    assert obtenu == f"---\n{attendu}---\n\ncorps\n"
+
+
+def test_un_assemblage_fautif_est_refuse(monkeypatch):
+    """La garde ne découle pas de l'assemblage.
+
+    Si `_assembler` rendait l'émission entière — la fusion d'avant le
+    2026-11-08 —, le `{ by: … }` non ciblé perdrait ses espaces : c'est
+    refusé par le contrôle hors cibles, qui découpe lui-même la source et le
+    résultat.
+    """
+    monkeypatch.setattr(frontmatter, "_assembler", lambda source, emis, cibles: emis)
+    with pytest.raises(ToolError) as exc:
+        merge_frontmatter(FLOW_ESPACE, {"last-verified": "2026-11-08"})
+    assert exc.value.code == INVALID_INPUT
+    assert "hors des champs ciblés" in exc.value.message
+
+
+def test_une_ligne_vide_supprimee_dans_l_epilogue_est_refusee(monkeypatch):
+    """L'angle mort de la comparaison par champ, couvert par le contrôle hors cibles.
+
+    Une ligne vide après la valeur du dernier champ n'appartient à aucun
+    champ : `_verifier_representation` ne la compare pas.
+    """
+    texte = "---\na: 1\nb: 2\n\n# fin\n---\n\ncorps\n"
+    assert merge_frontmatter(texte, {"b": 3}) == "---\na: 1\nb: 3\n\n# fin\n---\n\ncorps\n"
+
+    # Seule, la comparaison par champ laisse passer la ligne disparue.
+    frontmatter._verifier_representation("a: 1\nb: 2\n\n# fin\n", "a: 1\nb: 3\n# fin\n", {"b"})
+
+    vrai = frontmatter._assembler
+
+    def sans_ligne_vide(source, emis, cibles):
+        return vrai(source, emis, cibles).replace("b: 3\n\n# fin", "b: 3\n# fin")
+
+    monkeypatch.setattr(frontmatter, "_assembler", sans_ligne_vide)
+    with pytest.raises(ToolError) as exc:
+        merge_frontmatter(texte, {"b": 3})
+    assert "hors des champs ciblés" in exc.value.message
 
 
 FRONTMATTER_ILLISIBLE = (
@@ -433,11 +530,13 @@ def test_le_refus_ne_modifie_rien_du_depot(base, registry, tmp_path):
     un plan de résolution est tout ou rien, y compris quand la garde refuse.
     """
     pid = depose(registry)
+    # Une ancre YAML : un refus que la recopie des lignes non ciblées ne lève
+    # pas (avant le 2026-11-08, le déclencheur était `a:   1`, désormais accepté).
     (base.corpus_dir / "casse.md").write_text(
-        "---\na:   1\n---\n\ncorps\n", encoding="utf-8"
+        "---\nsocle: &s 1\nautre: *s\n---\n\ncorps\n", encoding="utf-8"
     )
     git(base.root, "add", "-A")
-    git(base.root, "commit", "-m", "fiche au frontmatter non normalisable")
+    git(base.root, "commit", "-m", "fiche au frontmatter à ancre YAML")
     avant_head = git(base.root, "rev-parse", "HEAD").strip()
     avant_sso = (base.corpus_dir / "sso.md").read_text(encoding="utf-8")
 
@@ -459,7 +558,7 @@ def test_le_refus_ne_modifie_rien_du_depot(base, registry, tmp_path):
     assert exc.value.code == INVALID_INPUT
 
     assert (base.corpus_dir / "sso.md").read_text(encoding="utf-8") == avant_sso
-    assert "a:   1" in (base.corpus_dir / "casse.md").read_text(encoding="utf-8")
+    assert "socle: &s 1" in (base.corpus_dir / "casse.md").read_text(encoding="utf-8")
     assert git(base.root, "rev-parse", "HEAD").strip() == avant_head
     assert (base.root / "proposals" / "pending" / f"{pid}.md").is_file()
     assert not (base.root / "proposals" / "accepted" / f"{pid}.md").exists()

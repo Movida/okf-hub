@@ -303,14 +303,16 @@ Champs :
 | `edits[].content` | Contenu complet du fichier, ou de la section si `section` est fourni. |
 | `edits[].section` | Titre du heading à remplacer, au lieu du fichier entier. **Préfère cette forme** : elle évite de réécrire un gros document en entier. Remplace la **première** section de ce titre, jusqu'au prochain heading de niveau égal ou supérieur. Il n'y a pas d'insertion : pour ajouter une section au milieu d'une fiche, remplace la section qui la précède par elle-même suivie de la nouvelle. `"(préambule)"` vise le chapeau, entre le frontmatter et le premier heading, qu'il remplace ou crée. |
 | `edits[].append` | Texte à ajouter en fin de document. Exclusif de `content`. |
-| `edits[].frontmatter` | Champs à fusionner dans le frontmatter du document. Les champs que tu ne cites pas gardent leur écriture exacte. |
+| `edits[].frontmatter` | Champs à fusionner dans le frontmatter du document. Les champs que tu ne cites pas gardent leur écriture exacte, quelle qu'elle soit (`{ by: … }` espacé, valeur alignée, indentation inhabituelle) : leurs lignes sont recopiées, seuls les champs cités sont réécrits. |
 
 **Si une fusion de frontmatter est refusée** (`INVALID_INPUT: fusion de
 frontmatter refusée …`), le plan entier n'a rien modifié : ni fichier, ni
 proposition déplacée, ni commit. Le message dit ce qui bloque — frontmatter du
-document illisible, clés dupliquées, ancre YAML, mise en forme que l'outil ne
-sait pas reproduire au caractère près. Le chemin conforme est de **corriger le
-frontmatter du document à la source** (ou d'escalader à l'humain), puis de
+document illisible, clés dupliquées, ancre ou alias YAML, racine en style flow,
+deux clés sur une même ligne. Une mise en forme valide n'est plus un motif de
+refus : ne normalise pas un frontmatter qui se lit. Le chemin conforme est de
+**corriger le frontmatter du document à la source** (ou d'escalader à
+l'humain), puis de
 rejouer le plan. Ne recompose pas le frontmatter à la main dans
 `edits[].content` pour contourner le refus : c'est exactement le templating de
 chaînes que le principe § 1.7 interdit, et tu perdrais ce que la garde protège.

@@ -10,17 +10,23 @@ repassait en style bloc, un `timestamp: 2026-08-27T12:00:00Z` ressortait en
 cassent (les corpus réels portent des parseurs maison qui ne lisent `tags` que
 sur une seule ligne), et ils cassent sans erreur.
 
-La fusion se fait donc dans l'objet round-trip de `ruamel.yaml` — ce qui
-*élargit* ce qui est réalisable sans reformatage — puis le résultat est
-**vérifié avant d'être rendu** : le round-trip ne garantit pas à lui seul
-l'absence de normalisation résiduelle (il renormalise l'indentation, par
-exemple). La garantie tenue ici est celle de la vérification, pas celle du
-nom « round-trip » :
+La fusion se fait donc dans l'objet round-trip de `ruamel.yaml`, mais ruamel
+n'écrit que les champs **ciblés** : tout le reste du bloc — préambule, champs
+non ciblés, commentaires et lignes vides qui les annoncent, épilogue — est
+recopié du texte source, par lignes entières, aux bornes que donne le
+composeur de PyYAML. Le round-trip ne reproduit pas tout ce qu'un YAML valide
+admet : il renormalise l'indentation, retire les espaces intérieurs d'un
+`{ by: x }` — la notation d'OKF elle-même —, réaligne `a:   1`. Réémettre le
+bloc entier faisait donc refuser des frontmatters valides que le hub n'avait
+aucune raison de réécrire (jusqu'au 2026-11-08, `docs/ARCHITECTURE.md` § 5.4).
+Le résultat est ensuite **vérifié avant d'être rendu** ; la garantie tenue ici
+est celle de la vérification, pas celle de l'assemblage :
 
-- ce qui n'est pas ciblé est identique au caractère près, sinon la fusion est
-  **refusée** — aucun fichier touché, aucune proposition déplacée, aucun
-  commit (l'atomicité est assurée par `review._compose_edit`, qui calcule tous
-  les contenus avant d'écrire le premier) ;
+- hors des corps des champs ciblés, le texte est identique ligne à ligne,
+  contrôlé par deux découpages indépendants de la source et du résultat ;
+  sinon la fusion est **refusée** — aucun fichier touché, aucune proposition
+  déplacée, aucun commit (l'atomicité est assurée par `review._compose_edit`,
+  qui calcule tous les contenus avant d'écrire le premier) ;
 - ce qui est ciblé est relu et comparé aux valeurs demandées, avec une
   égalité sensible au type ;
 - les cas que la méthode de vérification ne couvre pas sont refusés
@@ -76,8 +82,9 @@ le relit plus.
 """
 
 _INDENTATIONS = (
-    # (mapping, sequence, offset) — on retient la première configuration qui
-    # reproduit le texte d'origine au caractère près (vérifié, pas supposé).
+    # (mapping, sequence, offset) — on préfère la première configuration qui
+    # reproduit le texte d'origine au caractère près (vérifié, pas supposé) :
+    # les champs ciblés sont alors émis dans l'indentation du document.
     (2, 2, 0),
     (2, 4, 2),
     (4, 4, 2),
@@ -125,13 +132,16 @@ def merge_frontmatter(text: str, updates: dict) -> str:
         raise _refus("frontmatter trop volumineux")
 
     depart = _charger_pyyaml(origine)
-    emetteur, noeud, reference = _round_trip_fidele(origine)
+    reference = _normaliser(origine)
+    emetteur, noeud = _charger_round_trip(origine)
 
+    cibles = set(updates)
     for cle, valeur in updates.items():
         noeud[cle] = _preparer(valeur, noeud.get(cle) if cle in noeud else None)
-    obtenu = _emettre(emetteur, noeud)
+    obtenu = _assembler(reference, _emettre(emetteur, noeud), cibles)
 
-    _verifier_representation(reference, obtenu, set(updates))
+    _verifier_hors_cibles(reference, obtenu, cibles)
+    _verifier_representation(reference, obtenu, cibles)
     return _verifier_document(
         f"{FM_DELIM}\n{obtenu}{FM_DELIM}\n{doc.body}", obtenu, doc.body, {**depart, **updates}
     )
@@ -219,18 +229,21 @@ def _emettre(emetteur: YAML, noeud) -> str:
     return tampon.getvalue()
 
 
-def _round_trip_fidele(origine: str):
-    """(émetteur, nœud, texte de référence) pour un round-trip vérifié fidèle.
+def _charger_round_trip(origine: str):
+    """(émetteur, nœud) du round-trip de `ruamel` sur le frontmatter d'origine.
 
     `ruamel` ne mémorise pas l'indentation du document : elle est cherchée
-    parmi quelques configurations, et on ne retient que celle dont la
-    réémission **sans aucune modification** redonne le texte d'origine au
-    caractère près. Si aucune n'y parvient, une normalisation résiduelle
-    subsiste et la fusion est refusée plutôt que de laisser passer un
-    reformatage silencieux.
+    parmi quelques configurations. On préfère la première dont la réémission
+    **sans aucune modification** redonne le texte d'origine au caractère près,
+    pour que les champs ciblés sortent dans l'indentation du document ; à
+    défaut, la première qui le charge. Qu'aucune ne le reproduise n'est plus
+    un refus depuis le 2026-11-08 : seuls les corps des champs ciblés sont
+    repris de l'émission, le reste est recopié de la source (`_assembler`),
+    et `_verifier_hors_cibles` le contrôle.
     """
     attendu = _normaliser(origine)
     premiere: ToolError | None = None
+    repli = None
     for indents in _INDENTATIONS:
         emetteur = _emetteur(*indents)
         try:
@@ -245,12 +258,15 @@ def _round_trip_fidele(origine: str):
             continue
         if not isinstance(noeud, CommentedMap):
             raise _refus("le frontmatter n'est pas un mapping en style bloc")
-        obtenu = _emettre(emetteur, noeud)
-        if _normaliser(obtenu) == attendu:
-            return emetteur, noeud, obtenu
+        if _normaliser(_emettre(emetteur, noeud)) == attendu:
+            return emetteur, noeud
+        if repli is None:
+            repli = (emetteur, noeud)
+    if repli is not None:
+        return repli
     if premiere is not None:
         raise premiere
-    raise _refus("normalisation résiduelle du frontmatter d'origine")
+    raise _refus("frontmatter illisible")
 
 
 def _normaliser(bloc: str) -> str:
@@ -380,8 +396,23 @@ def _verifier_representation(reference: str, obtenu: str, cibles: set[str]) -> N
         raise _refus("les commentaires du frontmatter ont changé")
 
 
-def _decouper(bloc: str, reemis: bool = False) -> tuple[str, list[tuple[str, str, str]]]:
-    """(préambule, [(clé, lignes qui la précèdent, lignes du champ)]).
+def _decouper(
+    bloc: str, reemis: bool = False
+) -> tuple[tuple[str, ...], list[tuple[str, tuple[str, ...], tuple[str, ...]]]]:
+    """(préambule, [(clé, lignes qui la précèdent, lignes du champ)])."""
+    lignes, fin_preambule, bornes = _bornes(bloc, reemis)
+    return tuple(lignes[:fin_preambule]), [
+        (cle, tuple(lignes[debut:ligne]), tuple(lignes[ligne:fin]))
+        for cle, debut, ligne, fin in bornes
+    ]
+
+
+def _bornes(
+    bloc: str, reemis: bool = False
+) -> tuple[list[str], int, list[tuple[str, int, int, int]]]:
+    """(lignes, fin du préambule, [(clé, début de l'annonce, ligne de la clé, fin)]).
+
+    Les indices sont des numéros de ligne du bloc, `fin` exclue.
 
     Le découpage s'appuie sur les marques du composeur, pas sur une regex : un
     champ commence à la première ligne de la suite de commentaires et de lignes
@@ -432,15 +463,86 @@ def _decouper(bloc: str, reemis: bool = False) -> tuple[str, list[tuple[str, str
             debut -= 1
         debuts.append(debut)
 
-    preambule = "\n".join(lignes[: debuts[0]])
-    champs: list[tuple[str, str, str]] = []
+    bornes: list[tuple[str, int, int, int]] = []
     for i, (cle, ligne, fin_valeur) in enumerate(reperes):
         plafond = debuts[i + 1] if i + 1 < len(reperes) else len(lignes)
         fin = max(ligne + 1, min(fin_valeur + 1, plafond))
-        champs.append(
-            (cle, "\n".join(lignes[debuts[i] : ligne]), "\n".join(lignes[ligne:fin]))
-        )
-    return preambule, champs
+        bornes.append((cle, debuts[i], ligne, fin))
+    return lignes, debuts[0], bornes
+
+
+# --- assemblage : la source, sauf les corps des champs ciblés -----------------
+
+
+def _assembler(source: str, emis: str, cibles: set[str]) -> str:
+    """Le texte source, où seuls les corps des champs ciblés viennent de `emis`.
+
+    Le préambule, les lignes qui annoncent chaque champ (commentaires, lignes
+    vides), les champs non ciblés et l'épilogue sont ceux de la source ; un
+    champ ajouté vient en fin de bloc, dans l'ordre où ruamel l'a émis. Les
+    bornes sont celles du composeur, pour la source comme pour l'émission :
+    aucune ligne n'est coupée, aucune valeur n'est insérée dans une chaîne.
+    """
+    l_src, _, b_src = _bornes(source)
+    l_em, _, b_em = _bornes(emis, reemis=True)
+    corps_emis = {cle: l_em[ligne:fin] for cle, _, ligne, fin in b_em}
+    presents = {cle for cle, *_ in b_src}
+
+    sortie: list[str] = []
+    curseur = 0
+    for cle, _, ligne, fin in b_src:
+        sortie += l_src[curseur:ligne]
+        if cle in cibles:
+            if cle not in corps_emis:
+                raise _refus(f"le champ ciblé '{cle}' manque à l'émission")
+            sortie += corps_emis[cle]
+        else:
+            sortie += l_src[ligne:fin]
+        curseur = fin
+    sortie += l_src[curseur:]
+    for cle, _, ligne, fin in b_em:
+        if cle not in presents:
+            sortie += l_em[ligne:fin]
+    return "\n".join(sortie) + "\n"
+
+
+def _verifier_hors_cibles(source: str, obtenu: str, cibles: set[str]) -> None:
+    """Hors des corps des champs ciblés, le résultat redit la source ligne à ligne.
+
+    Calculé par deux découpages indépendants, de la source et du résultat, et
+    non repris de `_assembler` : c'est une vérification, pas une conséquence.
+    Elle voit aussi ce que la comparaison par champ de
+    `_verifier_representation` laisse passer — une ligne vide supprimée dans
+    l'épilogue, après la valeur du dernier champ.
+    """
+    ajoutes = cibles - {cle for cle, *_ in _bornes(source)[2]}
+    if _masquer(source, cibles) != _masquer(obtenu, cibles, ajoutes, reemis=True):
+        raise _refus("le texte hors des champs ciblés a changé")
+
+
+def _masquer(
+    bloc: str,
+    cibles: set[str],
+    ajoutes: frozenset[str] | set[str] = frozenset(),
+    reemis: bool = False,
+) -> list:
+    """Les lignes du bloc, le corps de chaque champ ciblé remplacé par un repère.
+
+    Un champ `ajoutes` — absent de la source — ne laisse ni repère ni texte :
+    seules restent les lignes qui l'annoncent, qui sont celles de la source.
+    """
+    lignes, _, bornes = _bornes(bloc, reemis)
+    sortie: list = []
+    curseur = 0
+    for cle, _, ligne, fin in bornes:
+        sortie += lignes[curseur:ligne]
+        if cle in cibles and cle not in ajoutes:
+            sortie.append(("champ ciblé", cle))
+        elif cle not in cibles:
+            sortie += lignes[ligne:fin]
+        curseur = fin
+    sortie += lignes[curseur:]
+    return sortie
 
 
 def _commentaires(bloc: str) -> list[str]:

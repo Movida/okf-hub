@@ -43,10 +43,15 @@ dépendent, et les invariants d'audit du § 6.2 aussi. **Une seule exception, et
 elle est un écart remonté au propriétaire** : `frontmatter.py` fusionne dans un
 frontmatter existant via le round-trip de `ruamel.yaml`, parce que réémettre
 tout le bloc avec `safe_dump` reformatait les champs non ciblés et égarait les
-parseurs mono-ligne des corpus (`ARCHITECTURE.md` § 5.4). Rien d'autre
-n'utilise `ruamel`, et la fusion ne tient que par sa garde : ce qui n'est pas
-vérifié fidèle est **refusé**. Affaiblir la garde pour faire passer une revue,
-c'est rouvrir le bug — le refus dit quoi corriger à la source.
+parseurs mono-ligne des corpus (`ARCHITECTURE.md` § 5.4). Depuis le 2026-11-08
+(décision du propriétaire), ruamel n'émet que les champs **ciblés** : le reste
+du bloc est recopié de la source par lignes entières, aux bornes du composeur,
+pour qu'une forme valide qu'il ne reproduit pas (`{ by: x }`, la notation
+d'OKF) ne soit ni réécrite ni refusée. Rien d'autre n'utilise `ruamel`, et la
+fusion ne tient que par sa garde : ce qui n'est pas vérifié fidèle — le texte
+hors des champs ciblés, ligne à ligne, et la relecture de chaque valeur — est
+**refusé**. Affaiblir la garde pour faire passer une revue, c'est rouvrir le
+bug — le refus dit quoi corriger à la source.
 
 **Ce dépôt est public ; les bases de l'opérateur ne le sont pas.** Aucun nom
 de base privée, d'objet, de table, d'environnement ou d'organisation n'entre
@@ -138,7 +143,7 @@ de l'instance.
 ## Vérifier avant de conclure
 
 ```sh
-uv run pytest -q                 # 662 tests, dont la boucle de stress
+uv run pytest -q                 # 668 tests, dont la boucle de stress
 uv run pytest -q -m "not slow"   # sans le test deux processus × 25 itérations
 ```
 

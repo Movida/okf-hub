@@ -471,7 +471,10 @@ nommément `yaml.safe_dump` / `yaml.safe_load`. L'écart porte donc sur la règl
 de travail du dépôt — élargie à `ruamel.yaml` pour ce seul usage — et sur
 l'ajout d'une quatrième dépendance runtime, **pas sur le principe § 1.7**, qui
 reste respecté à la lettre : aucun YAML n'est produit par templating de
-chaînes. Remonté au propriétaire du projet et accepté.
+chaînes. Remonté au propriétaire du projet et accepté. Un second volet, du
+2026-11-08, touche la lettre du § 1.7 — le texte final devient un assemblage de
+lignes — et a suivi la même procédure : voir « Recopie des lignes non ciblées »
+plus bas.
 
 **Le bug qu'il corrige.** `review._merge_frontmatter` relisait **tout** le
 frontmatter avec `safe_load`, fusionnait, et réémettait l'ensemble avec
@@ -521,17 +524,20 @@ réparation : 3 166 fusions fidèles sur 3 166, aucun refus.** Le refus n'est
 donc pas un plafond de couverture : il a servi de détecteur.
 
 **Ce que fait le code.** `frontmatter.merge_frontmatter` fusionne dans l'objet
-round-trip de `ruamel.yaml` (`YAML(typ="rt")`, `preserve_quotes=True`), puis
-**vérifie avant de rendre**. La garantie vient de la vérification, pas du nom
-« round-trip » — qui renormalise encore l'indentation :
+round-trip de `ruamel.yaml` (`YAML(typ="rt")`, `preserve_quotes=True`), ne
+reprend de son émission que les corps des champs ciblés, recopie tout le reste
+de la source (`_assembler`, depuis le 2026-11-08), puis **vérifie avant de
+rendre**. La garantie vient de la vérification, pas du nom « round-trip » — qui
+renormalise encore l'indentation :
 
 | Contrôle | Refus si |
 |---|---|
 | contrat d'entrée (`safe_load`, maintenu **en plus** du round-trip, qui garde les tags inconnus comme données) | racine non-mapping, YAML illisible, tag inconnu |
 | événements YAML | ancre, alias, clé de fusion `<<`, taille > 64 kio, profondeur > 20, > 5 000 nœuds |
 | chargement round-trip | clés dupliquées (refus explicite, pas « la dernière gagne ») |
-| **fidélité du round-trip** : réémission du document non modifié, comparée au texte d'origine au caractère près, l'indentation étant cherchée parmi quelques configurations | aucune configuration ne reproduit l'original (normalisation résiduelle) |
+| **choix de l'indentation** : la première configuration dont la réémission du document non modifié redonne l'original au caractère près, à défaut la première qui le charge. Jusqu'au 2026-11-08, ce défaut était un refus (« normalisation résiduelle ») | aucune configuration ne charge le bloc |
 | découpage par champ (marques du composeur, jamais une regex) | racine en style flow, deux clés sur une ligne, clé hors colonne 0 |
+| **hors cibles** : préambule, lignes d'annonce, champs non ciblés et épilogue, comparés ligne à ligne par deux découpages indépendants de la source et du résultat — pas repris de l'assemblage | une ligne hors des corps des champs ciblés diffère, manque ou s'ajoute |
 | représentation | un champ **non ciblé** dont le texte change, un commentaire déplacé, l'ordre des champs modifié, les lignes qui précèdent un champ modifiées |
 | relecture du document entier par `mdutil.parse_document` | frontmatter plus délimité, corps modifié d'un seul caractère |
 | sémantique, **sensible au type** (`True` ≠ `1`) | une valeur relue qui diffère de la valeur demandée |
@@ -566,11 +572,50 @@ pour octet (`test_preambule_remplace_le_chapeau_sans_toucher_le_frontmatter`).
 `kb_read` que vise § B3 casse sur un extrait de préambule, ce qui relève du
 propriétaire de la spec, pas d'okf-review.
 
+**Recopie des lignes non ciblées (2026-11-08).** Jusque-là, la fusion
+réémettait le bloc entier et refusait tout frontmatter que ruamel ne
+redonnait pas au caractère près : `{ by: …, at: … }` réémis sans ses espaces
+intérieurs, une valeur alignée (`a:   1`), une indentation absente des
+configurations essayées. Le refus protégeait bien les champs non ciblés, mais
+il bloquait des fiches valides : 38 pages de deux bases installées,
+normalisées à la main en `{by: …}` le 2026-10-25, faute de mieux. Le
+propriétaire a écarté une consigne de normalisation dans les bases : OKF
+n'exige qu'un YAML valide (conformance 0.2) et écrit lui-même
+`generated: { by, at }` (§ 13.1, cf. [`J0-verification-okf.md`](J0-verification-okf.md)),
+donc le hub doit accepter toute fiche OKF valide **sans réécrire ses lignes
+non ciblées**.
+
+- *Ce qui change.* `_assembler` part du texte source et n'y remplace que les
+  corps des champs ciblés par ceux de l'émission ; un champ ajouté vient en fin
+  de bloc. Les bornes de chaque champ sont celles du composeur de PyYAML, pour
+  la source comme pour l'émission : on ne coupe jamais une ligne.
+- *L'écart.* Le texte final est un assemblage de lignes entières : celles de
+  la source, recopiées, et celles que ruamel émet pour les champs ciblés.
+  Aucune valeur n'est insérée dans une chaîne ; chaque valeur écrite passe par
+  ruamel, et le document entier est relu par `safe_load` et comparé, champ par
+  champ, aux valeurs attendues.
+- *La garde.* `_verifier_hors_cibles` refait deux découpages indépendants, de
+  la source et du résultat, et exige que tout ce qui n'est pas le corps d'un
+  champ ciblé soit identique ligne à ligne. Il couvre aussi un angle mort de
+  la comparaison par champ, qui ne voyait pas une ligne vide supprimée dans
+  l'épilogue, après la valeur du dernier champ
+  (`test_une_ligne_vide_supprimee_dans_l_epilogue_est_refusee`). Un
+  assemblage fautif est refusé (`test_un_assemblage_fautif_est_refuse`).
+- *Mesure.* Sur les cinq bases installées, 682 fusions (un champ ajouté, un
+  champ existant ciblé, sur chaque fiche) : **résultat identique à l'octet
+  près** avant et après. Sur les 38 pages dans leur version d'avant le
+  2026-10-25 : 76 fusions refusées avant, **76 acceptées après**, chaque
+  fichier identique à l'original à la ligne ajoutée près.
+- *Ce que l'écart laisse de côté.* Un champ **ciblé**, dans un document dont
+  aucune configuration ne reproduit l'indentation, sort dans l'indentation de
+  l'émetteur (`tags:\n- c` sous un `tags:\n      - a` d'origine) : c'est du
+  contenu neuf, en YAML valide.
+
 **Portée de la garantie.** « Aucun champ non ciblé ne change » est vérifié, pas
 supposé — mais la méthode ne couvre pas tout : elle refuse là où elle ne peut
-pas conclure. Un frontmatter dont l'indentation ne figure pas dans les
-configurations essayées, ou qui porte un espacement inhabituel (`a:   1`), est
-refusé plutôt que reformaté. Pour un champ **ciblé**, seul le style du nœud
+pas conclure — ancre, alias, racine en flow, deux clés sur une ligne. Une mise
+en forme valide que ruamel ne reproduit pas n'en fait plus partie depuis le
+2026-11-08 : ses lignes non ciblées sont recopiées. Pour un champ **ciblé**, seul le style du nœud
 racine de l'ancienne valeur est repris — une liste flow reste flow, ce qui
 importe autant que le reste sur ces corpus : une revue qui met `tags` à jour
 casserait leurs lecteurs de la même manière que l'incident qu'elle corrige.
@@ -586,7 +631,11 @@ et remplacer dans `frontmatter.py` le round-trip par `safe_load`/`safe_dump`
 en conservant la garde : la vérification par champ ne dépend pas de `ruamel`,
 seul le nombre de fusions qui la passent en dépend — plus de résolutions
 seraient refusées, aucune ne serait dégradée. Tests concernés :
-`tests/test_frontmatter_merge.py` en entier.
+`tests/test_frontmatter_merge.py` en entier. Pour annuler seulement la recopie
+du 2026-11-08 : faire rendre à `_charger_round_trip` un refus quand aucune
+configuration ne reproduit l'original, et rendre l'émission entière à la
+place de `_assembler`. `_verifier_hors_cibles` peut rester : sur une émission
+fidèle, il ne refuse que ce qui était déjà une perte.
 
 ## 5 bis. Post-mortem — cooldown de re-scan : bug de l'amendement rév. 4.1, corrigé par la rév. 4.2
 
@@ -1052,6 +1101,7 @@ pour vérifier la couverture sans relire la suite.
 | commits § 6.2, lot multi-trailers | `test_lot_mele_integration_et_rejet_en_un_seul_commit`, `test_lot_uniquement_de_rejets`, `test_integration_simple`, `test_rejet_avec_motif` |
 | § 1.7 — fusion de frontmatter sans dégradation de représentation (§ 5.4) | `tests/test_frontmatter_merge.py` : `test_les_champs_non_cibles_restent_identiques_au_caractere_pres`, `test_le_parseur_mono_ligne_du_corpus_lit_encore_les_tags`, `test_representations_preexistantes_inchangees`, `test_une_liste_flow_ciblee_reste_en_flow` |
 | § 1.7 — refus explicite plutôt que fidélité non garantie | `test_refus_explicite`, `test_refus_sur_frontmatter_trop_volumineux`, `test_refus_sur_frontmatter_trop_imbrique` |
+| § 1.7 — recopie des lignes non ciblées, forme valide que ruamel ne reproduit pas (§ 5.4, 2026-11-08) | `test_un_flow_espace_non_cible_est_conserve`, `test_un_flow_espace_cible_est_reecrit_en_flow`, `test_une_mise_en_forme_non_reproduite_n_est_plus_refusee`, `test_un_assemblage_fautif_est_refuse`, `test_une_ligne_vide_supprimee_dans_l_epilogue_est_refusee` |
 | § 1.7 — injection neutralisée, scalaires ambigus 1.1/1.2 | `test_injection_dans_une_valeur_neutralisee`, `test_scalaire_ambigu_relu_comme_la_chaine_demandee`, `test_valeurs_non_chaines_relues_avec_leur_type`, `test_un_point_d_interrogation_dans_une_liste_flow_est_relu`, `test_une_emission_illisible_n_accuse_pas_le_document_d_origine` |
 | § 6.2 — **atomicité** d'un refus de fusion dans un plan | `test_le_refus_ne_modifie_rien_du_depot`, `test_deux_editions_du_meme_fichier_s_enchainent` |
 
