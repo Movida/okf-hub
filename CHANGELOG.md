@@ -5,6 +5,30 @@ Le projet suit la version de la spécification qu'il implémente : `bundle-spec 
 
 ## [Non publié]
 
+### Spécification — rév. 4.8 : bases privées et partagées, réplique, mode agent
+
+- **Niveau d'une base** : privée par défaut, partagée si l'opérateur l'inscrit
+  dans `shared-bases` (`hub-config.local.yaml`), jamais dans la base. Une
+  instance `--scope shared|private` ne connaît que son niveau (§ 4.6).
+- **Publication** : `okf-hub publish <base>` pousse une base partagée vers sa
+  réplique, après la garde de confidentialité et un détecteur de secrets, en
+  avance rapide seulement (§ 4.6.c).
+- **Réplique** : `okf-hub replica` sert les bases partagées en MCP sur HTTP, en
+  lecture seule, avec visibilité par base d'après l'identité transmise par un
+  proxy de confiance ; copies remplacées atomiquement à chaque réception
+  (§ 4.6.d, § 5 bis.4).
+- **Revue en mode agent** : deux clés (manifeste `review: agent` et
+  `agent-review`), règles fixes vérifiées par `okf-review resolve --agent`,
+  ajouts seulement dans une base partagée, escalade du reste ; trailer
+  `Reviewed-By: agent:<id>` (§ 7.1 étape 5 bis, § 7.2).
+- **Données d'une fiche** : blocs de données déclarés au profil (`data`), et
+  projection `select` de `kb_find` dans la sortie structurée ; noyau commun
+  proposé par le template (§ 3.5, § 5.8, § 9).
+- **Prévu** : recherche par le sens (`kb_search`, mode `semantic`), après une
+  mesure comparative (§ 10.3).
+
+Texte seulement : le code suit, une PR par changement.
+
 ### Modifié — la fusion de frontmatter recopie les lignes non ciblées
 
 - **`okf-review`, `edits[].frontmatter`** : ruamel n'émet plus que les champs
