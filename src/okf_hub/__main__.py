@@ -85,6 +85,18 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     web_parser.add_argument("--host", default=None, help="Adresse de bouclage (défaut : 127.0.0.1).")
     web_parser.add_argument("--port", type=int, default=None, help="Port (défaut : 8077).")
+    publish_parser = sous_commandes.add_parser(
+        "publish",
+        help="Publie une base partagée vers sa réplique (§ 4.6.c) : vérifie qu'elle "
+        "figure dans `shared-bases`, passe la garde de confidentialité et le "
+        "détecteur de secrets sur ce qui part, puis pousse vers `publish-remote` "
+        "en avance rapide seulement. Un refus n'envoie rien.",
+    )
+    publish_parser.add_argument("base", help="`name` de la base à publier.")
+    publish_parser.add_argument(
+        "--dry-run", action="store_true",
+        help="Passe les gardes sans rien envoyer.",
+    )
     return parser.parse_args(argv)
 
 
@@ -155,6 +167,11 @@ def main(argv: list[str] | None = None) -> int:
 
     if getattr(args, "command", None) == "web":
         return _web(config, args)
+
+    if getattr(args, "command", None) == "publish":
+        from .publication import main as publish_main
+
+        return publish_main(config, args.base, dry_run=args.dry_run)
 
     hublog.info(
         f"démarrage — hub_root={config.hub_root} bases_dir={config.bases_dir} "

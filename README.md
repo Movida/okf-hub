@@ -620,6 +620,36 @@ Pratique recommandée : pousser après chaque session de revue.
 git -C bases/<nom> push
 ```
 
+Une exception, dans un seul sens : la publication d'une base partagée vers sa
+réplique, sous gardes (ci-dessous).
+
+## Publier une base partagée
+
+Une base nommée dans `shared-bases` (voir « Configuration locale ») peut être
+poussée vers une **réplique** — une copie en lecture, sur une autre machine,
+qui la sert quand celle-ci est éteinte (spec § 4.6). Une fois par base, le
+remote :
+
+```sh
+git -C bases/<nom> remote add replica <url du dépôt de la réplique>
+```
+
+Puis, après chaque revue :
+
+```sh
+okf-hub publish <nom>             # ou --dry-run pour seulement passer les gardes
+```
+
+Rien ne part si la base n'est pas partagée, si un commit à envoyer porte un
+terme privé (nom d'une base privée, `private-terms` ; les noms des bases
+partagées sont permis), ou si le détecteur voit un secret : clé privée, jeton
+aux formats connus, valeur affectée à un nom de secret (`password: …`), plus
+les expressions de `secret-patterns`. Une référence (`op://…`, `${VAR}`) n'est
+pas un secret. Le refus donne le commit, le fichier, la ligne et la règle, sans
+recopier la valeur. La poussée se fait en avance rapide seulement : si la
+réplique a divergé, rien n'est forcé. Le remote se change par
+`publish-remote`.
+
 ## Bases par défaut
 
 Deux bases documentent le hub lui-même. Ce sont des **bundles ordinaires** —
@@ -777,6 +807,11 @@ public-bases: []
 
 # Bases partagées (spec § 4.6). Toute autre base est privée.
 shared-bases: [ma-base-partagee]
+
+# Publication (voir « Publier une base partagée ») : remote de la réplique, et
+# expressions de secrets propres à l'opérateur.
+publish-remote: replica
+secret-patterns: ['MONORG-[0-9A-F]{32}']
 ```
 
 Le niveau d'une base se décide ici, jamais dans la base : le gestionnaire écrit

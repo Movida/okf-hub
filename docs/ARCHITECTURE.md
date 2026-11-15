@@ -1065,6 +1065,19 @@ périmètre d'une instance, dont dépendent la publication et la réplique.
 | Garde de confidentialité | `termes_prives` lit `Registry.installed()`, périmètre ignoré | Sans cela, une instance `--scope shared` aurait laissé déposer le nom d'une base privée dans une base publique. `installed` n'est lu que par la garde : aucun outil ne s'en sert. |
 | Rapport de découverte | Les bases hors périmètre n'y figurent pas ; le journal en donne le nombre | Le rapport est montré par `kb_hub_rescan` et la page d'état : y nommer une base hors périmètre la révélerait. |
 
+**Publication (§ 4.6.c).** Module `publication.py`, commande `okf-hub publish`.
+
+| Point | Décision | Motif |
+|---|---|---|
+| Ce qui part | `rev-list HEAD --not --remotes=<publish-remote>`, après un `fetch` du remote | Exactement ce que la poussée enverra ; un remote injoignable est un refus, puisque ce qui part ne peut pas être établi. |
+| Ce qui est examiné | Lignes ajoutées (numérotées dans le fichier d'arrivée), chemins, auteur, committer, message de chaque commit ; premier commit comparé à l'arbre vide (`--root`) | Le périmètre des hooks `pre-push` (rév. 4.4), avec le numéro de ligne en plus pour que le refus se corrige sans chercher. |
+| Termes privés | `termes_prives(registry, sauf=shared_bases)`, sur un registre sans périmètre | Une base partagée cite ses voisines partagées (§ 3.6) ; une privée ne doit pas se nommer dans ce qui sort. |
+| Détecteur de secrets | Formats connus (clé privée, GitHub, AWS, Anthropic, OpenAI, Google, Slack, 1Password, JWT) ; affectation à un nom de secret seulement si la valeur a l'allure d'un secret (≥ 8 caractères, lettres et chiffres mêlés, pas `op://`, `$`, `<`, `{{`) ; `secret-patterns` compilées au chargement | Aucune dépendance nouvelle. Le critère d'allure laisse passer la prose (« le token : identifiant de session ») et les références, qui sont la forme voulue d'un secret dans une base. Une expression fausse dans `secret-patterns` est une configuration invalide : une garde muette serait pire qu'un refus de démarrer. |
+| Valeur | Jamais recopiée dans le refus ni le journal | Le refus s'affiche et se journalise : il ne doit pas devenir la fuite. |
+| Poussée | `git push <remote> HEAD:refs/heads/<branche>`, sans `--force` ni `--no-verify` ; divergence détectée avant, après le `fetch` | Avance rapide seulement (§ 4.6.c) ; un hook de la base, s'il existe, s'applique aussi. |
+| Verrou | Aucun | La base n'est pas écrite : `fetch` ne touche qu'aux références du remote. Un `kb_propose` concurrent ajoute un commit que la poussée n'emporte pas ; il part à la suivante. |
+| Amont de la branche | Non posé (`push` sans `-u`) | La synchronisation au démarrage (`remote_sync`) n'avance que sur l'amont : la réplique ne doit jamais devenir une source. |
+
 ---
 
 ## 7. Traçabilité — exigence de test → test
@@ -1249,6 +1262,15 @@ pour vérifier la couverture sans relire la suite.
 | § 4.6.b — sans périmètre, tout ; `shared` et `private` ; base hors périmètre = base absente | `test_sans_perimetre_toutes_les_bases`, `test_perimetre_shared`, `test_perimetre_private`, `test_le_rapport_de_decouverte_ignore_le_hors_perimetre` |
 | § 4.1 — hors périmètre, le nom d'une base privée reste un terme privé | `test_hors_perimetre_le_nom_reste_un_terme_prive` |
 | `--scope` : valeurs fermées | `test_perimetre_inconnu_refuse`, `test_option_scope_en_ligne_de_commande` |
+
+| Exigence (publication, § 4.6.c) | Test (`tests/test_publication.py`) |
+|---|---|
+| Publie une base partagée ; seuls les commits nouveaux partent ; la base n'est pas modifiée | `test_publie_une_base_partagee`, `test_seuls_les_commits_nouveaux_partent`, `test_la_base_n_est_pas_modifiee` |
+| Une base privée ne se publie pas | `test_une_base_privee_ne_se_publie_pas` |
+| Garde de confidentialité : contenus, chemins ; `private-terms` ; les noms des bases partagées permis | `test_un_terme_prive_bloque_l_envoi`, `test_un_terme_de_private_terms_bloque_l_envoi`, `test_un_message_ou_un_chemin_compte_aussi`, `test_le_nom_d_une_base_partagee_n_est_pas_un_terme_prive` |
+| Détecteur de secrets, sans recopier la valeur ; références et prose permises ; `secret-patterns` | `test_un_secret_bloque_l_envoi_sans_etre_recopie`, `test_une_reference_ou_de_la_prose_ne_sont_pas_des_secrets`, `test_secret_patterns_de_l_operateur`, `test_secret_patterns_invalide_refuse_au_chargement` |
+| Avance rapide seulement ; remote absent ; `--dry-run` | `test_divergence_jamais_forcee`, `test_sans_remote_refuse_avec_la_commande`, `test_dry_run_n_envoie_rien` |
+| Lignes numérotées dans le fichier d'arrivée | `test_numerotation_des_lignes_ajoutees` |
 
 Exécution :
 

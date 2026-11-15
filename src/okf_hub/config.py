@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
@@ -61,6 +62,9 @@ PROFILES = {
 
 DEFAULT_PROFILE = "solo"
 
+#: Remote vers lequel `okf-hub publish` pousse une base partagée (§ 4.6.c).
+DEFAULT_PUBLISH_REMOTE = "replica"
+
 #: Périmètres d'une instance (§ 4.6.b, rév. 4.8). Sans périmètre, une instance
 #: voit toutes les bases, comme avant la rév. 4.8.
 SCOPE_SHARED = "shared"
@@ -88,6 +92,12 @@ class HubConfig:
     niveau vit ici, dans la configuration de l'opérateur, et jamais dans la
     base : le gestionnaire écrit dans les bases, il ne doit pas pouvoir en
     partager une."""
+    publish_remote: str = DEFAULT_PUBLISH_REMOTE
+    """Remote git de la réplique, dans chaque base partagée (§ 4.6.c)."""
+    secret_patterns: tuple[str, ...] = ()
+    """Expressions de secrets propres à l'opérateur, en plus de celles du
+    détecteur (§ 4.6.c). Compilées au chargement : une expression fausse est
+    une configuration invalide, pas une garde muette."""
     scope: str | None = None
     """Périmètre de l'instance (§ 4.6.b) : `shared`, `private` ou aucun. Posé
     par la ligne de commande (`okf-hub --scope`), jamais par un fichier : deux
@@ -143,6 +153,8 @@ class HubConfig:
             private_terms=_liste(raw, "private-terms", path),
             public_bases=_liste(raw, "public-bases", path),
             shared_bases=_liste(raw, "shared-bases", path),
+            publish_remote=_remote(raw, path),
+            secret_patterns=_motifs(raw, path),
             web=raw.get("web"),
         )
 
@@ -164,6 +176,25 @@ def _liste(raw: dict, cle: str, path: Path) -> frozenset[str]:
     if not isinstance(valeur, list) or not all(isinstance(n, str) for n in valeur):
         raise ValueError(f"{path} : {cle} doit être une liste de chaînes")
     return frozenset(valeur)
+
+
+def _remote(raw: dict, path: Path) -> str:
+    valeur = raw.get("publish-remote", DEFAULT_PUBLISH_REMOTE)
+    if not isinstance(valeur, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", valeur):
+        raise ValueError(f"{path} : publish-remote doit être un nom de remote git")
+    return valeur
+
+
+def _motifs(raw: dict, path: Path) -> tuple[str, ...]:
+    valeur = raw.get("secret-patterns") or []
+    if not isinstance(valeur, list) or not all(isinstance(m, str) and m for m in valeur):
+        raise ValueError(f"{path} : secret-patterns doit être une liste d'expressions")
+    for m in valeur:
+        try:
+            re.compile(m)
+        except re.error as exc:
+            raise ValueError(f"{path} : secret-patterns, expression invalide ({exc})") from None
+    return tuple(valeur)
 
 
 def _read(path: Path) -> dict:

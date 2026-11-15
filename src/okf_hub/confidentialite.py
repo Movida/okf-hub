@@ -43,14 +43,16 @@ def bases_publiques(config: HubConfig) -> frozenset[str]:
     return frozenset(n for n in upstreams(config.hub_root) if n in livrees) | config.public_bases
 
 
-def termes_prives(registry: Registry) -> frozenset[str]:
+def termes_prives(registry: Registry, sauf: frozenset[str] = frozenset()) -> frozenset[str]:
+    """`sauf` : bases dont les noms ne comptent pas — les bases partagées, pour
+    la publication vers une réplique (§ 4.6.c)."""
     config = registry.config
     livrees = set(available(config.hub_root))
     termes: set[str] = set(config.private_terms)
     # `installed`, pas `ordered` : hors de son périmètre (§ 4.6.b), une base
     # privée reste un terme privé.
     for base in registry.installed():
-        if base.name in livrees or base.dir_name in livrees:
+        if base.name in livrees or base.dir_name in livrees or base.name in sauf:
             continue
         termes |= {base.name, base.dir_name, base.corpus_dir.name}
     return frozenset(t for t in termes if t and t not in GENERIQUES and t not in livrees)
