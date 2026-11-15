@@ -5,7 +5,7 @@ description: >
   Qui peut modifier un corpus, par quel moyen, et pourquoi une session
   consommatrice ne le peut pas même quand l'erreur est évidente.
 tags: [kb_propose, kb-review, okf-review]
-applies-to: "rév. 4.1"
+applies-to: "rév. 4.8"
 generated:
   by: "claude-code/opus-5"
   at: 2026-08-30T00:00:00Z
@@ -39,9 +39,35 @@ de commande — jamais par un outil MCP.
 Tu ne tiens ce rôle que si on te l'a demandé explicitement. Avoir remarqué une
 coquille ne t'y fait pas passer.
 
+### En mode agent : sans confirmation, dans des bornes vérifiées par l'outil
+
+Une base peut être revue sans qu'un humain confirme chaque résolution, si **deux
+clés** sont tournées : son manifeste déclare `review: agent`, et l'opérateur l'a
+inscrite dans la liste `agent-review` de la configuration locale du hub — une
+seule clé ne suffit pas. Le gestionnaire est alors une session lancée par une
+tâche planifiée (`okf-ranger`), qui ne passe que les propositions en attente,
+base par base.
+
+Ce qui borne cette session n'est pas sa prudence, c'est l'outil : `okf-review
+resolve --agent <identifiant>` refuse tout le lot s'il touche à la gouvernance,
+au profil ou au manifeste, vide un document, ou — dans une base partagée —
+retire ou modifie autre chose que des champs de fraîcheur, ou intègre une
+proposition sans reprendre une de ses sources. Ce qui demande un jugement
+**reste en attente** et remonte à l'humain ; un rejet porte son motif, lisible
+par `kb_proposal_status`. Chaque commit est signé `Reviewed-By: agent:<identifiant>`.
+
+Pour toi, session consommatrice, rien ne change dans la manière de proposer.
+Deux choses à savoir seulement : le verdict arrive au passage suivant du
+rangeur, pas à la seconde ; et une proposition **sourcée** a toutes les chances
+d'être intégrée sans humain, une proposition sans source sera rejetée ou
+attendra.
+
 ## Opérateur — un humain, sur la machine du hub
 
-Il importe et retire les bases, configure le hub, pousse les dépôts. Ses moyens
+Il importe et retire les bases, configure le hub, pousse les dépôts. C'est aussi
+lui qui décide du **niveau** de chaque base — privée ou partagée — et des bases
+revues en mode agent : ces deux listes vivent dans la configuration locale du
+hub, hors de portée de toute session. Ses moyens
 sont `git` et le shell, pas MCP. Voir `cycle-de-vie-d-une-base.md`.
 
 ## La frontière, et pourquoi elle ne souffre pas d'exception

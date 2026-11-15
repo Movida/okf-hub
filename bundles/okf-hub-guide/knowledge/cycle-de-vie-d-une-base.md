@@ -1,12 +1,12 @@
 ---
 type: Procédure
-title: Cycle de vie d'une base — créer, déployer, alimenter, réviser, retirer
+title: Cycle de vie d'une base — créer, déployer, alimenter, réviser, publier, retirer
 description: >
-  Les cinq étapes de la vie d'une base, avec à chaque fois le rôle qui l'exécute
+  Les six étapes de la vie d'une base, avec à chaque fois le rôle qui l'exécute
   et le moyen employé. Aucun outil MCP ne crée ni ne supprime une base, et c'est
   délibéré.
 tags: [kb_hub_rescan, kb_propose, kb-review, okf-review]
-applies-to: "rév. 4.1"
+applies-to: "rév. 4.8"
 generated:
   by: "claude-code/opus-5"
   at: 2026-08-30T00:00:00Z
@@ -28,7 +28,8 @@ celles qui n'ont aucun mandat pour l'exercer.
 | Créer | opérateur, ou session avec shell | template + questionnaire d'instanciation |
 | Déployer | opérateur | `git clone` dans `bases/` (ou `okf-hub catalog import`), puis découverte |
 | Alimenter | toute session | `kb_propose` |
-| Réviser | gestionnaire | `okf-review`, en ligne de commande |
+| Réviser | gestionnaire, humain ou agent | `okf-review`, en ligne de commande ; `okf-ranger` en mode agent |
+| Publier | opérateur | `okf-hub publish`, vers la réplique — bases partagées seulement |
 | Retirer | opérateur | `okf-hub catalog retire` (garde-fous), puis découverte |
 
 ## 1. Créer
@@ -58,6 +59,15 @@ les outils le signalent : les règles affichées sont des exemples que personne 
 validés. Le passage à `stable` est une étape explicite du questionnaire, à faire
 une fois les règles arbitrées avec l'humain. Rien n'est bloqué en brouillon — les
 propositions sont acceptées, la revue fonctionne.
+
+Décide aussi de son **niveau**, avant d'y verser quoi que ce soit. Une base est
+**privée** par défaut : elle ne quitte pas la machine du hub. Elle n'est
+**partagée** que si l'opérateur la nomme dans `shared-bases` de la configuration
+locale ; elle pourra alors être publiée vers une réplique (étape 5). Le niveau
+se choisit à la création parce qu'il dit ce que la base a le droit de contenir :
+une base partagée ne cite ni une base privée, ni un terme privé, ni un secret —
+et la publication le vérifie à chaque envoi. Deux sujets qui n'ont pas le même
+niveau font deux bases.
 
 Enfin : **retire l'`origin` du template** avant de commiter. Un dépôt instancié
 qui pointe encore sur le template expose à un `push` qui écraserait le livrable.
@@ -101,11 +111,33 @@ Trois choses qu'un gestionnaire ne fait pas : écrire dans le dépôt avec ses
 propres outils d'édition ; envelopper le moteur dans le wrapper de verrouillage,
 qu'il utilise déjà lui-même ; commiter avant confirmation explicite de l'humain.
 
-La première étape d'une revue est la **réconciliation**, et elle ne se saute
+Une base aux deux clés du mode agent (voir `roles-et-ecriture.md`) se revoit
+sans confirmation humaine : `okf-ranger`, lancé par une tâche planifiée, ouvre
+une session pour chaque base qui a des propositions en attente, et pour celles-là
+seulement. L'outil borne ce qu'elle peut intégrer ; le reste attend l'humain.
+La réconciliation, elle, reste un geste humain : le mode agent la refuse.
+
+La première étape d'une revue humaine est la **réconciliation**, et elle ne se saute
 pas : elle rattrape les propositions écrites sur disque dont le commit n'a pas
 abouti. Sans elle, l'historique d'audit de la base est incomplet.
 
-## 5. Retirer
+## 5. Publier — bases partagées seulement
+
+Une base partagée peut être servie par une **réplique** : une copie en lecture,
+sur une autre machine, qui répond quand la machine du hub est éteinte. Après
+chaque revue, l'opérateur la publie (`okf-hub publish <nom>`). Rien ne part si
+la base n'est pas partagée, si un commit à envoyer porte un terme privé, ou si le
+détecteur voit un secret ; une référence (`op://…`, `${VAR}`) n'en est pas un.
+La poussée se fait en avance rapide seulement : rien n'est jamais forcé.
+
+Si c'est la réplique qui te sert, tu le vois : `kb_list` donne pour chaque base
+la date de sa copie. Elle lit (`kb_search`, `kb_read`, `kb_find`,
+`kb_governance`, `kb_proposal_status`) mais ne reçoit **aucune** proposition :
+ses instructions disent où proposer. Une base ne t'y est servie que si ton
+identité figure dans sa visibilité ; une base fermée se répond comme une base
+absente.
+
+## 6. Retirer
 
 `okf-hub catalog retire <nom>` : vérifie qu'aucune proposition n'est en attente
 dans `proposals/pending/`, et — si la base a un remote — que sa branche amont

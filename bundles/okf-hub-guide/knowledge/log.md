@@ -44,3 +44,14 @@ plus récent en premier. Le gestionnaire y ajoute une ligne à chaque intégrati
 * **Cycle de vie** : les cinq étapes, avec le rôle et le moyen de chacune, et la
   raison pour laquelle aucune opération de création ou de retrait n'est exposée
   par MCP.
+
+## 2026-11-15
+
+* **Rév. 4.8** : le guide rattrape le hub.
+  * **Rôles** : la revue en mode agent — les deux clés, ce que l'outil borne,
+    l'escalade, et ce que cela change pour une session qui propose.
+  * **Cycle de vie** : le niveau d'une base (privée ou partagée) choisi à la
+    création, la revue par `okf-ranger`, la publication vers une réplique et ce
+    qu'une session voit de la réplique (date de copie, lecture seule,
+    visibilité).
+  * **Lecture** : rapatrier des valeurs avec `select` plutôt que des documents.
