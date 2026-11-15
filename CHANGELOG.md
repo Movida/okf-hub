@@ -5,6 +5,48 @@ Le projet suit la version de la spécification qu'il implémente : `bundle-spec 
 
 ## [Non publié]
 
+### Ajouté — revue en mode agent (rév. 4.8, § 7.1 étape 5 bis)
+
+- **`okf-review resolve --agent <id>`** : résolution sans confirmation humaine,
+  pour une base qui déclare `governance.review: agent` et que l'opérateur inscrit
+  dans `agent-review`. Règles fixes vérifiées avant la première résolution :
+  gouvernance, profil et manifeste hors d'atteinte ; aucun document vidé ; dans
+  une base partagée, ajouts seulement (hors champs de fraîcheur) et sources
+  reprises. Trailer `Reviewed-By: agent:<id>`.
+- **Skill `kb-review`** : étape 5 bis, escalades en une seule liste.
+
+### Ajouté — les données d'une fiche (rév. 4.8, § 3.5, § 5.8)
+
+- **Profil, clé `data`** : une section déclarée porte un bloc de données, tableau
+  markdown ou bloc `yaml` (liste d'objets), colonnes attendues facultatives.
+- **`kb_find`, paramètre `select`** : `{fields, data}` rend, pour chaque document
+  retenu, les champs du frontmatter et les lignes des blocs nommés, en sortie
+  structurée, avec leurs avertissements ; le texte ne donne que les effectifs.
+  Plafond transverse appliqué aux lignes.
+
+### Ajouté — la réplique en lecture (rév. 4.8, § 4.6.d)
+
+- **`okf-hub replica`** : sert les bases partagées en MCP sur HTTP (`/mcp`),
+  outils de lecture seulement, derrière un proxy inverse ; visibilité par base
+  d'après l'identité transmise, une base fermée se répondant comme une absente ;
+  `kb_list` donne la date de chaque copie ; `propose-hint` dans les
+  instructions. Clé `replica` de `hub-config.local.yaml`.
+- **`okf-hub replica receive <base>`**, pour le hook `post-receive` : clone
+  neuf, bascule atomique du lien servi, deux copies gardées.
+- **`HubServer`** : `outils` et `_registre_pour(ctx)` ouvrent le même mécanisme
+  d'appel à la réplique ; `Registry.vue(noms)`.
+
+### Ajouté — publier une base partagée vers sa réplique (rév. 4.8, § 4.6.c)
+
+- **`okf-hub publish <base> [--dry-run]`** : pousse une base de
+  `shared-bases` vers le remote `publish-remote` (défaut `replica`), en avance
+  rapide seulement.
+- **Gardes avant tout envoi** : la garde de confidentialité (termes privés moins
+  les noms des bases partagées) et un détecteur de secrets (formats connus,
+  valeur affectée à un nom de secret, `secret-patterns`) sur les contenus
+  ajoutés, chemins, auteurs et messages des commits qui partent. Le refus donne
+  commit, fichier, ligne et règle, jamais la valeur.
+
 ### Ajouté — niveau d'une base et périmètre d'une instance (rév. 4.8, § 4.6.a-b)
 
 - **`shared-bases`** (`hub-config.local.yaml`) : les bases partagées, par

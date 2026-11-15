@@ -1065,6 +1065,59 @@ périmètre d'une instance, dont dépendent la publication et la réplique.
 | Garde de confidentialité | `termes_prives` lit `Registry.installed()`, périmètre ignoré | Sans cela, une instance `--scope shared` aurait laissé déposer le nom d'une base privée dans une base publique. `installed` n'est lu que par la garde : aucun outil ne s'en sert. |
 | Rapport de découverte | Les bases hors périmètre n'y figurent pas ; le journal en donne le nombre | Le rapport est montré par `kb_hub_rescan` et la page d'état : y nommer une base hors périmètre la révélerait. |
 
+**Publication (§ 4.6.c).** Module `publication.py`, commande `okf-hub publish`.
+
+| Point | Décision | Motif |
+|---|---|---|
+| Ce qui part | `rev-list HEAD --not --remotes=<publish-remote>`, après un `fetch` du remote | Exactement ce que la poussée enverra ; un remote injoignable est un refus, puisque ce qui part ne peut pas être établi. |
+| Ce qui est examiné | Lignes ajoutées (numérotées dans le fichier d'arrivée), chemins, auteur, committer, message de chaque commit ; premier commit comparé à l'arbre vide (`--root`) | Le périmètre des hooks `pre-push` (rév. 4.4), avec le numéro de ligne en plus pour que le refus se corrige sans chercher. |
+| Termes privés | `termes_prives(registry, sauf=shared_bases)`, sur un registre sans périmètre | Une base partagée cite ses voisines partagées (§ 3.6) ; une privée ne doit pas se nommer dans ce qui sort. |
+| Détecteur de secrets | Formats connus (clé privée, GitHub, AWS, Anthropic, OpenAI, Google, Slack, 1Password, JWT) ; affectation à un nom de secret seulement si la valeur a l'allure d'un secret (≥ 8 caractères, lettres et chiffres mêlés, pas `op://`, `$`, `<`, `{{`) ; `secret-patterns` compilées au chargement | Aucune dépendance nouvelle. Le critère d'allure laisse passer la prose (« le token : identifiant de session ») et les références, qui sont la forme voulue d'un secret dans une base. Une expression fausse dans `secret-patterns` est une configuration invalide : une garde muette serait pire qu'un refus de démarrer. |
+| Valeur | Jamais recopiée dans le refus ni le journal | Le refus s'affiche et se journalise : il ne doit pas devenir la fuite. |
+| Poussée | `git push <remote> HEAD:refs/heads/<branche>`, sans `--force` ni `--no-verify` ; divergence détectée avant, après le `fetch` | Avance rapide seulement (§ 4.6.c) ; un hook de la base, s'il existe, s'applique aussi. |
+| Verrou | Aucun | La base n'est pas écrite : `fetch` ne touche qu'aux références du remote. Un `kb_propose` concurrent ajoute un commit que la poussée n'emporte pas ; il part à la suivante. |
+| Amont de la branche | Non posé (`push` sans `-u`) | La synchronisation au démarrage (`remote_sync`) n'avance que sur l'amont : la réplique ne doit jamais devenir une source. |
+
+**Réplique (§ 4.6.d).** Module `replica.py`, commande `okf-hub replica`.
+
+| Point | Décision | Motif |
+|---|---|---|
+| Serveur | `ReplicaServer(HubServer)` : même appel d'outil, même re-scan, mêmes erreurs ; `HubServer` gagne `outils` (la liste servie) et `_registre_pour(ctx)` (le registre que voit l'appelant) | Un seul mécanisme d'appel et de re-scan (§ 4.4.c) : la réplique change ce qu'elle sert et à qui, pas comment. |
+| Transport | `Server.streamable_http_app`, sans état (`stateless_http`), réponses JSON, sous uvicorn sans `proxy_headers` | Pas de session à tenir : une requête, une réponse. Sans `proxy_headers`, l'adresse vue est celle du pair TCP, la seule que vérifie `trusted-proxies`. |
+| Accès | `web.acces` réutilisé tel quel (`WebConfig`, `visiteur_de`, `bases_visibles`) ; `identity-header` obligatoire ; un filtre ASGI répond 403 avant MCP | Une seule règle de confiance pour la web et la réplique ; une connexion hors proxy ne doit même pas atteindre le protocole. |
+| Visibilité | `Registry.vue(noms)` : un registre réduit, gardé par ensemble de bases visibles tant que le registre ne change pas | Tous les outils lisent le registre qu'on leur passe : une base absente de la vue est absente partout, références entre bases comprises. Garder la vue garde son moteur de lecture (`Lecteur.de`), sans recharger les modèles à chaque appel. |
+| Double barrière | L'instance tourne en `--scope shared` ; `receive` refuse une base absente de `shared-bases` | Une base poussée par erreur, ou posée à la main dans `bases-dir`, n'est pas servie. |
+| Copies | `git clone --no-local` dans `bases-dir/.copies/` (caché, jamais scanné), lien posé par `os.replace` ; deux copies gardées | La bascule est atomique ; une lecture qui a résolu l'ancienne copie la finit ; `--no-local` ne partage aucun objet avec le dépôt reçu, qu'un push suivant modifie. |
+| Détection | Signature = cible de chaque lien de `bases-dir`, comparée à chaque appel ; si elle change, re-scan silencieux sous le déclencheur `replica` | Aucun démon, aucune surveillance (§ 4.4) ; un `readlink` par base et par appel. Sous le cooldown, une bascule très rapprochée est vue cinq secondes plus tard, l'ancienne copie servant entre-temps. |
+| `kb_list` | Celui du hub, suivi de la date de chaque copie (date du lien, posé à la bascule) | Qui lit sait de quand date ce qu'il lit. |
+
+**Données d'une fiche (§ 3.5, § 5.8).** `lecture/profil.py` (clé `data`),
+`lecture/donnees.py` (extraction), `tools/find_tool.py` (`select`).
+
+| Point | Décision | Motif |
+|---|---|---|
+| Quel bloc | Le premier tableau markdown (hors blocs de code), ou le premier bloc de code `yaml`/`yml`, de la section déclarée, sous-sections comprises | La spec dit « en premier contenu » ; une phrase d'introduction avant le tableau est l'usage courant, la refuser ferait réécrire les fiches pour le hub. |
+| Cellules | Texte, espaces retirés, `\|` rendu `|` ; une colonne sans en-tête est ignorée ; une ligne courte est complétée de vides | Le tableau reste du markdown que tout lecteur affiche ; aucune conversion de type n'est devinée. |
+| YAML | `safe_load`, liste d'objets exigée ; dates rendues en ISO | La seule valeur YAML que JSON ne porte pas. |
+| Lecture | Le fichier est relu pour chaque document projeté, pas tenu dans le modèle | Le modèle de lecture ne garde pas les corps : les y ajouter pour une projection rare grossirait chaque processus. |
+| Plafond | Budget de 16 000 caractères JSON pour les lignes, sur toute la réponse ; au-delà `data_truncated` et une note | Le plafond transverse (§ 1.5) s'applique à la sortie structurée comme au texte (§ 5.8, rév. 4.8). |
+| Nom non déclaré | Avertissement par base ; `INVALID_INPUT` si aucune base ne le déclare | Une faute de frappe ne doit pas passer pour un champ vide (§ 5.8). |
+
+**Mode agent (§ 7.1 étape 5 bis, § 7.2).** Module `agent.py`, option
+`okf-review resolve --agent`.
+
+| Point | Décision | Motif |
+|---|---|---|
+| Où vivent les règles | Dans `okf-review resolve`, après `verify_plans` et avant la première résolution ; `--dry-run` les applique aussi | « Vérifiées par l'outil et non par le modèle » : la skill les décrit, l'outil les tient. Comme `--checks`, tout refus précède le premier commit. |
+| Deux clés | `governance.review: agent` (manifeste, accepté depuis la rév. 4.8 ; `auto` reste ramené à `human`) **et** `agent-review` (configuration locale) | La base accepte, la machine approuve — le modèle de `trusted-checks`. Une base importée qui se déclarerait `agent` n'en obtient rien sans l'opérateur. |
+| Intouchables | `okf-bundle.yaml`, `GOVERNANCE.md`, `schema.yaml`, `AGENTS.md`, `CLAUDE.md` par leur nom, plus le fichier de profil déclaré | Les trois premiers et `CLAUDE.md` sont déjà exclus du corpus ; `AGENTS.md` ne l'est pas — ses règles de revue sont éditables par un humain, jamais par la revue qu'elles gouvernent. |
+| Suppression | Un document dont le corps devient vide est refusé | Un plan ne sait ni supprimer ni déplacer ; vider en tiendrait lieu. |
+| « Ajouts seulement » | `difflib` ligne à ligne entre le fichier sur disque et le contenu final ; une ligne d'avant retirée ou remplacée est refusée, sauf dans le frontmatter sous `verified`, `stale_after` ou `last-verified` | Mécanique et vérifiable : ce qui a été revu par un humain ne change pas sans lui. Les champs de fraîcheur sont ceux de l'étape 6 et des familles OKF. |
+| Sources | Pour chaque proposition acceptée, au moins une de ses `sources` figure telle quelle dans les lignes ajoutées aux documents de `integrated_into` | La seule forme vérifiable de « chaque ajout reprend les sources de sa proposition ». |
+| Rejet | Permis, avec motif | Réversible : la proposition reste lisible dans `rejected/` et se redépose. |
+| Trailer | `Reviewed-By: agent:<id>`, l'identifiant validé (`[A-Za-z0-9][A-Za-z0-9._/-]{0,63}`) ; le `reviewed_by` du plan est remplacé | Le préfixe distingue dans l'historique ce qu'aucun humain n'a confirmé (§ 7.2) ; le plan, écrit par le modèle, ne peut pas se signer humain. |
+| Isolement des niveaux | Hors de l'outil : instance MCP `--scope shared`, et accès fichiers limité par l'opérateur | `okf-review` ne lit qu'une base à la fois ; ce qu'une session lit d'autre dépend de ce qu'on lui ouvre. |
+
 ---
 
 ## 7. Traçabilité — exigence de test → test
@@ -1249,6 +1302,41 @@ pour vérifier la couverture sans relire la suite.
 | § 4.6.b — sans périmètre, tout ; `shared` et `private` ; base hors périmètre = base absente | `test_sans_perimetre_toutes_les_bases`, `test_perimetre_shared`, `test_perimetre_private`, `test_le_rapport_de_decouverte_ignore_le_hors_perimetre` |
 | § 4.1 — hors périmètre, le nom d'une base privée reste un terme privé | `test_hors_perimetre_le_nom_reste_un_terme_prive` |
 | `--scope` : valeurs fermées | `test_perimetre_inconnu_refuse`, `test_option_scope_en_ligne_de_commande` |
+
+| Exigence (publication, § 4.6.c) | Test (`tests/test_publication.py`) |
+|---|---|
+| Publie une base partagée ; seuls les commits nouveaux partent ; la base n'est pas modifiée | `test_publie_une_base_partagee`, `test_seuls_les_commits_nouveaux_partent`, `test_la_base_n_est_pas_modifiee` |
+| Une base privée ne se publie pas | `test_une_base_privee_ne_se_publie_pas` |
+| Garde de confidentialité : contenus, chemins ; `private-terms` ; les noms des bases partagées permis | `test_un_terme_prive_bloque_l_envoi`, `test_un_terme_de_private_terms_bloque_l_envoi`, `test_un_message_ou_un_chemin_compte_aussi`, `test_le_nom_d_une_base_partagee_n_est_pas_un_terme_prive` |
+| Détecteur de secrets, sans recopier la valeur ; références et prose permises ; `secret-patterns` | `test_un_secret_bloque_l_envoi_sans_etre_recopie`, `test_une_reference_ou_de_la_prose_ne_sont_pas_des_secrets`, `test_secret_patterns_de_l_operateur`, `test_secret_patterns_invalide_refuse_au_chargement` |
+| Avance rapide seulement ; remote absent ; `--dry-run` | `test_divergence_jamais_forcee`, `test_sans_remote_refuse_avec_la_commande`, `test_dry_run_n_envoie_rien` |
+| Lignes numérotées dans le fichier d'arrivée | `test_numerotation_des_lignes_ajoutees` |
+
+| Exigence (réplique, § 4.6.d) | Test (`tests/test_replique.py`) |
+|---|---|
+| Réception : lien vers une copie, bascule, deux copies gardées | `test_reception_pose_un_lien_vers_une_copie`, `test_bascule_et_elagage` |
+| Réception refusée : base non partagée, nom différent, vrai répertoire | `test_reception_refuse_une_base_non_partagee`, `test_reception_refuse_un_nom_qui_ne_correspond_pas`, `test_reception_ne_remplace_pas_un_vrai_repertoire` |
+| Configuration : identité requise, clés fermées | `test_identite_obligatoire`, `test_cle_inconnue_refusee` |
+| De bout en bout en HTTP : outils de lecture seulement, `propose-hint`, date des copies, base fermée = absente | `test_lecture_seule_et_visibilite`, `test_un_lecteur_nomme_voit_sa_base` |
+| Bascule vue à l'appel suivant | `test_une_bascule_est_vue_a_l_appel_suivant` |
+| Double barrière de niveau | `test_double_barriere_une_base_non_declaree_n_est_pas_chargee` |
+| Refus avant MCP : sans identité, hors proxy de confiance | `test_sans_identite_ou_hors_proxy_refuse_avant_mcp` |
+
+| Exigence (données d'une fiche, § 3.5, § 5.8) | Test (`tests/test_donnees.py`) |
+|---|---|
+| Profil : clé `data`, partie mal formée ignorée avec avertissement | `test_profil_declare_les_blocs` |
+| Extraction : tableau, pipe échappé, YAML, dates, colonne manquante, bloc absent ou mal formé | `test_tableau_lignes_et_pipe_echappe`, `test_yaml_liste_d_objets_dates_en_texte`, `test_colonne_manquante_signalee_sans_rien_ecarter`, `test_section_absente_ou_sans_bloc`, `test_yaml_qui_n_est_pas_une_liste_d_objets` |
+| `select` : champs et lignes en sortie structurée, effectifs seuls dans le texte | `test_select_rend_champs_et_lignes` |
+| `select` : non déclaré refusé ; exclusif de `count_by` ; mal formé | `test_select_inconnu_refuse`, `test_select_et_count_by_exclusifs`, `test_select_mal_forme` |
+| Plafond ; sortie conforme à `outputSchema` | `test_select_plafonne_les_lignes`, `test_sortie_structuree_valide_contre_le_schema` |
+
+| Exigence (mode agent, § 7.1 étape 5 bis) | Test (`tests/test_mode_agent.py`) |
+|---|---|
+| `review: agent` accepté, `auto` ramené à `human` | `test_manifeste_accepte_review_agent`, `test_review_auto_reste_traite_comme_human` |
+| Deux clés ; identifiant validé | `test_sans_approbation_de_l_operateur_refuse`, `test_sans_review_agent_au_manifeste_refuse`, `test_identifiant_invalide_refuse` |
+| Base partagée : ajout sourcé accepté, fraîcheur modifiable, modification refusée, ajout sans source refusé | `test_ajout_source_dans_une_base_partagee`, `test_fraicheur_modifiable_dans_une_base_partagee`, `test_modification_refusee_dans_une_base_partagee`, `test_ajout_sans_source_refuse_dans_une_base_partagee` |
+| Base privée : modification permise ; document vidé refusé ; gouvernance hors d'atteinte | `test_modification_permise_dans_une_base_privee`, `test_document_vide_refuse`, `test_fichiers_de_gouvernance_hors_d_atteinte` |
+| `--dry-run` applique les règles ; rejet permis ; trailer `agent:<id>` | `test_dry_run_applique_les_regles`, `test_rejet_permis`, `test_ajout_source_dans_une_base_partagee` |
 
 Exécution :
 

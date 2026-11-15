@@ -123,7 +123,6 @@ TOOLS: list[ToolSpec] = [
     ToolSpec("kb_hub_rescan", rescan_tool, rescan_tool.SCHEMA),
 ]
 
-_BY_NAME = {spec.name: spec for spec in TOOLS}
 
 
 class _BasesWatcher(FileSystemEventHandler):
@@ -163,15 +162,21 @@ class _BasesWatcher(FileSystemEventHandler):
 
 
 class HubServer:
+    #: Outils servis. La réplique (`replica.py`, § 4.6.d) n'en garde que la
+    #: lecture ; le mécanisme d'appel, de re-scan et d'erreur reste celui-ci.
+    outils: list[ToolSpec] = TOOLS
+
     def __init__(self, config: HubConfig) -> None:
         self.config = config
+        self._par_nom = {spec.name: spec for spec in self.outils}
         self.registry = Registry(config)
         self._lock = threading.Lock()
         #: Dernier re-scan silencieux **par déclencheur** (§ 4.4.c). Les clés
         #: sont bornées : les noms de `RESCAN_BEFORE`, plus `UNKNOWN_BASE`, plus
         #: `filesystem_watcher` (re-scan automatique par instance, sans état
         #: partagé), plus `web` (pages de `okf-hub web`, § 5 bis.2 : le processus
-        #: web n'a pas de session MCP, mais réutilise ce même mécanisme).
+        #: web n'a pas de session MCP, mais réutilise ce même mécanisme), plus
+        #: `replica` (bascule d'une copie dans la réplique, § 4.6.d).
         self._last_silent_rescan: dict[str, float] = {}
         #: Changement de la liste des bases vu par l'observateur et pas encore
         #: notifié. Son re-scan tourne hors de toute requête, sans session à
@@ -221,6 +226,15 @@ class HubServer:
             pending, self._list_changed_pending = self._list_changed_pending, False
         return pending
 
+    def _registre_pour(self, ctx: ServerRequestContext) -> Registry:
+        """Le registre que voit l'appelant. Ici, tout le registre de l'instance ;
+        la réplique y applique la visibilité de l'appelant (§ 4.6.d). Appelé
+        hors de la boucle d'événements : il peut re-scanner."""
+        return self.registry
+
+    async def _registre(self, ctx: ServerRequestContext) -> Registry:
+        return await anyio.to_thread.run_sync(lambda: self._registre_pour(ctx))
+
     # --- handlers MCP -------------------------------------------------------
 
     async def on_list_tools(
@@ -228,22 +242,23 @@ class HubServer:
     ) -> types.ListToolsResult:
         # Les descriptions sont recalculées à chaque appel : elles énumèrent les
         # bases connues (§ 5.1) et suivent donc l'état courant du registre.
+        registry = await self._registre(ctx)
         tools = [
             types.Tool(
                 name=spec.name,
-                description=spec.describe(self.registry),
+                description=spec.describe(registry),
                 input_schema=spec.schema,
                 output_schema=spec.output_schema,
                 annotations=spec.annotations,
             )
-            for spec in TOOLS
+            for spec in self.outils
         ]
         return types.ListToolsResult(tools=tools)
 
     async def on_call_tool(
         self, ctx: ServerRequestContext, params: types.CallToolRequestParams
     ) -> types.CallToolResult:
-        spec = _BY_NAME.get(params.name)
+        spec = self._par_nom.get(params.name)
         if spec is None:
             return _error(ToolError("NOT_FOUND", f"outil inconnu : {params.name}"))
         arguments = dict(params.arguments or {})
@@ -259,9 +274,10 @@ class HubServer:
             )
             notify_changed = notify_changed or changed
 
+        registry = await self._registre(ctx)
         try:
             text = await anyio.to_thread.run_sync(
-                lambda: spec.run(self.registry, arguments)
+                lambda: spec.run(registry, arguments)
             )
         except ToolError as exc:
             if exc.code == UNKNOWN_BASE:
@@ -273,9 +289,10 @@ class HubServer:
                 )
                 notify_changed = notify_changed or changed
                 if rescanned:
+                    registry = await self._registre(ctx)
                     try:
                         text = await anyio.to_thread.run_sync(
-                            lambda: spec.run(self.registry, arguments)
+                            lambda: spec.run(registry, arguments)
                         )
                     except ToolError as retry_exc:
                         await _maybe_notify(ctx, notify_changed)
@@ -302,11 +319,14 @@ class HubServer:
             self._observer.join(timeout=2.0)
             hublog.info("watcher arrêté")
 
+    def _instructions(self) -> str:
+        return _instructions(self.registry)
+
     def build(self) -> Server:
         return Server(
             SERVER_NAME,
             version=SERVER_VERSION,
-            instructions=_instructions(self.registry),
+            instructions=self._instructions(),
             on_list_tools=self.on_list_tools,
             on_call_tool=self.on_call_tool,
         )

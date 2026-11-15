@@ -33,7 +33,7 @@ from pathlib import Path
 
 import yaml
 
-from . import gitops, hublog
+from . import agent, gitops, hublog
 from .config import LOCAL_CONFIG_FILENAME, HubConfig
 from .errors import INVALID_INPUT, NOT_FOUND, ToolError
 from .frontmatter import merge_frontmatter
@@ -909,6 +909,12 @@ def main(argv: list[str] | None = None) -> int:
     )
     p_resolve.add_argument("--dry-run", action="store_true")
     p_resolve.add_argument(
+        "--agent", metavar="IDENTIFIANT", default=None,
+        help="mode agent (§ 7.1 étape 5 bis) : sans confirmation humaine, sous règles "
+        "fixes vérifiées avant toute résolution ; Reviewed-By devient agent:<id>. "
+        "La base doit déclarer `review: agent` et figurer dans `agent-review`.",
+    )
+    p_resolve.add_argument(
         "--checks", action="store_true",
         help="après le dernier plan, lancer les contrôles approuvés de la base et "
         "commiter les vues régénérées",
@@ -952,6 +958,8 @@ def main(argv: list[str] | None = None) -> int:
             plans = [
                 parse_plan(json.loads(f.read_text(encoding="utf-8"))) for f in args.plan
             ]
+            if args.agent is not None:
+                _mode_agent(base, registry, plans, args.agent)
             if args.dry_run and args.checks:
                 raise ToolError(
                     INVALID_INPUT,
@@ -988,6 +996,21 @@ def main(argv: list[str] | None = None) -> int:
         print(f"ERROR: {type(exc).__name__}: {exc}", file=sys.stderr)
         return 5
     return 0
+
+
+def _mode_agent(base: Base, registry: Registry, plans: list[Plan], identifiant: str) -> None:
+    """Mode agent (§ 7.1 étape 5 bis) : tout ce qui peut refuser refuse avant la
+    première résolution, comme `--checks`. Les plans déjà résolus sont sautés à
+    l'exécution ; ils ne sont pas vérifiés de nouveau."""
+    signature = agent.reviewed_by(identifiant)
+    agent.exiger_deux_cles(base, registry.config)
+    for plan in plans:
+        plan.reviewed_by = signature
+    restants = [p for p in plans if not _deja_resolu(base, p)]
+    if not restants:
+        return
+    planifie, _ = verify_plans(base, restants)
+    agent.verifier(base, registry.config, restants, planifie, {p.id: p for p in load_pending(base)})
 
 
 def _etapes(registry: Registry, defaut: str | None, valeurs: list[str]) -> list[Etape]:

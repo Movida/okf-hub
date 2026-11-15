@@ -585,6 +585,27 @@ bin/okf-lock ma-base -- sh -c "git -C '$root' … && git -C '$root' commit -m '�
 
 Le verrou doit couvrir la séquence **complète**, jamais commande par commande.
 
+### Sans confirmation : le mode agent
+
+Une base peut être revue sans confirmation humaine (spec § 7.1, étape 5 bis) si
+**deux clés** sont tournées : son manifeste déclare `governance.review: agent`, et
+l'opérateur l'inscrit dans `agent-review` de `hub-config.local.yaml`. La revue
+passe alors par :
+
+```sh
+okf-review resolve <base> --plan plan.json --agent <identifiant>
+```
+
+L'outil — pas le modèle — refuse tout le lot avant la première résolution si un
+plan touche à la gouvernance, au profil ou au manifeste, vide un document, ou,
+dans une base partagée, retire ou modifie une ligne hors des champs de fraîcheur,
+ou intègre une proposition sans reprendre une de ses sources. Le reste
+s'escalade : la proposition reste en attente, et la skill en dresse la liste.
+Chaque commit porte `Reviewed-By: agent:<identifiant>`. Pour qu'une revue des
+bases partagées ne lise jamais une base privée, branchez sa session sur une
+instance `okf-hub --scope shared`, et ne lui donnez accès qu'aux répertoires de
+ces bases.
+
 ## Limitations v0 assumées
 
 ### Le corps d'une proposition résolue n'est pas relisible via MCP
@@ -619,6 +640,77 @@ Pratique recommandée : pousser après chaque session de revue.
 ```sh
 git -C bases/<nom> push
 ```
+
+Une exception, dans un seul sens : la publication d'une base partagée vers sa
+réplique, sous gardes (ci-dessous).
+
+## Publier une base partagée
+
+Une base nommée dans `shared-bases` (voir « Configuration locale ») peut être
+poussée vers une **réplique** — une copie en lecture, sur une autre machine,
+qui la sert quand celle-ci est éteinte (spec § 4.6). Une fois par base, le
+remote :
+
+```sh
+git -C bases/<nom> remote add replica <url du dépôt de la réplique>
+```
+
+Puis, après chaque revue :
+
+```sh
+okf-hub publish <nom>             # ou --dry-run pour seulement passer les gardes
+```
+
+Rien ne part si la base n'est pas partagée, si un commit à envoyer porte un
+terme privé (nom d'une base privée, `private-terms` ; les noms des bases
+partagées sont permis), ou si le détecteur voit un secret : clé privée, jeton
+aux formats connus, valeur affectée à un nom de secret (`password: …`), plus
+les expressions de `secret-patterns`. Une référence (`op://…`, `${VAR}`) n'est
+pas un secret. Le refus donne le commit, le fichier, la ligne et la règle, sans
+recopier la valeur. La poussée se fait en avance rapide seulement : si la
+réplique a divergé, rien n'est forcé. Le remote se change par
+`publish-remote`.
+
+### La réplique, sur l'autre machine
+
+`okf-hub replica` sert les bases partagées en **MCP sur HTTP** (`/mcp`), en
+lecture seule : `kb_list` (avec la date de chaque copie), `kb_search`,
+`kb_read`, `kb_find`, `kb_governance`, `kb_proposal_status`. Elle se place
+derrière un proxy inverse qui authentifie et transmet l'identité, comme le mode
+équipe de l'interface web ; chaque base n'est servie qu'aux identités que sa
+ligne de `visibility` nomme, et une base fermée se répond comme une base
+absente. Elle ne charge que les bases de sa propre `shared-bases`.
+
+```yaml
+# hub-config.local.yaml de la machine de la réplique
+shared-bases: [ma-base-partagee]
+replica:
+  host: 0.0.0.0
+  port: 8078
+  identity-header: X-Forwarded-User     # requis
+  trusted-proxies: [172.18.0.5]         # défaut : le bouclage
+  visibility:
+    ma-base-partagee: ["*"]
+  propose-hint: "Pour proposer : …"     # repris dans les instructions du serveur
+```
+
+Chaque base y arrive par `git push` dans un dépôt nu, dont le hook
+`post-receive` bascule la copie servie :
+
+```sh
+git init --bare /srv/depots/ma-base-partagee.git
+cat > /srv/depots/ma-base-partagee.git/hooks/post-receive <<'HOOK'
+#!/bin/sh
+exec okf-hub --hub-root /srv/okf-hub replica receive ma-base-partagee
+HOOK
+chmod +x /srv/depots/ma-base-partagee.git/hooks/post-receive
+```
+
+`receive` tire un clone neuf dans `bases/.copies/` et bascule le lien
+`bases/ma-base-partagee` vers lui d'un seul `rename()` ; la copie précédente
+reste pour une lecture en cours, les plus anciennes sont supprimées. Le
+premier appel qui suit voit la nouvelle copie. Le répertoire `bases/` de la
+réplique n'a pas à être sauvegardé : une publication le reconstruit.
 
 ## Bases par défaut
 
@@ -777,6 +869,11 @@ public-bases: []
 
 # Bases partagées (spec § 4.6). Toute autre base est privée.
 shared-bases: [ma-base-partagee]
+
+# Publication (voir « Publier une base partagée ») : remote de la réplique, et
+# expressions de secrets propres à l'opérateur.
+publish-remote: replica
+secret-patterns: ['MONORG-[0-9A-F]{32}']
 ```
 
 Le niveau d'une base se décide ici, jamais dans la base : le gestionnaire écrit
