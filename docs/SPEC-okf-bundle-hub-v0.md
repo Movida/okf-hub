@@ -10,7 +10,7 @@
 > sont recensés dans [`ARCHITECTURE.md`](ARCHITECTURE.md), section « Écarts
 > assumés » — nulle part ailleurs.
 >
-> **Révision courante : 4.7.** L'amendement rév. 4.1 (premier retour d'usage
+> **Révision courante : 4.8.** L'amendement rév. 4.1 (premier retour d'usage
 > réel d'une session consommatrice, post-J5) a été intégré dans le corps du
 > texte, section par section, plutôt qu'annexé : les renvois « § x.y » du code
 > restent ainsi la seule adresse d'une exigence. Les passages issus de
@@ -33,7 +33,11 @@
 > mention **(rév. 4.6)**. La **rév. 4.7** (§ 3.5, § 5.1, § 5.2, § 5.5,
 > § 5.7, § 5.8, § 5 bis, § 8) rend les propositions en attente cherchables par
 > `kb_search`, sur demande et marquées « non intégré », et date la file dans
-> `kb_list` ; mention **(rév. 4.7)**.
+> `kb_list` ; mention **(rév. 4.7)**. La **rév. 4.8** (§ 1.2, § 3.3, § 3.5,
+> § 4.1, § 4.5, § 4.6, § 5.8, § 5 bis.4, § 7, § 8, § 9, § 10.3) sépare les
+> bases privées des bases partagées, sert celles-ci par une réplique en lecture,
+> ouvre la revue en mode agent et rend les données d'une fiche ; mention
+> **(rév. 4.8)**.
 
 Document d'implémentation, révision 4.1 — révision 4 (version finale pour
 implémentation, intégrant les retours des trois relectures croisées), amendée
@@ -61,7 +65,9 @@ respecter) :
    MCP, conventions de fichiers. **(rév. 4.5)** S'y ajoutent des pages HTML en
    lecture, servies aux navigateurs (§ 5 bis) : c'est tout ce qu'exige un
    humain sans session Claude. **Toute machine passe par MCP** — aucune API
-   HTTP n'est créée, donc aucun contrat d'échange nouveau.
+   HTTP n'est créée, donc aucun contrat d'échange nouveau. **(rév. 4.8)** La
+   réplique (§ 4.6.d) sert MCP sur HTTP, un transport du protocole : c'est
+   toujours MCP, avec les mêmes outils et les mêmes sorties.
 3. **Frontière de confiance à l'écriture.** Les sessions
    consommatrices/contributrices ne modifient jamais le corpus. Elles déposent
    des propositions. Seul le rôle gestionnaire intègre.
@@ -188,8 +194,8 @@ corpus-dir: knowledge               # défaut : "knowledge". Contraintes : voir 
 governance:
   rules: ./GOVERNANCE.md            # OBLIGATOIRE
   frontmatter-schema: ./schema.yaml # optionnel ; si absent, pas de doc de schéma
-  review: human                     # optionnel, défaut "human" — seule valeur v0.
-                                    # [v1+] : "agent", "auto"
+  review: human                     # optionnel, défaut "human". (rév. 4.8) "agent" :
+                                    # § 7.1, étape 5 bis. [v1+] : "auto"
   checks:                           # optionnel (rév. 4.3) — contrôles de la base,
     - python3 scripts/check.py      # lancés par `okf-review verify` seulement (§ 7.1)
 
@@ -401,6 +407,37 @@ commit n'est pas une confrontation. Le seuil ne vaut que pour une date
 déclarée. `kb_find` garde la fraîcheur du § 5 bis.1, dernier commit compris,
 avec son origine.
 
+**Données d'une fiche (rév. 4.8).** Une fiche rédigée pour être lue peut aussi
+porter des données qu'une machine ou une vue lit sans analyser la prose. Deux
+sources, toutes deux déclarées au profil, jamais devinées :
+
+- les **champs du frontmatter**, déjà déclarés par `required` et `optional` ;
+- les **blocs de données** : une section dont le titre (normalisé, § 11.4) est
+  déclaré sous `data` contient, en premier contenu, un tableau markdown ou un
+  bloc de code `yaml` qui est une liste d'objets. Chaque ligne du tableau, ou
+  chaque objet, est une **ligne de données**.
+
+```yaml
+data:                        # titre de section → bloc de données
+  Jalons:
+    format: table            # table | yaml
+    columns: [date, jalon, statut]   # facultatif : colonnes attendues
+  Mesures:
+    format: yaml
+```
+
+Le bloc reste du markdown lisible sans le hub (§ 1.4) : c'est la déclaration
+qui en fait des données, pas une syntaxe nouvelle. Un bloc absent ou mal formé
+n'est pas une erreur de la fiche : la projection (§ 5.8) le dit pour ce
+document, et rend le reste. `columns`, s'il est déclaré, n'écarte rien : une
+colonne en plus est rendue, une colonne manquante est signalée.
+
+**Noyau commun (rév. 4.8).** Le template (§ 9) propose un noyau de champs que
+chaque base reprend ou écarte : `type` (une valeur de `types`), `title`,
+`description`, `status`, `sources`, `verified`, `stale_after`, `tags`. Il ne
+s'impose pas — le hub ne valide toujours rien —, mais une fiche qui le suit se
+lit de la même façon d'une base à l'autre, et une vue la montre sans réglage.
+
 ### 3.6 Références entre bases (rév. 4.5)
 
 Une référence vers un document d'une autre base s'écrit comme un lien markdown
@@ -453,6 +490,10 @@ jamais y être nommée.
 trusted-checks: [ma-base, mon-autre-base]
 private-terms: [MonOrganisation, NOM_DE_PROJET]   # rév. 4.4
 public-bases: [une-base-publique]                  # rév. 4.4, facultatif
+shared-bases: [une-base-partagee]                  # rév. 4.8, § 4.6
+agent-review: [une-base-partagee]                  # rév. 4.8, § 7.1 étape 5 bis
+publish-remote: replica                            # rév. 4.8, § 4.6.c
+secret-patterns: ['MONORG-[0-9A-F]{32}']           # rév. 4.8, § 4.6.c
 ```
 
 **Interface web (rév. 4.5).** La clé `web`, dans `hub-config.local.yaml`
@@ -629,7 +670,129 @@ un remote (cas de l'import par clone), **aucun push ni pull automatique** n'est
 effectué : toute synchronisation est manuelle, à l'initiative du propriétaire du
 hub, et hors garanties de la présente spec (notamment : un pull qui écrase des
 propositions locales non poussées est de la responsabilité de l'opérateur).
-**[v1+]** : politique de synchronisation outillée.
+**[v1+]** : politique de synchronisation outillée. **(rév. 4.8)** Une exception,
+dans un seul sens : `okf-hub publish` pousse une base partagée vers sa réplique,
+sous gardes (§ 4.6.c).
+
+### 4.6 Niveaux de diffusion, réplique et publication (rév. 4.8)
+
+Un opérateur partage certaines bases et garde les autres sur sa machine. Il
+faut alors que les bases partagées soient lisibles **machine éteinte**, ouvertes
+à qui il choisit, et que rien d'une base privée ne quitte la machine — ni par
+la copie, ni par la revue. La source reste unique : le dépôt de la base sur la
+machine de l'opérateur, écrit par un seul rôle, le gestionnaire (§ 7). Ce que
+voit l'extérieur en est une **copie en lecture**, dérivée et remplaçable
+(§ 1.1).
+
+#### a) Le niveau d'une base
+
+Une base est **privée** par défaut. Elle est **partagée** si elle figure dans
+la liste `shared-bases` de `hub-config.local.yaml` (§ 4.1) :
+
+```yaml
+shared-bases: [base-a, base-b]
+```
+
+Le niveau se décide **hors de la base**, dans la configuration de l'opérateur,
+jamais versionnée : le gestionnaire écrit dans les bases, et une marque qui
+vivrait dans le manifeste ou le corpus pourrait être changée par une revue. Une
+base partagée n'est pas publique au sens du § 4.1 : elle va vers une réplique
+dont l'accès est contrôlé, pas vers un dépôt ouvert. Mais sa garde de
+confidentialité la traite **comme une base publique** : les noms des bases
+privées et `private-terms` n'y entrent pas (c), d)).
+
+#### b) Une instance limitée à un niveau
+
+`okf-hub --scope shared` ne découvre que les bases partagées ;
+`okf-hub --scope private`, que les autres. Sans `--scope`, une instance voit
+tout, comme avant. Le périmètre s'applique à la découverte elle-même, donc à
+tous les outils, aux descriptions et aux `instructions` : une base hors du
+périmètre n'existe pas pour l'instance (`UNKNOWN_BASE`, et `"*"` ne la compte
+pas). C'est ce qui permet à une revue de bases partagées (§ 7.1, étape 5 bis)
+de ne jamais lire une base privée : elle n'en connaît même pas le nom.
+
+#### c) Publier une base partagée
+
+`okf-hub publish <base>`, sur la machine de l'opérateur, pousse une base
+partagée vers sa réplique. Dans l'ordre, et chaque refus arrête tout avant le
+premier envoi :
+
+1. la base figure dans `shared-bases` ;
+2. les commits à envoyer — ceux que le remote `publish-remote` (défaut
+   `replica`) ne connaît pas — passent la **garde de confidentialité** du
+   § 4.1 sur leurs contenus ajoutés, chemins, messages et auteurs, avec pour
+   termes privés ceux du § 4.1 **moins les noms des bases partagées** ;
+3. les mêmes contenus passent un **détecteur de secrets** : en-têtes de clé
+   privée, jetons aux formats connus, affectations d'une valeur à un nom de
+   secret (`password`, `token`, `secret`, `api_key`…), plus les motifs de
+   `secret-patterns` (`hub-config.local.yaml`). Un faux positif se corrige à la
+   source, par une proposition, jamais en affaiblissant la garde ;
+4. `git push` vers `publish-remote`, en avance rapide seulement : une
+   divergence est refusée et signalée, jamais forcée.
+
+Le refus nomme le fichier, la ligne et la règle, sans recopier la valeur
+détectée. C'est la seule synchronisation outillée par le hub, et elle ne va que
+dans un sens : une exception au § 4.5, qui reste hors garanties pour tout le
+reste. Quand publier (après chaque revue, à la main, par une tâche) appartient
+à l'opérateur.
+
+#### d) La réplique
+
+`okf-hub replica` sert des bases partagées, sur une autre machine, à des
+clients MCP distants. C'est un processus distinct des instances du § 4.4,
+comme `okf-hub web` :
+
+- **Transport.** MCP sur HTTP (*streamable HTTP*, transport standard du
+  protocole), et le seul : les instances du § 4.4 restent en stdio, leur modèle
+  de concurrence n'est pas touché. Aucune autre route n'est servie (§ 1.2).
+- **Lecture seule.** Outils offerts : `kb_list`, `kb_search`, `kb_read`,
+  `kb_governance`, `kb_find`, `kb_proposal_status`. Ni `kb_propose`, ni
+  `kb_hub_rescan` : la réplique n'écrit rien, ne prend aucun verrou, et
+  re-scanne d'elle-même (ci-dessous). Les `instructions` portent le texte de
+  `propose-hint`, qui dit à une session **où** proposer : la voie appartient à
+  l'opérateur, le hub ne la connaît pas.
+- **Double barrière de niveau.** La réplique a sa propre liste `shared-bases` et
+  refuse de charger une base qui n'y figure pas, même présente dans son
+  répertoire : une erreur de poussée ne suffit pas à exposer une base.
+- **Identité et visibilité.** L'authentification est déléguée à un proxy
+  inverse, comme le mode équipe du § 5 bis.4 : l'en-tête `identity-header`
+  n'est cru que d'un pair de `trusted-proxies`, toute autre connexion est
+  refusée. Chaque base n'est servie qu'aux identités que sa ligne de
+  `visibility` nomme (`*`, une identité, un groupe). Une base fermée à
+  l'appelant se répond **comme une base absente** — `UNKNOWN_BASE`, absente de
+  `kb_list`, des descriptions et de `"*"`. Une référence vers elle (§ 3.6) se
+  lit comme une référence vers une base absente.
+- **Copies.** Chaque base est un dépôt reçu par `git push` (c)). La réplique ne
+  lit jamais ce dépôt en place : `okf-hub replica receive <base>`, que
+  l'opérateur branche sur la réception (hook `post-receive`), en tire un clone
+  neuf — l'historique compris, la fraîcheur du § 5 bis.1 en dépend — puis
+  bascule le lien `bases-dir/<base>` vers lui par `rename()` atomique. Une
+  lecture en cours finit sur l'ancienne copie, supprimée à la réception
+  suivante. La réplique constate la bascule au premier appel qui suit, par le
+  re-scan silencieux du § 4.4.c sous le déclencheur `replica` : aucun démon,
+  aucune surveillance de fichiers.
+- **Date.** `kb_list` donne, pour chaque base, la date de sa copie (la bascule)
+  : qui lit sait de quand date ce qu'il lit, machine source éteinte comprise.
+- **Rien d'autre.** Ni secret, ni configuration de bases privées : la réplique
+  ne connaît que ce qu'elle sert. Son répertoire se reconstruit par une
+  nouvelle publication, il n'a pas à être sauvegardé.
+
+```yaml
+# hub-config.local.yaml de la machine de la réplique
+shared-bases: [base-a, base-b]
+replica:
+  host: 0.0.0.0
+  port: 8078
+  identity-header: X-Forwarded-User
+  trusted-proxies: [172.18.0.5]
+  visibility:
+    base-a: ["*"]
+    base-b: [lecteur-x]
+  propose-hint: "Pour proposer : <la voie de l'opérateur>"
+```
+
+La clé `replica` n'est lue que par `okf-hub replica` : une section mal écrite
+n'empêche pas le serveur MCP de démarrer, comme `web`.
 
 ---
 
@@ -987,7 +1150,8 @@ valeurs. Origine : une session a dû enchaîner sept recherches plein texte pour
   "query": "string (rév. 4.6) — le texte contient tous ces termes ; sans repli en OU",
   "links_to_depth": "int 1..3 (rév. 4.6, défaut 1) — avec links_to, de proche en proche",
   "upstream_changed": "bool (rév. 4.6) — cite un document d'une autre base modifié après lui",
-  "sort": "path | relevance | oldest | most_cited | reaudit (rév. 4.6)"
+  "sort": "path | relevance | oldest | most_cited | reaudit (rév. 4.6)",
+  "select": "{fields: [string], data: [string]} (rév. 4.8) — projection : champs du frontmatter et blocs de données (§ 3.5) à rendre pour chaque document retenu"
 }
 ```
 
@@ -1019,6 +1183,19 @@ exact.
 documents et effectifs en `structuredContent`, pour qu'une autre interface les
 lise sans analyser de texte (§ 5 bis.3). Le texte reste la sortie destinée au
 modèle.
+
+**Projection (rév. 4.8).** `select` ne change pas les documents retenus : il
+dit quoi rendre de chacun. `fields` nomme des champs du frontmatter ; `data`,
+des blocs de données déclarés au profil (§ 3.5), par titre de section. Pour
+chaque document, la sortie structurée porte `fields` (champ → valeur, `null`
+si absent) et `data` (titre → liste de lignes, chaque ligne un objet colonne →
+valeur texte, ou objet YAML tel quel), plus les avertissements de ce document
+(bloc absent, mal formé, colonne manquante). Un nom que le profil d'une base ne
+déclare pas est refusé pour cette base (`INVALID_INPUT` si aucune base
+interrogée ne le déclare), pour qu'une faute de frappe ne passe pas pour un
+champ vide. Le texte ne rend que des effectifs (« 12 lignes dans Jalons ») :
+les lignes sont pour une machine, et le plafond transverse s'applique à la
+sortie structurée comme au texte, troncature signalée.
 
 ---
 
@@ -1163,7 +1340,10 @@ elle.
   cite ; un lien vers une base fermée n'est ni suivi ni distingué d'une base
   absente. Les **propositions** ont la visibilité de leur base.
 - `kb_find`, comme tous les outils MCP, n'applique aucune visibilité : la
-  frontière des sessions MCP reste celle du hub (§ 4.3).
+  frontière des sessions MCP reste celle du hub (§ 4.3). **(rév. 4.8)** Sauf
+  dans la réplique (§ 4.6.d), où chaque outil applique la visibilité de
+  l'appelant, avec les mêmes règles : base fermée et base absente y sont
+  indiscernables.
 
 ---
 
@@ -1246,7 +1426,10 @@ dans `proposals/accepted|rejected/`.
 ## 7. Le rôle gestionnaire
 
 Le gestionnaire **n'est pas un démon** : session Claude invoquée à la demande
-(par l'humain en v0), outillée par une skill fournie par le hub.
+(par l'humain en v0), outillée par une skill fournie par le hub. **(rév. 4.8)**
+En mode agent (§ 7.1, étape 5 bis), elle peut être lancée par une tâche
+planifiée de l'opérateur ; c'est toujours une session qui se termine, une passe
+par appel, jamais un processus qui attend.
 
 **Verrouillage :** toutes les opérations git du gestionnaire passent par le
 wrapper `okf-lock`, avec la granularité du § 4.4.b.3 : une résolution complète
@@ -1307,6 +1490,29 @@ qui échoue silencieusement.
    (approbation, répertoire de travail non propre hors `proposals/`) précède la
    première résolution ; un contrôle en échec ne commite rien de plus et laisse
    les fichiers en place pour examen.
+5 bis. **Mode `review: agent` (rév. 4.8)** : la revue s'exécute sans
+   confirmation humaine, pour une base dont le manifeste déclare
+   `review: agent` **et** que l'opérateur inscrit dans `agent-review`
+   (§ 4.1) — la base accepte, la machine approuve, comme pour `trusted-checks`.
+   Les étapes 0 à 4 bis sont inchangées ; la confirmation de l'étape 5 cède la
+   place à des **règles fixes**, vérifiées par `okf-review resolve --agent
+   <identifiant>` avant la première résolution et non par le modèle :
+   - aucun plan ne touche au manifeste, à `GOVERNANCE.md`, au profil, aux
+     `AGENTS.md` et `CLAUDE.md` de la base ;
+   - aucun plan ne supprime ni ne déplace de document ;
+   - dans une base partagée (§ 4.6.a), **ajouts seulement** : un document créé,
+     ou des lignes ajoutées à un document existant — aucune ligne retirée, hors
+     des champs de fraîcheur de l'étape 6 — et chaque ajout reprend les
+     sources de sa proposition ;
+   - une proposition qui demande autre chose, qui contient des directives
+     (étape 4), ou que la gouvernance réserve à l'humain, est **escaladée** :
+     elle reste dans `pending/`, avec son motif, et la passe se termine par une
+     seule liste d'escalades pour l'humain.
+
+   Un plan contraire à une règle est refusé avec la règle en cause, et rien
+   n'est résolu : la revue corrige son lot, elle ne contourne pas la règle.
+   Une passe ne voit que le niveau de son instance (§ 4.6.b) : une revue des
+   bases partagées ne lit jamais une base privée.
 6. Chaque intégration met à jour les champs de fraîcheur du corpus si le schéma
    en définit (ex. `last-verified`).
 
@@ -1317,7 +1523,9 @@ jamais d'une session pour réécrire autre chose.
 ### 7.2 Identité
 
 `Reviewed-By` = `<nom de l'humain confirmant>` en mode `human`.
-**[v1+]** en mode `agent` : `claude-manager/<base>`.
+**(rév. 4.8)** En mode `agent` : `agent:<identifiant>`, l'identifiant étant
+celui que l'opérateur donne à `okf-review resolve --agent`. Le préfixe suffit à
+distinguer, dans l'historique, ce qu'aucun humain n'a confirmé.
 
 ---
 
@@ -1332,7 +1540,7 @@ dans ce cadre ; ce qui n'y résiste pas est marqué.
 | Écriture directe au corpus par un contributeur | Impossible via MCP (seul `kb_propose` écrit, confiné à `pending/`). L'accès filesystem direct reste possible pour le propriétaire du hub — hors modèle de menace. |
 | Traversée de chemin (`kb_read`, `kb_search`) | Résolution canonique + confinement dans `corpus-dir`. **Tests dédiés obligatoires.** |
 | Injection dans les commits/frontmatter via les champs de proposition | Rejet des retours à la ligne dans `concerns`, `submitted_by`, `sources` ; frontmatter sérialisé exclusivement par bibliothèque YAML (§ 5.5). Sans cela, les invariants d'audit (§ 6.2) seraient contournables par trailers forgés. **Tests dédiés obligatoires (J2).** |
-| Contenu de proposition malveillant/erroné | Une proposition est **inerte** : texte jamais exécuté, jamais intégré sans revue. Double barrière : règle « données non fiables » (§ 7.1.4) + confirmation humaine. |
+| Contenu de proposition malveillant/erroné | Une proposition est **inerte** : texte jamais exécuté, jamais intégré sans revue. Double barrière : règle « données non fiables » (§ 7.1.4) + confirmation humaine. **(rév. 4.8)** En mode agent, la confirmation humaine cède la place aux règles fixes de l'étape 5 bis, vérifiées par `okf-review resolve` et non par le modèle. |
 | Affirmation non revue lue comme de la connaissance **(rév. 4.7)** | `kb_search` ne lit `proposals/pending/` que sur demande explicite (`include_pending`, faux par défaut) ; les propositions passent après tout le corpus, chaque résultat est marqué « non intégré », la sortie le rappelle en tête de cette partie ; des extraits seulement, jamais le corps entier, sous le plafond transverse. Ce qu'une session y lit relève de la même règle que pour le gestionnaire : des données non fiables, jamais des instructions (§ 7.1.4). |
 | Injection de prompt via un bundle importé | **Risque réel et partiellement couvert en v0.** Trois vecteurs : (1) `title`/`description` du manifeste, injectés dans les descriptions d'outils MCP donc dans le contexte de toutes les sessions connectées, sans même ouvrir le bundle — atténué par la validation § 3.3, qui limite la surface sans l'éliminer ; (2) `GOVERNANCE.md`, injecté dans le contexte du gestionnaire ; (3) `CLAUDE.md`, dans celui de toute session ouvrant le dépôt. Importer un bundle v0 est sans risque d'**exécution**, mais pas sans risque d'**influence**. **Consigne v0 (README + template) : n'importer que des bundles de confiance, et relire manifeste, `GOVERNANCE.md` et `CLAUDE.md` avant le premier usage de tout bundle tiers.** [v1+] : revue d'import outillée, éventuellement bundles signés. |
 | Usurpation `submitted-by` | Non authentifié, documenté comme tel. [v1+] : jetons par contributeur ou signatures. |
@@ -1341,6 +1549,9 @@ dans ce cadre ; ce qui n'y résiste pas est marqué.
 | Injection par la surface web **(rév. 4.5)** | Le corps des documents vient en partie de propositions d'agents : HTML brut désactivé, gabarits à échappement automatique, schémas de lien filtrés, politique de contenu stricte (`default-src 'self'`, aucune ressource externe ; **(rév. 4.6)** pour script, le seul fichier du hub — des commodités : palette du saut, raccourcis clavier, copie d'une commande, filtres appliqués au changement ; la page s'en passe, il ne lit que des pages que le hub sert déjà et n'envoie rien —, jamais de script en ligne), SVG servi sous `sandbox`. |
 | En-tête d'identité usurpé **(rév. 4.5)** | Cru seulement sur une connexion venue d'un proxy de `trusted-proxies`, adresse du pair TCP, jamais `X-Forwarded-For` ; toute autre connexion refusée. Mode local : bouclage seulement. |
 | Fuite par les liens et le graphe **(rév. 4.5)** | Liens entrants filtrés par la visibilité de la base qui cite ; une base fermée et une base absente indiscernables, dans les liens comme dans le graphe. |
+| Diffusion hors de la machine **(rév. 4.8)** | Niveau hors de la base (`shared-bases`, configuration de l'opérateur, jamais versionnée) : ni une revue ni une proposition ne peut partager une base. Une instance `--scope` ne connaît que son niveau. `okf-hub publish` refuse une base non partagée, et tout envoi qui porte un terme privé ou un motif de secret, avant le premier octet envoyé. La réplique refuse une base absente de sa propre liste. Une revue en mode agent envoie au modèle ce qu'une revue humaine assistée lui envoyait déjà : rien de nouveau n'est stocké hors de la machine. |
+| Revue sans confirmation humaine **(rév. 4.8)** | Deux clés (manifeste et `agent-review`) ; règles fixes vérifiées par `okf-review resolve`, pas par le modèle ; ajouts seulement dans une base partagée ; gouvernance, profil et manifeste hors d'atteinte ; escalade de tout le reste ; trailer `agent:` qui distingue ces commits dans l'historique (§ 7.2). Une erreur se corrige par une proposition, comme toute erreur du corpus. |
+| Réplique exposée sur un réseau **(rév. 4.8)** | Lecture seule : aucun outil d'écriture, aucun verrou, aucune écriture dans les copies. En-tête d'identité cru seulement d'un pair de `trusted-proxies` ; visibilité par base, base fermée et base absente indiscernables, dans les outils comme dans les références. Aucun secret ni configuration privée sur la machine de la réplique. |
 | Corruption par écritures concurrentes | `flock()` (auto-libéré à la mort du processus, fd frais par acquisition — § 4.4.b) + index git temporaire initialisé depuis HEAD + écriture atomique par `rename`. Fenêtre de crash résiduelle rattrapée par réconciliation (§ 7.1.0). **Tests de concurrence obligatoires (J2).** |
 | Déni par inflation | `content` ≤ 16 Ko, `sources` ≤ 20 × 300 car., `concerns` ≤ 200 car., `submitted_by` ≤ 100 car. → `INVALID_INPUT` au-delà. `description` de manifeste plafonnée (§ 3.3). Sorties d'outils plafonnées (§ 5). Re-scan silencieux sous cooldown 5 s (§ 4.4.c). |
 
@@ -1363,10 +1574,13 @@ structure § 3.1 avec :
   `.git/info/exclude` du § 4.4.b.1, volontairement) ;
 - un document d'exemple dans `knowledge/` ;
 - **(rév. 4.5)** un `schema.yaml` qui montre le profil (§ 3.5) en commentaire,
-  et `cites` dans le manifeste ;
+  et `cites` dans le manifeste ; **(rév. 4.8)** il déclare le noyau commun d'une
+  fiche (§ 3.5) et montre un bloc de données en commentaire ;
 - `INSTANTIATE.md` : checklist d'instanciation (renommer, remplir le manifeste,
   écrire les golden rules, **valider la gouvernance et passer `status` à
-  `stable`** (rév. 4.1), cloner dans `bases/`, rescan), rédigée pour être
+  `stable`** (rév. 4.1), cloner dans `bases/`, **(rév. 4.8)** décider si la
+  base sera partagée — dans `shared-bases` de la machine, jamais dans la
+  base —, rescan), rédigée pour être
   **exécutable par une session Claude interrogeant l'humain** — c'est le
   « questionnaire d'instanciation ».
 
@@ -1488,13 +1702,26 @@ bundle ne demande rien d'autre qu'un clone + rescan.
 
 ### 10.3 Hors périmètre v0 (rappel consolidé)
 
-Extensions `tools`/`skills` ; `review: agent|auto` ; validation automatique de
-schéma ; authentification des contributeurs ; politique d'incrément de version ;
-index de recherche dérivé (n'ajouter que si ripgrep devient mesurablement
-insuffisant) ; revue d'import de bundles tiers ; synchronisation remote
-(push/pull) : manuelle et hors garanties (§ 4.5) ; multi-hub.
+Extensions `tools`/`skills` ; `review: auto` (`agent` livré en rév. 4.8,
+§ 7.1 étape 5 bis) ; validation automatique de schéma ; authentification des
+contributeurs ; politique d'incrément de version ; index de recherche dérivé
+(n'ajouter que si ripgrep devient mesurablement insuffisant — voir ci-dessous
+pour la recherche par le sens) ; revue d'import de bundles tiers ;
+synchronisation remote (push/pull) : manuelle et hors garanties (§ 4.5), hors
+la publication d'une base partagée (§ 4.6.c) ; multi-hub.
 
 `kb_proposal_status` a quitté cette liste : livré en rév. 4.1 (§ 5.7).
+
+**Prévu — recherche par le sens (rév. 4.8).** Un mode `semantic` de
+`kb_search`, à côté de `keyword` et `regex` : la question est comparée aux
+passages par leur sens, sans que les mots coïncident. Pré-cadré pour que la
+reprise soit mécanique : un **index dérivé par base**, régénérable et jamais
+versionné (§ 1.1), reconstruit quand la base change ; un modèle d'empreintes
+**local**, sans appel réseau ; la même sortie et le même plafond que les autres
+modes ; les propositions en attente sous `include_pending` comme ailleurs. Il
+entre sur une mesure comparative — des questions réelles, avec et sans le
+mode —, pas avant : c'est la condition que posait déjà la règle de l'index
+dérivé.
 
 **Reporté — `kb_search` multi-bases (rév. 4.1).** Demande d'un `base: [...]` ou
 `base: "*"`. Reportée en **v1 optionnelle** : un seul retour, on attend la
@@ -1719,9 +1946,54 @@ lit dans le corpus, une rejetée a été écartée par la revue) ; un paramètre
 revue imposée par le hub (la revue reste à l'initiative de l'humain, § 7 ; la
 date de la plus ancienne la rend visible).
 
+### rév. 4.8 — bases privées et partagées, réplique, revue en mode agent, données d'une fiche (post-J5-octies)
+
+Origine : décision du propriétaire du 15/11/2026, sur une conception soumise le
+même jour. Le savoir appris en session doit se capter au fil de l'eau, être
+rangé par une IA sans que l'humain confirme chaque élément, et chaque base doit
+pouvoir être **partagée à part** et interrogée **machine éteinte** — sans
+qu'une base privée quitte jamais la machine. Il veut aussi qu'une fiche rende
+des **données brutes**, choisies par ses marques.
+
+Analyse des principes du § 1 : aucun n'est levé. Git reste canonique — la
+réplique n'est qu'une copie dérivée, reconstruite par une nouvelle publication
+(§ 1.1). Aucun protocole n'est inventé — MCP sur HTTP est un transport du
+protocole, les blocs de données sont du markdown que seule une déclaration du
+profil rend lisible par une machine (§ 1.2). La frontière d'écriture est
+inchangée : les sessions consommatrices proposent, seul le gestionnaire intègre
+(§ 1.3) ; le mode agent change qui confirme, pas qui écrit. Une base sans le
+hub reste lisible (§ 1.4). Aucun mécanisme du § 4.4.b n'est touché : la
+réplique n'écrit rien et ne prend aucun verrou, la publication lit la base et
+pousse, le mode agent passe par `okf-review resolve` et ses verrous.
+
+| § amendé | Objet |
+|---|---|
+| § 1.2 | MCP sur HTTP, dans la réplique seulement |
+| § 3.3 | `review: agent` |
+| § 3.5 | Blocs de données ; noyau commun d'une fiche |
+| § 4.1 | `shared-bases`, `agent-review`, `publish-remote`, `secret-patterns`, `replica` |
+| § 4.5, § 4.6 | Niveau d'une base, instance limitée à un niveau, publication sous gardes, réplique en lecture |
+| § 5.8 | `select` : projection des champs et des blocs de données |
+| § 5 bis.4 | La réplique applique la visibilité aux outils MCP |
+| § 7, § 7.1, § 7.2 | Mode agent : deux clés, règles fixes vérifiées par l'outil, escalade ; trailer `agent:` |
+| § 8 | Diffusion hors de la machine ; revue sans confirmation humaine ; réplique exposée |
+| § 9 | Noyau commun et bloc de données dans le template ; la question du partage à l'instanciation |
+| § 10.3 | `review: agent` livré ; recherche par le sens prévue, après mesure |
+
+Non retenu : le niveau dans le manifeste (le gestionnaire écrit dans la base,
+il pourrait la partager) ; une seule instance qui verrait tous les niveaux pour
+ranger (une revue des bases partagées lirait les privées) ; une réplique qui
+écrirait, ou qui recevrait les propositions (deux écrivains par base, et le
+modèle du § 4.4 à refaire pour le réseau) ; la synchronisation de
+`remote_sync` pour tenir la réplique (elle ne tourne qu'au démarrage, et elle
+écrit) ; une API HTTP pour les données d'une fiche (la sortie structurée de
+`kb_find` existe déjà) ; un format de données propre au hub (un tableau
+markdown et un bloc YAML se lisent sans lui) ; la recherche par le sens dans
+cette révision (elle se mesure d'abord, § 10.3).
+
 ---
 
-*Fin de spécification (rév. 4.7).* **Toute déviation par rapport aux principes du
+*Fin de spécification (rév. 4.8).* **Toute déviation par rapport aux principes du
 § 1 ou aux mécanismes du § 4.4.b doit être remontée au propriétaire du projet
 avant implémentation.** En cas de conflit non identifié entre deux révisions,
 **la plus ancienne prévaut** et le conflit est remonté.
