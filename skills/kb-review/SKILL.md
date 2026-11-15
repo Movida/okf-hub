@@ -172,6 +172,10 @@ si un plan en enfreint une. N'essaie pas de les contourner ; corrige le lot.
 - Tu peux rejeter, avec un motif, une proposition hors périmètre ou sans source
   vérifiable : elle reste lisible dans `rejected/`.
 
+Lancée par `bin/okf-ranger`, la session n'a que `bin/okf-review` (par son
+chemin absolu, une commande à la fois, jamais composée) et l'écriture dans son
+dossier courant, celui des plans : c'est là que vont les fichiers de plan.
+
 Termine la passe par **une seule** liste d'escalades pour l'humain : pour
 chacune, l'identifiant, le sujet et ce qui t'a fait escalader. Le trailer
 `Reviewed-By` vaut `agent:<id>`, posé par l'outil : le `reviewed_by` du plan est

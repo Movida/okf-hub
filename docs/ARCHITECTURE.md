@@ -1117,6 +1117,8 @@ périmètre d'une instance, dont dépendent la publication et la réplique.
 | Rejet | Permis, avec motif | Réversible : la proposition reste lisible dans `rejected/` et se redépose. |
 | Trailer | `Reviewed-By: agent:<id>`, l'identifiant validé (`[A-Za-z0-9][A-Za-z0-9._/-]{0,63}`) ; le `reviewed_by` du plan est remplacé | Le préfixe distingue dans l'historique ce qu'aucun humain n'a confirmé (§ 7.2) ; le plan, écrit par le modèle, ne peut pas se signer humain. |
 | Isolement des niveaux | Hors de l'outil : instance MCP `--scope shared`, et accès fichiers limité par l'opérateur | `okf-review` ne lit qu'une base à la fois ; ce qu'une session lit d'autre dépend de ce qu'on lui ouvre. |
+| Lancement sans humain | `bin/okf-ranger` (`ranger.py`) : une session `claude -p` par base aux deux clés **qui a des propositions en attente** ; `Read`, `Glob`, `Grep` et `Bash(<chemin absolu de bin/okf-review>:*)` seuls permis, `acceptEdits` dans un dossier de plans jetable qui sert de dossier courant, `Edit`/`Write` refusés sous le hub ; `OKF_REVIEW_AGENT` posé | Mesuré sur un poste (15/11) : sans ces permissions, la session non interactive ne range rien ; les commandes composées sont refusées même quand chaque partie est permise, d'où la consigne « une commande à la fois ». Le corpus n'est écrit que par `resolve --agent`. |
+| `OKF_REVIEW_AGENT` | Posée, `okf-review resolve` exige `--agent` de cette valeur et `reconcile --apply` est refusé | La permission « exécuter okf-review » couvrirait sinon une résolution en mode humain, signée par le plan du modèle. |
 
 ---
 
@@ -1337,6 +1339,7 @@ pour vérifier la couverture sans relire la suite.
 | Base partagée : ajout sourcé accepté, fraîcheur modifiable, modification refusée, ajout sans source refusé | `test_ajout_source_dans_une_base_partagee`, `test_fraicheur_modifiable_dans_une_base_partagee`, `test_modification_refusee_dans_une_base_partagee`, `test_ajout_sans_source_refuse_dans_une_base_partagee` |
 | Base privée : modification permise ; document vidé refusé ; gouvernance hors d'atteinte | `test_modification_permise_dans_une_base_privee`, `test_document_vide_refuse`, `test_fichiers_de_gouvernance_hors_d_atteinte` |
 | `--dry-run` applique les règles ; rejet permis ; trailer `agent:<id>` | `test_dry_run_applique_les_regles`, `test_rejet_permis`, `test_ajout_source_dans_une_base_partagee` |
+| `okf-ranger` : aucun modèle sans attente, deux clés exigées, permissions fixes, `--sec` ; `OKF_REVIEW_AGENT` interdit le mode humain (`tests/test_ranger.py`) | `test_rien_en_attente_aucun_modele_lance`, `test_base_sans_deux_cles_refusee`, `test_session_lancee_sous_permissions_fixes`, `test_sec_ne_lance_rien`, `test_agent_impose_interdit_le_mode_humain` |
 
 Exécution :
 

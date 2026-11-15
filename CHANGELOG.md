@@ -5,6 +5,16 @@ Le projet suit la version de la spécification qu'il implémente : `bundle-spec 
 
 ## [Non publié]
 
+### Ajouté — ranger sans humain
+
+- **`bin/okf-ranger`** : lance la revue en mode agent (`claude -p`, skill
+  `kb-review`) sur chaque base de `agent-review` qui a des propositions en
+  attente, sous des permissions fixes : lecture du hub, `bin/okf-review` seul,
+  écriture dans un dossier de plans jetable. De quoi le lancer d'une tâche
+  planifiée.
+- **`OKF_REVIEW_AGENT`** : posé, `okf-review` ne résout qu'en mode agent sous cet
+  identifiant et refuse `reconcile --apply`.
+
 ### Ajouté — revue en mode agent (rév. 4.8, § 7.1 étape 5 bis)
 
 - **`okf-review resolve --agent <id>`** : résolution sans confirmation humaine,
