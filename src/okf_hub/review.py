@@ -940,6 +940,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     try:
+        _exiger_agent_impose(args)
         registry = _registry(args.hub_root)
         if args.command == "verify":
             return cmd_verify(
@@ -996,6 +997,25 @@ def main(argv: list[str] | None = None) -> int:
         print(f"ERROR: {type(exc).__name__}: {exc}", file=sys.stderr)
         return 5
     return 0
+
+
+#: Posée par `okf-ranger` pour la session qu'il lance : cette session ne résout
+#: qu'en mode agent, sous l'identifiant imposé, et ne réconcilie rien.
+AGENT_IMPOSE = "OKF_REVIEW_AGENT"
+
+
+def _exiger_agent_impose(args) -> None:
+    impose = os.environ.get(AGENT_IMPOSE)
+    if not impose:
+        return
+    if args.command == "resolve" and args.agent != impose:
+        raise ToolError(
+            INVALID_INPUT,
+            f"{AGENT_IMPOSE}={impose} : cette session ne résout qu'en mode agent, "
+            f"avec --agent {impose}",
+        )
+    if args.command == "reconcile" and args.apply:
+        raise ToolError(INVALID_INPUT, f"{AGENT_IMPOSE}={impose} : reconcile --apply attend un humain")
 
 
 def _mode_agent(base: Base, registry: Registry, plans: list[Plan], identifiant: str) -> None:

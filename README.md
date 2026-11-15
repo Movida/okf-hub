@@ -606,6 +606,22 @@ bases partagées ne lise jamais une base privée, branchez sa session sur une
 instance `okf-hub --scope shared`, et ne lui donnez accès qu'aux répertoires de
 ces bases.
 
+Pour ranger sans personne, d'une tâche planifiée :
+
+```sh
+bin/okf-ranger                 # toutes les bases de agent-review ; --sec : dire sans lancer
+bin/okf-ranger --agent rangeur --model <modèle> <base>
+```
+
+Pour chaque base aux deux clés qui a des propositions en attente — et seulement
+celles-là : aucun modèle n'est lancé pour rien —, `okf-ranger` lance une session
+`claude -p` qui suit la skill `kb-review`, sous des permissions qu'il fixe : elle
+lit le hub, n'exécute que `bin/okf-review` (par son chemin absolu ; une commande
+composée est refusée), n'écrit que dans un dossier de plans jetable, et
+`OKF_REVIEW_AGENT` lui interdit de résoudre autrement qu'en mode agent sous cet
+identifiant, ou de réconcilier. Il donne pour chaque base le nombre de
+propositions en attente avant et après, la durée, et la liste des escalades.
+
 ## Limitations v0 assumées
 
 ### Le corps d'une proposition résolue n'est pas relisible via MCP

@@ -1,0 +1,26 @@
+#!/bin/sh
+# okf-ranger — ranger sans humain les bases en mode agent (§ 7.1 étape 5 bis).
+#
+#   okf-ranger [--agent <id>] [--model <modèle>] [--sec] [<base>...]
+#
+# Sans base, toutes celles de `agent-review`. Lance, pour chaque base qui a des
+# propositions en attente, une session `claude -p` aux permissions fixées par
+# src/okf_hub/ranger.py : elle n'exécute que bin/okf-review, n'écrit que dans
+# un dossier de plans jetable, et ne résout qu'en mode agent. De quoi le lancer
+# d'une tâche planifiée.
+
+set -eu
+
+script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)
+HUB_ROOT=${OKF_HUB_ROOT:-$(dirname -- "$script_dir")}
+
+if [ -n "${OKF_HUB_PYTHON:-}" ]; then
+    PY=$OKF_HUB_PYTHON
+elif [ -x "$HUB_ROOT/.venv/bin/python" ]; then
+    PY="$HUB_ROOT/.venv/bin/python"
+else
+    PY=python3
+fi
+
+OKF_HUB_ROOT="$HUB_ROOT" PYTHONPATH="$HUB_ROOT/src${PYTHONPATH:+:$PYTHONPATH}" \
+    exec "$PY" -m okf_hub.ranger --hub-root "$HUB_ROOT" "$@"
