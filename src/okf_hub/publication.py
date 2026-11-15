@@ -15,8 +15,10 @@ Le refus nomme le commit, le fichier, la ligne et la règle, jamais la valeur.
 C'est la seule synchronisation outillée par le hub, et elle ne va que dans un
 sens (§ 4.5) : rien n'est jamais tiré de la réplique.
 
-La base est lue, jamais écrite : `git fetch` ne touche qu'aux références du
-remote, et `git push` qu'au dépôt distant. Aucun verrou de base n'est donc
+La base est lue, jamais écrite : ce que la réplique a déjà se lit dans l'annonce
+de réception (`git push --dry-run`), sans rien tirer — la publication n'a besoin
+que du droit de pousser, une réplique peut refuser toute lecture par git —, et
+`git push` ne touche qu'au dépôt distant. Aucun verrou de base n'est donc
 pris (§ 4.4.b) — un `kb_propose` concurrent ajoute au plus un commit que la
 poussée n'emporte pas, et qui partira à la suivante.
 """
@@ -117,11 +119,33 @@ def lignes_ajoutees(diff: str, commit: str) -> list[Ligne]:
     return out
 
 
-def sortants(racine: Path, remote: str) -> list[str]:
-    """Commits de HEAD qu'aucune référence du remote ne connaît, du plus ancien
-    au plus récent."""
-    res = _git(racine, "rev-list", "--reverse", "HEAD", "--not", f"--remotes={remote}")
-    return res.stdout.split()
+def etat_distant(racine: Path, remote: str, branche: str) -> tuple[str, str]:
+    """Ce que la réplique a sur `branche`, lu dans son annonce de réception :
+    `git push --dry-run --porcelain` n'envoie rien et ne demande que le droit de
+    pousser. Rend (drapeau, résumé) de la ligne de la référence : `*` branche
+    absente, ` ` avance rapide (`ancien..nouveau`), `=` à jour, `!` refusée.
+    Lève `PublicationRefusee` si le remote ne répond pas."""
+    res = _git(racine, "push", "--dry-run", "--porcelain", remote,
+               f"HEAD:refs/heads/{branche}", check=False)
+    for ligne in res.stdout.splitlines():
+        champs = ligne.split("\t")
+        if len(champs) >= 3 and champs[1].endswith(f":refs/heads/{branche}") and champs[0]:
+            return champs[0][0], champs[2]
+    raise PublicationRefusee(
+        f"remote '{remote}' injoignable : ce qui part ne peut pas être établi.",
+        [l for l in (res.stderr or res.stdout).splitlines() if l.strip()][:5],
+    )
+
+
+def sortants(racine: Path, drapeau: str, resume: str) -> list[str]:
+    """Commits de HEAD que la réplique n'a pas, du plus ancien au plus récent."""
+    if drapeau == "=":
+        return []
+    if drapeau == "*":
+        plage = ["HEAD"]
+    else:  # « ancien..nouveau » : l'ancien est connu ici, sinon l'avance rapide serait refusée
+        plage = [f"{resume.split('..')[0]}..HEAD"]
+    return _git(racine, "rev-list", "--reverse", *plage).stdout.split()
 
 
 def elements(racine: Path, commits: list[str]) -> list[Ligne]:
@@ -188,22 +212,17 @@ def publier(config: HubConfig, nom: str, *, dry_run: bool = False) -> Bilan:
     if not branche:
         raise PublicationRefusee(f"la base '{nom}' n'est sur aucune branche (HEAD détachée)")
 
-    recu = _git(racine, "fetch", "--quiet", "--no-tags", remote, check=False)
-    if recu.returncode != 0:
+    drapeau, resume = etat_distant(racine, remote, branche)
+    if drapeau not in "* =":
         raise PublicationRefusee(
-            f"remote '{remote}' injoignable : ce qui part ne peut pas être établi.",
-            [l for l in recu.stderr.splitlines() if l.strip()][:5],
+            f"la réplique a sur '{branche}' des commits que la base n'a pas : "
+            f"divergence, jamais forcée. La source est la base ; examiner la "
+            f"réplique avant tout.",
+            [resume],
         )
-    distante = f"refs/remotes/{remote}/{branche}"
-    if _git(racine, "rev-parse", "--verify", "--quiet", distante, check=False).returncode == 0:
-        if _git(racine, "merge-base", "--is-ancestor", distante, "HEAD", check=False).returncode != 0:
-            raise PublicationRefusee(
-                f"la réplique a sur '{branche}' des commits que la base n'a pas : "
-                f"divergence, jamais forcée. La source est la base ; examiner la "
-                f"réplique avant tout."
-            )
 
-    bilan = Bilan(base=nom, remote=remote, branche=branche, commits=sortants(racine, remote))
+    bilan = Bilan(base=nom, remote=remote, branche=branche,
+                  commits=sortants(racine, drapeau, resume))
     if not bilan.commits:
         return bilan
 

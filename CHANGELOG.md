@@ -5,6 +5,14 @@ Le projet suit la version de la spécification qu'il implémente : `bundle-spec 
 
 ## [Non publié]
 
+### Corrigé — publier vers une réplique qui refuse la lecture par git
+
+- **`okf-hub publish`** ne tire plus rien de la réplique : ce qu'elle a déjà se
+  lit dans son annonce de réception (`git push --dry-run --porcelain`). Une
+  réplique qui ne sert que la poussée, la lecture passant par son MCP et sa
+  visibilité, refusait le `git fetch` préalable : la publication s'arrêtait sur
+  « injoignable » avant les gardes. Elle n'a plus besoin que du droit de pousser.
+
 ### Ajouté — ranger sans humain
 
 - **`bin/okf-ranger`** : lance la revue en mode agent (`claude -p`, skill
