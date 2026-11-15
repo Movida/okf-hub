@@ -5,6 +5,17 @@ Le projet suit la version de la spécification qu'il implémente : `bundle-spec 
 
 ## [Non publié]
 
+### Ajouté — publier une base partagée vers sa réplique (rév. 4.8, § 4.6.c)
+
+- **`okf-hub publish <base> [--dry-run]`** : pousse une base de
+  `shared-bases` vers le remote `publish-remote` (défaut `replica`), en avance
+  rapide seulement.
+- **Gardes avant tout envoi** : la garde de confidentialité (termes privés moins
+  les noms des bases partagées) et un détecteur de secrets (formats connus,
+  valeur affectée à un nom de secret, `secret-patterns`) sur les contenus
+  ajoutés, chemins, auteurs et messages des commits qui partent. Le refus donne
+  commit, fichier, ligne et règle, jamais la valeur.
+
 ### Ajouté — niveau d'une base et périmètre d'une instance (rév. 4.8, § 4.6.a-b)
 
 - **`shared-bases`** (`hub-config.local.yaml`) : les bases partagées, par
