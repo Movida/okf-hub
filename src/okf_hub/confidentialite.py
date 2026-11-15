@@ -47,7 +47,9 @@ def termes_prives(registry: Registry) -> frozenset[str]:
     config = registry.config
     livrees = set(available(config.hub_root))
     termes: set[str] = set(config.private_terms)
-    for base in registry.ordered():
+    # `installed`, pas `ordered` : hors de son périmètre (§ 4.6.b), une base
+    # privée reste un terme privé.
+    for base in registry.installed():
         if base.name in livrees or base.dir_name in livrees:
             continue
         termes |= {base.name, base.dir_name, base.corpus_dir.name}

@@ -774,7 +774,18 @@ private-terms: [MonOrganisation, NOM_DE_PROJET]
 
 # Bases publiques en plus de celles livrées avec le hub (facultatif).
 public-bases: []
+
+# Bases partagées (spec § 4.6). Toute autre base est privée.
+shared-bases: [ma-base-partagee]
 ```
+
+Le niveau d'une base se décide ici, jamais dans la base : le gestionnaire écrit
+dans les bases, il ne doit pas pouvoir en partager une. Une instance peut se
+limiter à un niveau — `okf-hub --scope shared` ne voit que les bases
+partagées, `okf-hub --scope private` que les autres —, ce qui permet de
+brancher une revue ou un client sur un seul niveau. Hors de son périmètre, une
+base n'existe pas pour l'instance ; son nom reste un terme privé pour les
+gardes ci-dessous.
 
 Sont publics le hub et ses bases livrées qui ont un dépôt canonique
 (`okf-hub-feedback`). Trois gardes y tiennent les termes privés à l'écart :

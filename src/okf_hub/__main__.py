@@ -12,7 +12,7 @@ import anyio
 from mcp.server.stdio import stdio_server
 
 from . import bootstrap, hublog, remote_sync
-from .config import HubConfig
+from .config import SCOPES, HubConfig
 from .server import HubServer
 
 
@@ -40,6 +40,14 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--verbose",
         action="store_true",
         help="Duplique le journal sur la sortie d'erreur (stdout est réservé au protocole).",
+    )
+    parser.add_argument(
+        "--scope",
+        choices=SCOPES,
+        default=None,
+        help="Périmètre de l'instance (§ 4.6.b) : « shared » ne voit que les bases "
+        "de `shared-bases` (hub-config.local.yaml), « private » que les autres. "
+        "Sans cette option, toutes les bases.",
     )
     sous_commandes = parser.add_subparsers(dest="command")
     setup_parser = sous_commandes.add_parser(
@@ -141,6 +149,8 @@ def main(argv: list[str] | None = None) -> int:
         print(f"okf-hub: configuration invalide ({hub_root}) : {exc}", file=sys.stderr)
         return 2
 
+    config = config.with_scope(args.scope)
+
     hublog.configure(config.log_file, echo_stderr=args.verbose)
 
     if getattr(args, "command", None) == "web":
@@ -149,6 +159,7 @@ def main(argv: list[str] | None = None) -> int:
     hublog.info(
         f"démarrage — hub_root={config.hub_root} bases_dir={config.bases_dir} "
         f"read_toc_threshold={config.read_toc_threshold}"
+        + (f" scope={config.scope}" if config.scope else "")
     )
 
     # Les bases livrées avec le hub (bundles/) sont installées avant la
