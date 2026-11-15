@@ -5,6 +5,15 @@ Le projet suit la version de la spécification qu'il implémente : `bundle-spec 
 
 ## [Non publié]
 
+### Ajouté — les données d'une fiche (rév. 4.8, § 3.5, § 5.8)
+
+- **Profil, clé `data`** : une section déclarée porte un bloc de données, tableau
+  markdown ou bloc `yaml` (liste d'objets), colonnes attendues facultatives.
+- **`kb_find`, paramètre `select`** : `{fields, data}` rend, pour chaque document
+  retenu, les champs du frontmatter et les lignes des blocs nommés, en sortie
+  structurée, avec leurs avertissements ; le texte ne donne que les effectifs.
+  Plafond transverse appliqué aux lignes.
+
 ### Ajouté — la réplique en lecture (rév. 4.8, § 4.6.d)
 
 - **`okf-hub replica`** : sert les bases partagées en MCP sur HTTP (`/mcp`),

@@ -197,7 +197,7 @@ def test_entrees_invalides(bases):
 def test_le_schema_n_annonce_que_des_parametres_lus():
     from okf_hub.lecture.requete import CLES_CRITERES
 
-    assert set(find_tool.SCHEMA["properties"]) == {"base", "count_by", "max_results", *CLES_CRITERES}
+    assert set(find_tool.SCHEMA["properties"]) == {"base", "count_by", "max_results", "select", *CLES_CRITERES}
     assert "query_regex" not in CLES_CRITERES  # propre à l'interface web
 
 

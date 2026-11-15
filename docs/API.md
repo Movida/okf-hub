@@ -403,6 +403,7 @@ valeurs (spec § 5.8). Là où `kb_search` dit *où l'on parle* d'un sujet,
 | `links_to_depth` | `integer` | 1 | 1 à 3, avec `links_to` : les documents qui citent ceux qui citent la cible… Sommaires et journaux ne propagent pas. |
 | `upstream_changed` | `boolean` | — | Documents qui citent un document d'une autre base modifié (commit) après leur propre dernier commit, ou dernière vérification. |
 | `sort` | `string` | voir ci-dessous | `path`, `relevance` (avec `query`), `oldest`, `most_cited`, `reaudit` (âge en mois × (1 + citations), doublé si l'amont a changé). |
+| `select` | `{fields?: string[], data?: string[]}` | — | Projection (rév. 4.8) : pour chaque document retenu, les champs du frontmatter et les lignes des blocs de données nommés, en sortie structurée. Exclusif de `count_by`. |
 | `max_results` | `integer` | 50 | 1 à 200, toutes bases confondues, réparti comme `kb_search`. |
 
 Les critères se cumulent (ET). `index.md` et `log.md` ne sont ni listés ni
@@ -459,8 +460,25 @@ porte au besoin `upstream_changed`, `cited_by`, `reaudit_score`, `depth`). C'est
 voie des programmes — une autre interface lit les données sans analyser le
 texte. Le client MCP officiel valide ces données contre le schéma.
 
+**Projection — `select` (rév. 4.8).** Une fiche porte aussi des données : les
+champs de son frontmatter, et des **blocs de données** — une section que le
+profil de la base déclare sous `data` (spec § 3.5), dont le premier tableau
+markdown ou bloc `yaml` (liste d'objets) donne des lignes. `select` les rend
+pour chaque document retenu, dans la sortie structurée : `fields` (champ →
+valeur, `null` si absent), `data` (titre → lignes, objets colonne → valeur),
+`warnings` (bloc absent ou mal formé, colonne déclarée manquante). Le texte ne
+donne que le nombre de lignes (`— Jalons : 12 ligne(s)`) : les lignes sont pour
+un programme. Un nom que le profil d'une base ne déclare pas est signalé pour
+cette base, et refusé (`INVALID_INPUT`) si aucune base interrogée ne le déclare.
+Les lignes partagent le plafond transverse : au-delà, un document porte
+`data_truncated` et le texte le dit.
+
+```json
+{"base": "produit-x", "type": "Projet", "select": {"fields": ["statut"], "data": ["Jalons"]}}
+```
+
 **Erreurs** — `INVALID_INPUT` (critère mal formé ; `links_to` sans préfixe sur
-plusieurs bases), `NOT_FOUND` (`links_to` vers un document absent),
+plusieurs bases ; `select` mal formé, non déclaré, ou avec `count_by`), `NOT_FOUND` (`links_to` vers un document absent),
 `UNKNOWN_BASE` (base, ou préfixe de `links_to`, inconnu).
 
 ---

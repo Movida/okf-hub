@@ -1091,6 +1091,18 @@ périmètre d'une instance, dont dépendent la publication et la réplique.
 | Détection | Signature = cible de chaque lien de `bases-dir`, comparée à chaque appel ; si elle change, re-scan silencieux sous le déclencheur `replica` | Aucun démon, aucune surveillance (§ 4.4) ; un `readlink` par base et par appel. Sous le cooldown, une bascule très rapprochée est vue cinq secondes plus tard, l'ancienne copie servant entre-temps. |
 | `kb_list` | Celui du hub, suivi de la date de chaque copie (date du lien, posé à la bascule) | Qui lit sait de quand date ce qu'il lit. |
 
+**Données d'une fiche (§ 3.5, § 5.8).** `lecture/profil.py` (clé `data`),
+`lecture/donnees.py` (extraction), `tools/find_tool.py` (`select`).
+
+| Point | Décision | Motif |
+|---|---|---|
+| Quel bloc | Le premier tableau markdown (hors blocs de code), ou le premier bloc de code `yaml`/`yml`, de la section déclarée, sous-sections comprises | La spec dit « en premier contenu » ; une phrase d'introduction avant le tableau est l'usage courant, la refuser ferait réécrire les fiches pour le hub. |
+| Cellules | Texte, espaces retirés, `\|` rendu `|` ; une colonne sans en-tête est ignorée ; une ligne courte est complétée de vides | Le tableau reste du markdown que tout lecteur affiche ; aucune conversion de type n'est devinée. |
+| YAML | `safe_load`, liste d'objets exigée ; dates rendues en ISO | La seule valeur YAML que JSON ne porte pas. |
+| Lecture | Le fichier est relu pour chaque document projeté, pas tenu dans le modèle | Le modèle de lecture ne garde pas les corps : les y ajouter pour une projection rare grossirait chaque processus. |
+| Plafond | Budget de 16 000 caractères JSON pour les lignes, sur toute la réponse ; au-delà `data_truncated` et une note | Le plafond transverse (§ 1.5) s'applique à la sortie structurée comme au texte (§ 5.8, rév. 4.8). |
+| Nom non déclaré | Avertissement par base ; `INVALID_INPUT` si aucune base ne le déclare | Une faute de frappe ne doit pas passer pour un champ vide (§ 5.8). |
+
 ---
 
 ## 7. Traçabilité — exigence de test → test
@@ -1294,6 +1306,14 @@ pour vérifier la couverture sans relire la suite.
 | Bascule vue à l'appel suivant | `test_une_bascule_est_vue_a_l_appel_suivant` |
 | Double barrière de niveau | `test_double_barriere_une_base_non_declaree_n_est_pas_chargee` |
 | Refus avant MCP : sans identité, hors proxy de confiance | `test_sans_identite_ou_hors_proxy_refuse_avant_mcp` |
+
+| Exigence (données d'une fiche, § 3.5, § 5.8) | Test (`tests/test_donnees.py`) |
+|---|---|
+| Profil : clé `data`, partie mal formée ignorée avec avertissement | `test_profil_declare_les_blocs` |
+| Extraction : tableau, pipe échappé, YAML, dates, colonne manquante, bloc absent ou mal formé | `test_tableau_lignes_et_pipe_echappe`, `test_yaml_liste_d_objets_dates_en_texte`, `test_colonne_manquante_signalee_sans_rien_ecarter`, `test_section_absente_ou_sans_bloc`, `test_yaml_qui_n_est_pas_une_liste_d_objets` |
+| `select` : champs et lignes en sortie structurée, effectifs seuls dans le texte | `test_select_rend_champs_et_lignes` |
+| `select` : non déclaré refusé ; exclusif de `count_by` ; mal formé | `test_select_inconnu_refuse`, `test_select_et_count_by_exclusifs`, `test_select_mal_forme` |
+| Plafond ; sortie conforme à `outputSchema` | `test_select_plafonne_les_lignes`, `test_sortie_structuree_valide_contre_le_schema` |
 
 Exécution :
 

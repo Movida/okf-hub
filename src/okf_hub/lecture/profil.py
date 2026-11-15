@@ -55,6 +55,9 @@ ROLES_SECTION = frozenset(ROLES_SECTION_ORDRE)
 
 SORTES_VUE = ("list", "timeline", "graph", "freshness")
 
+#: Formats d'un bloc de données (§ 3.5, rév. 4.8).
+FORMATS_DONNEES = ("table", "yaml")
+
 _VIDE: Mapping = MappingProxyType({})
 
 
@@ -104,6 +107,16 @@ class Vue:
 
 
 @dataclass(frozen=True)
+class BlocDonnees:
+    """Une section qui porte des données (§ 3.5, rév. 4.8)."""
+
+    titre: str
+    """Tel que déclaré ; la correspondance se fait sur le titre normalisé."""
+    format: str
+    colonnes: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
 class Profil:
     champs: Mapping[str, Champ] = field(default_factory=lambda: _VIDE)
     types: Mapping[str, TypeDeclare] = field(default_factory=lambda: _VIDE)
@@ -112,13 +125,15 @@ class Profil:
     sections: Mapping[str, str] = field(default_factory=lambda: _VIDE)
     """Titre de section normalisé → rôle."""
     vues: tuple[Vue, ...] = ()
+    donnees: Mapping[str, BlocDonnees] = field(default_factory=lambda: _VIDE)
+    """Titre de section normalisé → bloc de données (rév. 4.8)."""
     avertissements: tuple[str, ...] = ()
 
     @property
     def enrichi(self) -> bool:
         """Le profil déclare au moins un élément au-delà du schéma v0."""
         return bool(
-            self.types or self.facettes or self.sections or self.vues
+            self.types or self.facettes or self.sections or self.vues or self.donnees
             or any(c.role or c.valeurs for c in self.champs.values())
         )
 
@@ -196,6 +211,7 @@ class _Lecture:
             facettes=MappingProxyType(facettes),
             sections=MappingProxyType(self._sections()),
             vues=tuple(self._vues()),
+            donnees=MappingProxyType(self._donnees()),
             avertissements=tuple(self.avertissements),
         )
 
@@ -305,6 +321,38 @@ class _Lecture:
                 self.note(f"section « {titre} » : rôle inconnu « {role} » — ignorée")
                 continue
             out[normalize_heading(str(titre))] = role
+        return out
+
+    # --- blocs de données (rév. 4.8) -------------------------------------------
+
+    def _donnees(self) -> dict[str, BlocDonnees]:
+        brut = self.brut.get("data")
+        if brut is None:
+            return {}
+        if not isinstance(brut, dict):
+            self.note("data : correspondance titre → {format, columns} attendue — ignoré")
+            return {}
+        out: dict[str, BlocDonnees] = {}
+        for titre, detail in brut.items():
+            titre = str(titre).strip()
+            detail = detail if isinstance(detail, dict) else {}
+            fmt = detail.get("format")
+            if fmt not in FORMATS_DONNEES:
+                self.note(
+                    f"data « {titre} » : format attendu {' ou '.join(FORMATS_DONNEES)} — ignoré"
+                )
+                continue
+            colonnes = detail.get("columns")
+            if colonnes is not None and not (
+                isinstance(colonnes, list) and all(isinstance(c, str) and c.strip() for c in colonnes)
+            ):
+                self.note(f"data « {titre} » : `columns` doit être une liste de noms — ignoré")
+                colonnes = None
+            cle = normalize_heading(titre)
+            if not cle or cle in out:
+                self.note(f"data « {titre} » : titre vide ou déjà déclaré — ignoré")
+                continue
+            out[cle] = BlocDonnees(titre, fmt, tuple(c.strip() for c in colonnes or ()))
         return out
 
     # --- vues -----------------------------------------------------------------

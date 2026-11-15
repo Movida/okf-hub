@@ -13,10 +13,15 @@ web : ce que voit l'humain est ce que lit l'agent.
 
 from __future__ import annotations
 
+import datetime as dt
+import json
+
 from ..errors import INVALID_INPUT, NOT_FOUND, ToolError
 from ..lecture.modele import Lecteur, cible_document, resoudre
 from ..lecture.liens import INTERBASE, classer
+from ..lecture.donnees import extraire
 from ..lecture.profil import ROLES_SECTION_ORDRE
+from ..mdutil import normalize_heading
 from ..lecture.requete import (
     CLES_CRITERES,
     SANS_TYPE,
@@ -140,6 +145,21 @@ SCHEMA = {
                 "une facette déclarée par le profil, ou un nom de champ."
             ),
         },
+        "select": {
+            "type": "object",
+            "properties": {
+                "fields": {"type": "array", "items": {"type": "string"}, "minItems": 1},
+                "data": {"type": "array", "items": {"type": "string"}, "minItems": 1},
+            },
+            "additionalProperties": False,
+            "description": (
+                "Projection : pour chaque document retenu, rend en sortie structurée les "
+                "champs du frontmatter nommés par `fields` et les lignes des blocs de "
+                "données nommés par `data` (titres de section que le profil de la base "
+                "déclare sous `data`). Un nom que le profil ne déclare pas est refusé. "
+                "Le texte ne donne que le nombre de lignes."
+            ),
+        },
         "max_results": {
             "type": "integer",
             "default": DEFAULT_MAX_RESULTS,
@@ -218,6 +238,14 @@ _DOCUMENT = {
         "cited_by": {"type": "integer"},
         "reaudit_score": {"type": "number"},
         "depth": {"type": "integer"},
+        "fields": {"type": "object", "description": "Projection (`select.fields`) : champ → valeur, null si absent."},
+        "data": {
+            "type": "object",
+            "description": "Projection (`select.data`) : titre du bloc → lignes (objets colonne → valeur).",
+            "additionalProperties": {"type": "array", "items": {"type": "object"}},
+        },
+        "data_truncated": {"type": "boolean", "description": "Lignes omises : plafond de sortie atteint."},
+        "warnings": {"type": "array", "items": {"type": "string"}},
     },
     "required": ["path", "title", "type"],
 }
@@ -266,6 +294,9 @@ def run_structured(registry: Registry, arguments: dict) -> Sortie:
     if count_by is not None and (not isinstance(count_by, str) or not count_by.strip()):
         raise ToolError(INVALID_INPUT, "paramètre 'count_by' : chaîne non vide attendue")
     max_results = optional_int(arguments, "max_results", DEFAULT_MAX_RESULTS, 1, HARD_MAX_RESULTS)
+    select = _lire_select(arguments.get("select"))
+    if select is not None and count_by:
+        raise ToolError(INVALID_INPUT, "paramètres 'select' et 'count_by' : l'un ou l'autre")
     donnees = {"criteria": criteres.decrire(), "count_by": count_by.strip() if count_by else None, "bases": []}
     if not noms:
         return Sortie("Aucune base n'est actuellement enregistrée.", donnees)
@@ -279,8 +310,116 @@ def run_structured(registry: Registry, arguments: dict) -> Sortie:
     if count_by:
         texte = _rendre_effectifs(lecteur, noms, resultats, count_by.strip(), en_tete, donnees)
     else:
-        texte = _rendre_liste(lecteur, noms, resultats, criteres, max_results, en_tete, donnees)
+        projection = _Projection(registry, lecteur, noms, select) if select else None
+        texte = _rendre_liste(lecteur, noms, resultats, criteres, max_results, en_tete, donnees, projection)
     return Sortie(texte, donnees)
+
+
+# --- projection (rév. 4.8, § 5.8) ----------------------------------------------
+
+#: Budget de la sortie structurée pour les lignes de données, en caractères JSON :
+#: le plafond transverse du § 1.5 (~4 000 tokens), compté comme le texte.
+BUDGET_DONNEES = 16_000
+
+
+def _lire_select(brut) -> dict | None:
+    if brut is None:
+        return None
+    if not isinstance(brut, dict) or set(brut) - {"fields", "data"} or not brut:
+        raise ToolError(INVALID_INPUT, "paramètre 'select' : {fields: [...], data: [...]} attendu")
+    out = {}
+    for cle in ("fields", "data"):
+        valeur = brut.get(cle)
+        if valeur is None:
+            continue
+        if not isinstance(valeur, list) or not valeur or not all(isinstance(v, str) and v.strip() for v in valeur):
+            raise ToolError(INVALID_INPUT, f"paramètre 'select.{cle}' : liste non vide de noms attendue")
+        out[cle] = [v.strip() for v in valeur]
+    return out
+
+
+class _Projection:
+    """Ce que `select` demande, résolu base par base contre le profil."""
+
+    def __init__(self, registry: Registry, lecteur: Lecteur, noms: list[str], select: dict) -> None:
+        self.registry = registry
+        self.par_base: dict[str, tuple[list[str], list, list[str]]] = {}
+        champs_vus, blocs_vus = set(), set()
+        for nom in noms:
+            profil = lecteur.modele(nom).profil
+            champs = [c for c in select.get("fields", []) if c in profil.champs]
+            blocs = [profil.donnees[normalize_heading(d)] for d in select.get("data", [])
+                     if normalize_heading(d) in profil.donnees]
+            absents = [c for c in select.get("fields", []) if c not in profil.champs]
+            absents += [d for d in select.get("data", []) if normalize_heading(d) not in profil.donnees]
+            self.par_base[nom] = (champs, blocs, absents)
+            champs_vus.update(champs)
+            blocs_vus.update(normalize_heading(b.titre) for b in blocs)
+        inconnus = [c for c in select.get("fields", []) if c not in champs_vus]
+        inconnus += [d for d in select.get("data", []) if normalize_heading(d) not in blocs_vus]
+        if inconnus:
+            raise ToolError(
+                INVALID_INPUT,
+                f"paramètre 'select' : {', '.join(inconnus)} — déclaré par le profil d'aucune "
+                f"base interrogée (champs : required/optional ; blocs : data)",
+            )
+        self.budget = BUDGET_DONNEES
+        self.tronque = False
+
+    def avertissement_base(self, nom: str) -> str | None:
+        absents = self.par_base[nom][2]
+        if not absents:
+            return None
+        return f"[select : non déclaré par le profil de '{nom}' : {', '.join(absents)}]"
+
+    def projeter(self, nom: str, doc) -> tuple[dict, str]:
+        """(données à ajouter au document, suffixe de sa ligne de texte)."""
+        champs, blocs, _ = self.par_base[nom]
+        sortie: dict = {}
+        avertissements: list[str] = []
+        if champs:
+            sortie["fields"] = {c: _valeur_json(doc.frontmatter.get(c)) for c in champs}
+        resume = []
+        if blocs:
+            base = self.registry.get(nom)
+            try:
+                texte = (base.corpus_dir / doc.chemin).read_text(encoding="utf-8")
+            except (OSError, UnicodeDecodeError) as exc:
+                texte = ""
+                avertissements.append(f"document illisible : {exc}")
+            sortie["data"] = {}
+            for bloc in blocs:
+                extraction = extraire(texte, bloc) if texte else None
+                lignes = extraction.lignes if extraction else []
+                if extraction:
+                    avertissements += extraction.avertissements
+                gardees = []
+                for ligne in lignes:
+                    cout = len(json.dumps(ligne, ensure_ascii=False))
+                    if cout > self.budget:
+                        self.tronque = True
+                        sortie["data_truncated"] = True
+                        break
+                    self.budget -= cout
+                    gardees.append(ligne)
+                sortie["data"][bloc.titre] = gardees
+                resume.append(f"{bloc.titre} : {len(lignes)} ligne(s)")
+        if avertissements:
+            sortie["warnings"] = avertissements
+        suffixe = (" — " + ", ".join(resume)) if resume else ""
+        if avertissements:
+            suffixe += f" — {len(avertissements)} avertissement(s)"
+        return sortie, suffixe
+
+
+def _valeur_json(valeur):
+    if isinstance(valeur, (dt.date, dt.datetime)):
+        return valeur.isoformat()
+    if isinstance(valeur, dict):
+        return {str(k): _valeur_json(v) for k, v in valeur.items()}
+    if isinstance(valeur, (list, tuple)):
+        return [_valeur_json(v) for v in valeur]
+    return valeur
 
 
 def _document(t) -> dict:
@@ -327,7 +466,8 @@ def _ligne(t) -> str:
     return ligne
 
 
-def _rendre_liste(lecteur, noms, resultats, criteres: Criteres, max_results, en_tete, donnees) -> str:
+def _rendre_liste(lecteur, noms, resultats, criteres: Criteres, max_results, en_tete, donnees,
+                  projection: "_Projection | None" = None) -> str:
     quotas = allocate_quota([len(resultats[n]) for n in noms], max_results)
     writer = BudgetedWriter()
     plusieurs = len(noms) > 1
@@ -345,9 +485,12 @@ def _rendre_liste(lecteur, noms, resultats, criteres: Criteres, max_results, en_
         # interrogée, ce n'est pas une faute de frappe.
         if total == 0 and criteres.type is not None:
             writer.add_forced(_rappel_des_types(lecteur, nom, criteres.type))
+        if projection is not None and (avert := projection.avertissement_base(nom)):
+            writer.add_forced(avert)
         for t in trouves[:quota]:
-            if writer.add(_ligne(t)):
-                listes.append(_document(t))
+            extra, suffixe = projection.projeter(nom, t.doc) if projection is not None else ({}, "")
+            if writer.add(_ligne(t) + suffixe):
+                listes.append({**_document(t), **extra})
             else:
                 omis += 1
         omis += len(trouves) - min(quota, len(trouves))
@@ -356,6 +499,11 @@ def _rendre_liste(lecteur, noms, resultats, criteres: Criteres, max_results, en_
         f"sont exacts ; affinez par `under`, `type` ou `tags`"
         + ("]" if writer.truncated else ", ou relevez `max_results`]")
     )
+    if projection is not None and projection.tronque:
+        writer.add_forced(
+            "[données tronquées : le plafond de sortie est atteint, des lignes manquent "
+            "(data_truncated) ; affinez les critères ou demandez moins de blocs]"
+        )
     if writer.truncated:
         return writer.render(note)
     if omis:
