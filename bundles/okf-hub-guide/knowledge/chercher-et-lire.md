@@ -165,6 +165,16 @@ l'orthographe avant de conclure. Un zéro obtenu sur le bon type, le bon
 sous-chemin, est la preuve d'absence que plusieurs recherches plein texte ne
 donnent jamais.
 
+## Rapatrier des valeurs, pas des documents
+
+Quand une base déclare des **données** dans son profil — des champs du
+frontmatter, des blocs de lignes (tableau markdown ou liste YAML) —, `kb_find`
+peut rendre ces valeurs directement, avec `select`, au lieu de la liste des
+documents : pour chaque fiche retenue, les champs et les lignes demandés, en
+sortie structurée. C'est la bonne voie pour comparer vingt fiches sur trois
+colonnes sans en lire une seule en entier. Seuls les noms déclarés au profil
+sont acceptés : `kb_governance` les donne.
+
 ## Si tu ne trouves rien
 
 Dans l'ordre :
