@@ -5,6 +5,18 @@ Le projet suit la version de la spécification qu'il implémente : `bundle-spec 
 
 ## [Non publié]
 
+### Ajouté — la réplique en lecture (rév. 4.8, § 4.6.d)
+
+- **`okf-hub replica`** : sert les bases partagées en MCP sur HTTP (`/mcp`),
+  outils de lecture seulement, derrière un proxy inverse ; visibilité par base
+  d'après l'identité transmise, une base fermée se répondant comme une absente ;
+  `kb_list` donne la date de chaque copie ; `propose-hint` dans les
+  instructions. Clé `replica` de `hub-config.local.yaml`.
+- **`okf-hub replica receive <base>`**, pour le hook `post-receive` : clone
+  neuf, bascule atomique du lien servi, deux copies gardées.
+- **`HubServer`** : `outils` et `_registre_pour(ctx)` ouvrent le même mécanisme
+  d'appel à la réplique ; `Registry.vue(noms)`.
+
 ### Ajouté — publier une base partagée vers sa réplique (rév. 4.8, § 4.6.c)
 
 - **`okf-hub publish <base> [--dry-run]`** : pousse une base de

@@ -85,6 +85,16 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     web_parser.add_argument("--host", default=None, help="Adresse de bouclage (défaut : 127.0.0.1).")
     web_parser.add_argument("--port", type=int, default=None, help="Port (défaut : 8077).")
+    replica_parser = sous_commandes.add_parser(
+        "replica",
+        help="Réplique en lecture des bases partagées (§ 4.6.d) : sert MCP sur HTTP "
+        "(/mcp) derrière un proxy inverse, réglages dans la clé `replica` de "
+        "hub-config.local.yaml. `okf-hub replica receive <base>`, lancé par le hook "
+        "post-receive du dépôt d'une base, en bascule la copie servie.",
+    )
+    replica_parser.add_argument("replica_argv", nargs="*", help="rien, ou « receive <base> ».")
+    replica_parser.add_argument("--host", default=None, help="Adresse d'écoute.")
+    replica_parser.add_argument("--port", type=int, default=None, help="Port (défaut : 8078).")
     publish_parser = sous_commandes.add_parser(
         "publish",
         help="Publie une base partagée vers sa réplique (§ 4.6.c) : vérifie qu'elle "
@@ -167,6 +177,11 @@ def main(argv: list[str] | None = None) -> int:
 
     if getattr(args, "command", None) == "web":
         return _web(config, args)
+
+    if getattr(args, "command", None) == "replica":
+        from .replica import main as replica_main
+
+        return replica_main(config, args.replica_argv, host=args.host, port=args.port)
 
     if getattr(args, "command", None) == "publish":
         from .publication import main as publish_main

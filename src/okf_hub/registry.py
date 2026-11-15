@@ -339,6 +339,18 @@ class Registry:
     def ordered(self) -> list[Base]:
         return [self.bases[n] for n in self.names()]
 
+    def vue(self, noms) -> "Registry":
+        """Un registre réduit aux bases `noms`, même configuration (§ 4.6.d).
+
+        Pour la visibilité par appelant de la réplique : une base absente de la
+        vue y est une base absente, pour tous les outils. La vue ne se re-scanne
+        pas : on en tire une nouvelle du registre après un re-scan.
+        """
+        v = Registry(self.config)
+        v.bases = {n: b for n, b in self.bases.items() if n in noms}
+        v.last_report = RescanReport(unchanged=sorted(v.bases))
+        return v
+
     def installed(self) -> list[Base]:
         """Toutes les bases installées, périmètre ignoré (§ 4.6.b).
 

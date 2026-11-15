@@ -102,6 +102,9 @@ class HubConfig:
     """Périmètre de l'instance (§ 4.6.b) : `shared`, `private` ou aucun. Posé
     par la ligne de commande (`okf-hub --scope`), jamais par un fichier : deux
     instances d'un même hub peuvent avoir deux périmètres."""
+    replica: object = field(default=None, hash=False, compare=False)
+    """Clé `replica` telle quelle (§ 4.6.d, rév. 4.8) : validée par
+    `okf-hub replica` seul, comme `web`."""
     web: object = field(default=None, hash=False, compare=False)
     """Clé `web` telle quelle (§ 4.1, rév. 4.5) : validée par `okf-hub web` seul
     (`web.acces.WebConfig`), pour qu'une section mal écrite n'empêche pas le
@@ -155,6 +158,7 @@ class HubConfig:
             shared_bases=_liste(raw, "shared-bases", path),
             publish_remote=_remote(raw, path),
             secret_patterns=_motifs(raw, path),
+            replica=raw.get("replica"),
             web=raw.get("web"),
         )
 

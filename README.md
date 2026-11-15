@@ -650,6 +650,47 @@ recopier la valeur. La poussée se fait en avance rapide seulement : si la
 réplique a divergé, rien n'est forcé. Le remote se change par
 `publish-remote`.
 
+### La réplique, sur l'autre machine
+
+`okf-hub replica` sert les bases partagées en **MCP sur HTTP** (`/mcp`), en
+lecture seule : `kb_list` (avec la date de chaque copie), `kb_search`,
+`kb_read`, `kb_find`, `kb_governance`, `kb_proposal_status`. Elle se place
+derrière un proxy inverse qui authentifie et transmet l'identité, comme le mode
+équipe de l'interface web ; chaque base n'est servie qu'aux identités que sa
+ligne de `visibility` nomme, et une base fermée se répond comme une base
+absente. Elle ne charge que les bases de sa propre `shared-bases`.
+
+```yaml
+# hub-config.local.yaml de la machine de la réplique
+shared-bases: [ma-base-partagee]
+replica:
+  host: 0.0.0.0
+  port: 8078
+  identity-header: X-Forwarded-User     # requis
+  trusted-proxies: [172.18.0.5]         # défaut : le bouclage
+  visibility:
+    ma-base-partagee: ["*"]
+  propose-hint: "Pour proposer : …"     # repris dans les instructions du serveur
+```
+
+Chaque base y arrive par `git push` dans un dépôt nu, dont le hook
+`post-receive` bascule la copie servie :
+
+```sh
+git init --bare /srv/depots/ma-base-partagee.git
+cat > /srv/depots/ma-base-partagee.git/hooks/post-receive <<'HOOK'
+#!/bin/sh
+exec okf-hub --hub-root /srv/okf-hub replica receive ma-base-partagee
+HOOK
+chmod +x /srv/depots/ma-base-partagee.git/hooks/post-receive
+```
+
+`receive` tire un clone neuf dans `bases/.copies/` et bascule le lien
+`bases/ma-base-partagee` vers lui d'un seul `rename()` ; la copie précédente
+reste pour une lecture en cours, les plus anciennes sont supprimées. Le
+premier appel qui suit voit la nouvelle copie. Le répertoire `bases/` de la
+réplique n'a pas à être sauvegardé : une publication le reconstruit.
+
 ## Bases par défaut
 
 Deux bases documentent le hub lui-même. Ce sont des **bundles ordinaires** —

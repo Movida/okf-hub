@@ -1078,6 +1078,19 @@ périmètre d'une instance, dont dépendent la publication et la réplique.
 | Verrou | Aucun | La base n'est pas écrite : `fetch` ne touche qu'aux références du remote. Un `kb_propose` concurrent ajoute un commit que la poussée n'emporte pas ; il part à la suivante. |
 | Amont de la branche | Non posé (`push` sans `-u`) | La synchronisation au démarrage (`remote_sync`) n'avance que sur l'amont : la réplique ne doit jamais devenir une source. |
 
+**Réplique (§ 4.6.d).** Module `replica.py`, commande `okf-hub replica`.
+
+| Point | Décision | Motif |
+|---|---|---|
+| Serveur | `ReplicaServer(HubServer)` : même appel d'outil, même re-scan, mêmes erreurs ; `HubServer` gagne `outils` (la liste servie) et `_registre_pour(ctx)` (le registre que voit l'appelant) | Un seul mécanisme d'appel et de re-scan (§ 4.4.c) : la réplique change ce qu'elle sert et à qui, pas comment. |
+| Transport | `Server.streamable_http_app`, sans état (`stateless_http`), réponses JSON, sous uvicorn sans `proxy_headers` | Pas de session à tenir : une requête, une réponse. Sans `proxy_headers`, l'adresse vue est celle du pair TCP, la seule que vérifie `trusted-proxies`. |
+| Accès | `web.acces` réutilisé tel quel (`WebConfig`, `visiteur_de`, `bases_visibles`) ; `identity-header` obligatoire ; un filtre ASGI répond 403 avant MCP | Une seule règle de confiance pour la web et la réplique ; une connexion hors proxy ne doit même pas atteindre le protocole. |
+| Visibilité | `Registry.vue(noms)` : un registre réduit, gardé par ensemble de bases visibles tant que le registre ne change pas | Tous les outils lisent le registre qu'on leur passe : une base absente de la vue est absente partout, références entre bases comprises. Garder la vue garde son moteur de lecture (`Lecteur.de`), sans recharger les modèles à chaque appel. |
+| Double barrière | L'instance tourne en `--scope shared` ; `receive` refuse une base absente de `shared-bases` | Une base poussée par erreur, ou posée à la main dans `bases-dir`, n'est pas servie. |
+| Copies | `git clone --no-local` dans `bases-dir/.copies/` (caché, jamais scanné), lien posé par `os.replace` ; deux copies gardées | La bascule est atomique ; une lecture qui a résolu l'ancienne copie la finit ; `--no-local` ne partage aucun objet avec le dépôt reçu, qu'un push suivant modifie. |
+| Détection | Signature = cible de chaque lien de `bases-dir`, comparée à chaque appel ; si elle change, re-scan silencieux sous le déclencheur `replica` | Aucun démon, aucune surveillance (§ 4.4) ; un `readlink` par base et par appel. Sous le cooldown, une bascule très rapprochée est vue cinq secondes plus tard, l'ancienne copie servant entre-temps. |
+| `kb_list` | Celui du hub, suivi de la date de chaque copie (date du lien, posé à la bascule) | Qui lit sait de quand date ce qu'il lit. |
+
 ---
 
 ## 7. Traçabilité — exigence de test → test
@@ -1271,6 +1284,16 @@ pour vérifier la couverture sans relire la suite.
 | Détecteur de secrets, sans recopier la valeur ; références et prose permises ; `secret-patterns` | `test_un_secret_bloque_l_envoi_sans_etre_recopie`, `test_une_reference_ou_de_la_prose_ne_sont_pas_des_secrets`, `test_secret_patterns_de_l_operateur`, `test_secret_patterns_invalide_refuse_au_chargement` |
 | Avance rapide seulement ; remote absent ; `--dry-run` | `test_divergence_jamais_forcee`, `test_sans_remote_refuse_avec_la_commande`, `test_dry_run_n_envoie_rien` |
 | Lignes numérotées dans le fichier d'arrivée | `test_numerotation_des_lignes_ajoutees` |
+
+| Exigence (réplique, § 4.6.d) | Test (`tests/test_replique.py`) |
+|---|---|
+| Réception : lien vers une copie, bascule, deux copies gardées | `test_reception_pose_un_lien_vers_une_copie`, `test_bascule_et_elagage` |
+| Réception refusée : base non partagée, nom différent, vrai répertoire | `test_reception_refuse_une_base_non_partagee`, `test_reception_refuse_un_nom_qui_ne_correspond_pas`, `test_reception_ne_remplace_pas_un_vrai_repertoire` |
+| Configuration : identité requise, clés fermées | `test_identite_obligatoire`, `test_cle_inconnue_refusee` |
+| De bout en bout en HTTP : outils de lecture seulement, `propose-hint`, date des copies, base fermée = absente | `test_lecture_seule_et_visibilite`, `test_un_lecteur_nomme_voit_sa_base` |
+| Bascule vue à l'appel suivant | `test_une_bascule_est_vue_a_l_appel_suivant` |
+| Double barrière de niveau | `test_double_barriere_une_base_non_declaree_n_est_pas_chargee` |
+| Refus avant MCP : sans identité, hors proxy de confiance | `test_sans_identite_ou_hors_proxy_refuse_avant_mcp` |
 
 Exécution :
 
