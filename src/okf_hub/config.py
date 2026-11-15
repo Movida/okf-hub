@@ -92,6 +92,9 @@ class HubConfig:
     niveau vit ici, dans la configuration de l'opérateur, et jamais dans la
     base : le gestionnaire écrit dans les bases, il ne doit pas pouvoir en
     partager une."""
+    agent_review: frozenset[str] = frozenset()
+    """Bases dont l'opérateur approuve la revue sans confirmation humaine
+    (§ 7.1 étape 5 bis, rév. 4.8) ; la base doit aussi déclarer `review: agent`."""
     publish_remote: str = DEFAULT_PUBLISH_REMOTE
     """Remote git de la réplique, dans chaque base partagée (§ 4.6.c)."""
     secret_patterns: tuple[str, ...] = ()
@@ -156,6 +159,7 @@ class HubConfig:
             private_terms=_liste(raw, "private-terms", path),
             public_bases=_liste(raw, "public-bases", path),
             shared_bases=_liste(raw, "shared-bases", path),
+            agent_review=_liste(raw, "agent-review", path),
             publish_remote=_remote(raw, path),
             secret_patterns=_motifs(raw, path),
             replica=raw.get("replica"),

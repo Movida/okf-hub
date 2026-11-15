@@ -1103,6 +1103,21 @@ périmètre d'une instance, dont dépendent la publication et la réplique.
 | Plafond | Budget de 16 000 caractères JSON pour les lignes, sur toute la réponse ; au-delà `data_truncated` et une note | Le plafond transverse (§ 1.5) s'applique à la sortie structurée comme au texte (§ 5.8, rév. 4.8). |
 | Nom non déclaré | Avertissement par base ; `INVALID_INPUT` si aucune base ne le déclare | Une faute de frappe ne doit pas passer pour un champ vide (§ 5.8). |
 
+**Mode agent (§ 7.1 étape 5 bis, § 7.2).** Module `agent.py`, option
+`okf-review resolve --agent`.
+
+| Point | Décision | Motif |
+|---|---|---|
+| Où vivent les règles | Dans `okf-review resolve`, après `verify_plans` et avant la première résolution ; `--dry-run` les applique aussi | « Vérifiées par l'outil et non par le modèle » : la skill les décrit, l'outil les tient. Comme `--checks`, tout refus précède le premier commit. |
+| Deux clés | `governance.review: agent` (manifeste, accepté depuis la rév. 4.8 ; `auto` reste ramené à `human`) **et** `agent-review` (configuration locale) | La base accepte, la machine approuve — le modèle de `trusted-checks`. Une base importée qui se déclarerait `agent` n'en obtient rien sans l'opérateur. |
+| Intouchables | `okf-bundle.yaml`, `GOVERNANCE.md`, `schema.yaml`, `AGENTS.md`, `CLAUDE.md` par leur nom, plus le fichier de profil déclaré | Les trois premiers et `CLAUDE.md` sont déjà exclus du corpus ; `AGENTS.md` ne l'est pas — ses règles de revue sont éditables par un humain, jamais par la revue qu'elles gouvernent. |
+| Suppression | Un document dont le corps devient vide est refusé | Un plan ne sait ni supprimer ni déplacer ; vider en tiendrait lieu. |
+| « Ajouts seulement » | `difflib` ligne à ligne entre le fichier sur disque et le contenu final ; une ligne d'avant retirée ou remplacée est refusée, sauf dans le frontmatter sous `verified`, `stale_after` ou `last-verified` | Mécanique et vérifiable : ce qui a été revu par un humain ne change pas sans lui. Les champs de fraîcheur sont ceux de l'étape 6 et des familles OKF. |
+| Sources | Pour chaque proposition acceptée, au moins une de ses `sources` figure telle quelle dans les lignes ajoutées aux documents de `integrated_into` | La seule forme vérifiable de « chaque ajout reprend les sources de sa proposition ». |
+| Rejet | Permis, avec motif | Réversible : la proposition reste lisible dans `rejected/` et se redépose. |
+| Trailer | `Reviewed-By: agent:<id>`, l'identifiant validé (`[A-Za-z0-9][A-Za-z0-9._/-]{0,63}`) ; le `reviewed_by` du plan est remplacé | Le préfixe distingue dans l'historique ce qu'aucun humain n'a confirmé (§ 7.2) ; le plan, écrit par le modèle, ne peut pas se signer humain. |
+| Isolement des niveaux | Hors de l'outil : instance MCP `--scope shared`, et accès fichiers limité par l'opérateur | `okf-review` ne lit qu'une base à la fois ; ce qu'une session lit d'autre dépend de ce qu'on lui ouvre. |
+
 ---
 
 ## 7. Traçabilité — exigence de test → test
@@ -1314,6 +1329,14 @@ pour vérifier la couverture sans relire la suite.
 | `select` : champs et lignes en sortie structurée, effectifs seuls dans le texte | `test_select_rend_champs_et_lignes` |
 | `select` : non déclaré refusé ; exclusif de `count_by` ; mal formé | `test_select_inconnu_refuse`, `test_select_et_count_by_exclusifs`, `test_select_mal_forme` |
 | Plafond ; sortie conforme à `outputSchema` | `test_select_plafonne_les_lignes`, `test_sortie_structuree_valide_contre_le_schema` |
+
+| Exigence (mode agent, § 7.1 étape 5 bis) | Test (`tests/test_mode_agent.py`) |
+|---|---|
+| `review: agent` accepté, `auto` ramené à `human` | `test_manifeste_accepte_review_agent`, `test_review_auto_reste_traite_comme_human` |
+| Deux clés ; identifiant validé | `test_sans_approbation_de_l_operateur_refuse`, `test_sans_review_agent_au_manifeste_refuse`, `test_identifiant_invalide_refuse` |
+| Base partagée : ajout sourcé accepté, fraîcheur modifiable, modification refusée, ajout sans source refusé | `test_ajout_source_dans_une_base_partagee`, `test_fraicheur_modifiable_dans_une_base_partagee`, `test_modification_refusee_dans_une_base_partagee`, `test_ajout_sans_source_refuse_dans_une_base_partagee` |
+| Base privée : modification permise ; document vidé refusé ; gouvernance hors d'atteinte | `test_modification_permise_dans_une_base_privee`, `test_document_vide_refuse`, `test_fichiers_de_gouvernance_hors_d_atteinte` |
+| `--dry-run` applique les règles ; rejet permis ; trailer `agent:<id>` | `test_dry_run_applique_les_regles`, `test_rejet_permis`, `test_ajout_source_dans_une_base_partagee` |
 
 Exécution :
 

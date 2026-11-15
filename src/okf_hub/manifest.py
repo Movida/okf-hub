@@ -145,10 +145,10 @@ def load_manifest(bundle_root: Path) -> Manifest:
             warnings.append(f"governance.frontmatter-schema '{schema_rel}' introuvable — ignoré")
 
     review = governance.get("review", "human")
-    if review != "human":
-        # Seule valeur v0 ; « agent » et « auto » sont [v1+]. On n'échoue pas :
-        # cohérent avec la tolérance générale aux champs inconnus.
-        warnings.append(f"governance.review='{review}' non supporté en v0 — traité comme 'human'")
+    if review not in ("human", "agent"):
+        # « agent » depuis la rév. 4.8 (§ 7.1 étape 5 bis) ; « auto » reste [v1+].
+        # On n'échoue pas : cohérent avec la tolérance générale aux champs inconnus.
+        warnings.append(f"governance.review='{review}' non supporté — traité comme 'human'")
         review = "human"
 
     checks = _parse_checks(governance.get("checks"), warnings)

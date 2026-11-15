@@ -5,6 +5,16 @@ Le projet suit la version de la spécification qu'il implémente : `bundle-spec 
 
 ## [Non publié]
 
+### Ajouté — revue en mode agent (rév. 4.8, § 7.1 étape 5 bis)
+
+- **`okf-review resolve --agent <id>`** : résolution sans confirmation humaine,
+  pour une base qui déclare `governance.review: agent` et que l'opérateur inscrit
+  dans `agent-review`. Règles fixes vérifiées avant la première résolution :
+  gouvernance, profil et manifeste hors d'atteinte ; aucun document vidé ; dans
+  une base partagée, ajouts seulement (hors champs de fraîcheur) et sources
+  reprises. Trailer `Reviewed-By: agent:<id>`.
+- **Skill `kb-review`** : étape 5 bis, escalades en une seule liste.
+
 ### Ajouté — les données d'une fiche (rév. 4.8, § 3.5, § 5.8)
 
 - **Profil, clé `data`** : une section déclarée porte un bloc de données, tableau

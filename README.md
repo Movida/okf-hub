@@ -585,6 +585,27 @@ bin/okf-lock ma-base -- sh -c "git -C '$root' … && git -C '$root' commit -m '�
 
 Le verrou doit couvrir la séquence **complète**, jamais commande par commande.
 
+### Sans confirmation : le mode agent
+
+Une base peut être revue sans confirmation humaine (spec § 7.1, étape 5 bis) si
+**deux clés** sont tournées : son manifeste déclare `governance.review: agent`, et
+l'opérateur l'inscrit dans `agent-review` de `hub-config.local.yaml`. La revue
+passe alors par :
+
+```sh
+okf-review resolve <base> --plan plan.json --agent <identifiant>
+```
+
+L'outil — pas le modèle — refuse tout le lot avant la première résolution si un
+plan touche à la gouvernance, au profil ou au manifeste, vide un document, ou,
+dans une base partagée, retire ou modifie une ligne hors des champs de fraîcheur,
+ou intègre une proposition sans reprendre une de ses sources. Le reste
+s'escalade : la proposition reste en attente, et la skill en dresse la liste.
+Chaque commit porte `Reviewed-By: agent:<identifiant>`. Pour qu'une revue des
+bases partagées ne lise jamais une base privée, branchez sa session sur une
+instance `okf-hub --scope shared`, et ne lui donnez accès qu'aux répertoires de
+ces bases.
+
 ## Limitations v0 assumées
 
 ### Le corps d'une proposition résolue n'est pas relisible via MCP
