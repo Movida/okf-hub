@@ -242,6 +242,10 @@ class Registry:
     def __init__(self, config: HubConfig) -> None:
         self.config = config
         self.bases: dict[str, Base] = {}
+        self._out_of_scope: dict[str, Base] = {}
+        """Bases installées hors du périmètre de l'instance (§ 4.6.b). Aucun
+        outil ne les voit ; seule la garde de confidentialité les lit, pour que
+        leurs noms restent des termes privés (`installed`)."""
         self.last_report: RescanReport = RescanReport()
 
     # --- découverte ---------------------------------------------------------
@@ -296,6 +300,11 @@ class Registry:
                     manifest=manifest, root=entry.resolve(), dir_name=entry.name
                 )
 
+        # Le périmètre s'applique après la résolution des collisions : une
+        # base hors périmètre ne libère pas son `name` pour une homonyme.
+        hors = {n: b for n, b in found.items() if not self.config.in_scope(n)}
+        found = {n: b for n, b in found.items() if n not in hors}
+
         previous = set(self.bases)
         current = set(found)
         report.added = sorted(current - previous)
@@ -303,11 +312,16 @@ class Registry:
         report.unchanged = sorted(current & previous)
 
         self.bases = found
+        self._out_of_scope = hors
         self.last_report = report
+        perimetre = (
+            f", périmètre {self.config.scope} ({len(hors)} hors périmètre)"
+            if self.config.scope else ""
+        )
         hublog.info(
             f"découverte : {len(found)} base(s) — "
             f"+{len(report.added)} -{len(report.removed)} "
-            f"={len(report.unchanged)}, {len(report.invalid)} invalide(s)"
+            f"={len(report.unchanged)}, {len(report.invalid)} invalide(s){perimetre}"
         )
         return report
 
@@ -324,3 +338,13 @@ class Registry:
 
     def ordered(self) -> list[Base]:
         return [self.bases[n] for n in self.names()]
+
+    def installed(self) -> list[Base]:
+        """Toutes les bases installées, périmètre ignoré (§ 4.6.b).
+
+        Pour la garde de confidentialité seulement : une instance limitée aux
+        bases partagées doit encore refuser le nom d'une base privée. Aucun
+        outil ne s'en sert, sans quoi le périmètre ne cacherait plus rien.
+        """
+        tout = {**self._out_of_scope, **self.bases}
+        return [tout[n] for n in sorted(tout)]

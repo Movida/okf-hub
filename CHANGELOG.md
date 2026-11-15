@@ -5,6 +5,16 @@ Le projet suit la version de la spécification qu'il implémente : `bundle-spec 
 
 ## [Non publié]
 
+### Ajouté — niveau d'une base et périmètre d'une instance (rév. 4.8, § 4.6.a-b)
+
+- **`shared-bases`** (`hub-config.local.yaml`) : les bases partagées, par
+  `name`. Toute autre base est privée.
+- **`okf-hub --scope shared|private`** : l'instance ne découvre que les bases
+  de ce niveau ; une base hors périmètre se répond comme une base absente, et
+  le rapport de découverte ne la nomme pas. Sans l'option, rien ne change.
+- **Garde de confidentialité** : les noms des bases privées restent des termes
+  privés même pour une instance qui ne les voit pas.
+
 ### Spécification — rév. 4.8 : bases privées et partagées, réplique, mode agent
 
 - **Niveau d'une base** : privée par défaut, partagée si l'opérateur l'inscrit

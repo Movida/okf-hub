@@ -1051,6 +1051,20 @@ rév. 4.5 :
 
 **Aucun écart assumé** : la rév. 4.7 de la spec décrit ce qui est fait.
 
+## 6 undecies. Décisions d'implémentation de la rév. 4.8 — niveaux et périmètre
+
+Origine : décision du propriétaire du 2026-11-15 (spec § 4.6). La rév. 4.8 se
+livre en plusieurs changements ; celui-ci pose le niveau d'une base et le
+périmètre d'une instance, dont dépendent la publication et la réplique.
+
+| Point | Décision | Motif |
+|---|---|---|
+| Où vit le niveau | `shared-bases` de `hub-config.local.yaml`, par `name` de manifeste | Hors de portée du gestionnaire (§ 4.6.a) ; le `name` est l'adresse de tous les outils, le répertoire peut différer (§ 3.3). |
+| Où vit le périmètre | `HubConfig.scope`, posé par `okf-hub --scope` via `with_scope`, jamais lu d'un fichier | Deux instances d'un même hub (revue des partagées, revue des privées) ont deux périmètres sur la même configuration. |
+| Où il s'applique | `Registry.scan`, après la résolution des collisions de `name` | Un seul point : tous les outils, descriptions et `instructions` lisent le registre, et une base hors périmètre se répond comme une absente (`UNKNOWN_BASE`, liste des bases valides sans elle). Après les collisions, pour qu'une base hors périmètre ne libère pas son nom au profit d'une homonyme. |
+| Garde de confidentialité | `termes_prives` lit `Registry.installed()`, périmètre ignoré | Sans cela, une instance `--scope shared` aurait laissé déposer le nom d'une base privée dans une base publique. `installed` n'est lu que par la garde : aucun outil ne s'en sert. |
+| Rapport de découverte | Les bases hors périmètre n'y figurent pas ; le journal en donne le nombre | Le rapport est montré par `kb_hub_rescan` et la page d'état : y nommer une base hors périmètre la révélerait. |
+
 ---
 
 ## 7. Traçabilité — exigence de test → test
@@ -1226,6 +1240,15 @@ pour vérifier la couverture sans relire la suite.
 | § 3.5 — vue `freshness` : fiches sans date de source quel que soit le seuil | `test_web.py::test_la_vue_fraicheur_garde_les_fiches_sans_date_de_source` |
 | § 5.8 — un type déclaré sans document n'est pas une faute de frappe ; tous les rôles de section décrits | `test_find.py::test_un_type_declare_sans_document_n_est_pas_une_faute_de_frappe`, `test_la_description_de_section_enumere_tous_les_roles` |
 | De bout en bout, vrai serveur en stdio : déposée par une session, vue de la suivante, intégrée après revue | `test_boucle_contribution.py::test_ce_qu_une_session_depose_est_visible_de_la_suivante_avant_la_revue` |
+
+### rév. 4.8 — niveaux et périmètre
+
+| Exigence | Test (`tests/test_perimetre.py`) |
+|---|---|
+| § 4.6.a — `shared-bases` lue dans la configuration locale, validée | `test_shared_bases_lue_dans_la_configuration_locale`, `test_shared_bases_mal_formee_refusee` |
+| § 4.6.b — sans périmètre, tout ; `shared` et `private` ; base hors périmètre = base absente | `test_sans_perimetre_toutes_les_bases`, `test_perimetre_shared`, `test_perimetre_private`, `test_le_rapport_de_decouverte_ignore_le_hors_perimetre` |
+| § 4.1 — hors périmètre, le nom d'une base privée reste un terme privé | `test_hors_perimetre_le_nom_reste_un_terme_prive` |
+| `--scope` : valeurs fermées | `test_perimetre_inconnu_refuse`, `test_option_scope_en_ligne_de_commande` |
 
 Exécution :
 

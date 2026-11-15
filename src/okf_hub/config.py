@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 import yaml
@@ -61,6 +61,12 @@ PROFILES = {
 
 DEFAULT_PROFILE = "solo"
 
+#: Périmètres d'une instance (§ 4.6.b, rév. 4.8). Sans périmètre, une instance
+#: voit toutes les bases, comme avant la rév. 4.8.
+SCOPE_SHARED = "shared"
+SCOPE_PRIVATE = "private"
+SCOPES = (SCOPE_SHARED, SCOPE_PRIVATE)
+
 
 @dataclass(frozen=True)
 class HubConfig:
@@ -77,6 +83,15 @@ class HubConfig:
     privées installées (`confidentialite`, rév. 4.4)."""
     public_bases: frozenset[str] = frozenset()
     """Bases publiques en plus des bases livrées avec un dépôt canonique."""
+    shared_bases: frozenset[str] = frozenset()
+    """Bases partagées, par `name` (§ 4.6.a, rév. 4.8). Absente = privée. Le
+    niveau vit ici, dans la configuration de l'opérateur, et jamais dans la
+    base : le gestionnaire écrit dans les bases, il ne doit pas pouvoir en
+    partager une."""
+    scope: str | None = None
+    """Périmètre de l'instance (§ 4.6.b) : `shared`, `private` ou aucun. Posé
+    par la ligne de commande (`okf-hub --scope`), jamais par un fichier : deux
+    instances d'un même hub peuvent avoir deux périmètres."""
     web: object = field(default=None, hash=False, compare=False)
     """Clé `web` telle quelle (§ 4.1, rév. 4.5) : validée par `okf-hub web` seul
     (`web.acces.WebConfig`), pour qu'une section mal écrite n'empêche pas le
@@ -127,8 +142,21 @@ class HubConfig:
             trusted_checks=trusted,
             private_terms=_liste(raw, "private-terms", path),
             public_bases=_liste(raw, "public-bases", path),
+            shared_bases=_liste(raw, "shared-bases", path),
             web=raw.get("web"),
         )
+
+    def with_scope(self, scope: str | None) -> "HubConfig":
+        """La même configuration, limitée à un périmètre (§ 4.6.b)."""
+        if scope is not None and scope not in SCOPES:
+            raise ValueError(f"périmètre inconnu '{scope}' (attendu : {', '.join(SCOPES)})")
+        return replace(self, scope=scope)
+
+    def in_scope(self, name: str) -> bool:
+        """La base `name` appartient-elle au périmètre de l'instance ?"""
+        if self.scope is None:
+            return True
+        return (name in self.shared_bases) == (self.scope == SCOPE_SHARED)
 
 
 def _liste(raw: dict, cle: str, path: Path) -> frozenset[str]:
