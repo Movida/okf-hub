@@ -684,7 +684,8 @@ aux formats connus, valeur affectée à un nom de secret (`password: …`), plus
 les expressions de `secret-patterns`. Une référence (`op://…`, `${VAR}`) n'est
 pas un secret. Le refus donne le commit, le fichier, la ligne et la règle, sans
 recopier la valeur. La poussée se fait en avance rapide seulement : si la
-réplique a divergé, rien n'est forcé. Le remote se change par
+réplique a divergé, rien n'est forcé. Rien n'est tiré de la réplique : ce qu'elle a déjà se lit
+dans son annonce de réception, la publication n'a besoin que du droit de pousser. Le remote se change par
 `publish-remote`.
 
 ### La réplique, sur l'autre machine

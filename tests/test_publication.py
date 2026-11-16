@@ -176,6 +176,26 @@ def test_divergence_jamais_forcee(poste, tmp_path):
     assert _distant(replique) == avant
 
 
+def test_une_replique_qui_refuse_toute_lecture_par_git(poste):
+    """Une réplique peut ne servir que la poussée (la lecture passant par son
+    MCP, qui applique la visibilité) : la publication ne tire jamais rien."""
+    config, base, replique = poste
+    git(base.root, "config", "remote.replica.uploadpack", "false")
+    assert publier(config, "base-ouverte").pousse
+    _commit(base, "suite.md", "# Suite\n\nUne affirmation de plus.\n")
+    bilan = publier(config, "base-ouverte")
+    assert len(bilan.commits) == 1
+    assert _distant(replique) == git(base.root, "rev-parse", "HEAD").strip()
+    assert publier(config, "base-ouverte").commits == []
+
+
+def test_replique_injoignable_refusee_sans_rien_envoyer(poste, tmp_path):
+    config, base, _ = poste
+    git(base.root, "remote", "set-url", "replica", str(tmp_path / "absente.git"))
+    with pytest.raises(PublicationRefusee, match="injoignable"):
+        publier(config, "base-ouverte")
+
+
 def test_sans_remote_refuse_avec_la_commande(poste):
     config, base, _ = poste
     git(base.root, "remote", "remove", "replica")
