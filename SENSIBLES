@@ -1,0 +1,29 @@
+# SENSIBLES d'okf-hub (Movida/okf-hub), posé par briques/integrateur/basculer.sh miroir
+# (D-2026-11-15-actions-03 : ses essais passent par le banc de l'hôte) depuis
+# Movida/architecte : briques/integrateur/sensibles/okf-hub.
+#
+# L'intégrateur le lit sur main : un changement qui touche un chemin listé ici
+# demande le go de David. Tout le reste entre sur ses essais verts (.github/essais.sh).
+# Le dépôt est PUBLIC : la garde des termes privés (crochets et module) est verrouillée avec les essais.
+# La brique connaissance de l'atelier épingle le hub à un commit (briques/connaissance/requirements.txt) :
+# rien de ce qui entre ici ne change le VPS sans une PR d'architecte.
+
+[verrou]
+# Ce qui décide de la garde : la liste elle-même et les essais qui jugent.
+/SENSIBLES
+/.github/
+# Aucun terme privé dans un dépôt public : les crochets git et le module qui les juge.
+/.githooks/
+/src/okf_hub/confidentialite.py
+
+[lot]
+# Les consignes des sessions et l'objectif : la spécification fait autorité.
+/CLAUDE.md
+/mission/
+/skills/
+/docs/SPEC-okf-bundle-hub-v0.md
+# La configuration du hub et les dépendances qui tournent sur le poste.
+/hub-config.yaml
+/.devcontainer/
+/pyproject.toml
+/uv.lock
