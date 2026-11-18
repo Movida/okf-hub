@@ -5,7 +5,7 @@ description: >
   Les séquences d'appels, le choix d'une base, et les mécanismes de recherche et
   de lecture qu'il faut comprendre pour ne pas rapatrier des documents entiers.
 tags: [kb_list, kb_search, kb_read, kb_find]
-applies-to: "rév. 4.1"
+applies-to: "rév. 4.8"
 generated:
   by: "claude-code/opus-5"
   at: 2026-08-30T00:00:00Z
@@ -28,6 +28,12 @@ verified:
       ajout des propositions en attente dans la recherche, sur demande, après
       le corpus et marquées « non intégré » ; ancienneté de la file dans kb_list
       (rév. 4.7) ; chemins relatifs au corpus, sans son répertoire en tête
+  - by: claude-code/opus-5.5
+    at: 2026-11-18T00:00:00Z
+    note: >-
+      relu contre la rév. 4.8 : la projection `select` des données déclarées
+      est décrite ; la recherche reste plein texte, le mode par le sens prévu
+      par la spécification n'est pas livré
 ---
 
 # Chercher et lire, sans gaspiller de contexte
