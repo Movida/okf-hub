@@ -3,6 +3,16 @@
 Historique des changements du corpus, groupé par date (convention OKF § 9), le
 plus récent en premier. Le gestionnaire y ajoute une ligne à chaque intégration.
 
+## 2026-11-18
+
+* **Cycle de vie** et **Rôles** : mise à jour de suivi, livrée avec le code
+  (rév. 4.8) — niveau d'une base (privée ou partagée), publication vers une
+  réplique, revue en mode agent (`okf-ranger`) et ses bornes.
+* **Chercher et lire** : projection `select` des données déclarées (rév. 4.8) ;
+  la recherche par le sens reste non livrée.
+* **Proposer** : une réplique ne reçoit pas de proposition ; une revue en mode
+  agent escalade ce qui sort de ses bornes.
+
 ## 2026-11-02
 
 * **Chercher et lire** : la recherche lit aussi, sur demande, les propositions

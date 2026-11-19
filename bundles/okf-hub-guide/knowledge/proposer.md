@@ -5,7 +5,7 @@ description: >
   Ce qui fait qu'une proposition est intégrée plutôt que rejetée, le contresens
   le plus fréquent sur schema.yaml, et comment retrouver la résolution.
 tags: [kb_propose, kb_proposal_status, kb_governance]
-applies-to: "rév. 4.1"
+applies-to: "rév. 4.8"
 generated:
   by: "claude-code/opus-5"
   at: 2026-08-30T00:00:00Z
@@ -15,6 +15,11 @@ verified:
     note: >-
       vérifier un doublon par la recherche, propositions en attente comprises
       (rév. 4.7), plutôt que par la seule liste de leurs objets
+  - by: claude-code/opus-5.5
+    at: 2026-11-18T00:00:00Z
+    note: >-
+      rév. 4.8 : une réplique ne reçoit pas de proposition, ses instructions
+      disent où proposer ; une base en mode agent peut être revue sans humain
 ---
 
 # Déposer une proposition, et en relire le verdict
@@ -106,11 +111,21 @@ proposition : les règles de la base croisent confiance et sources. Une confianc
 basse assumée, avec une bonne source, passe mieux qu'une confiance haute qu'on ne
 peut pas vérifier.
 
+## Si c'est une réplique qui te sert
+
+Une réplique ne fait que lire : `kb_propose` n'y existe pas, et ce n'est pas une
+panne. La source de chaque base est sur la machine de l'opérateur, et c'est là
+seulement qu'une proposition peut être verrouillée, commitée puis revue. Les
+instructions de la réplique disent par quelle voie proposer : suis-la, ne
+cherche pas à écrire ailleurs.
+
 ## Après le dépôt
 
-**Rien n'est intégré.** Le corpus n'a pas bougé. Ta proposition attend une revue
-humaine, qui peut prendre des jours. Ne raisonne pas comme si le fait était
-désormais dans la base.
+**Rien n'est intégré.** Le corpus n'a pas bougé. Ta proposition attend une revue,
+qui peut prendre des jours. Ne raisonne pas comme si le fait était désormais dans
+la base. Dans une base revue en mode agent, la revue passe sans humain mais dans
+des bornes fixes : ce qui en sort est escaladé et reste en attente (voir
+`roles-et-ecriture.md`).
 
 **Note l'identifiant** retourné au dépôt. C'est lui qui te permettra de retrouver
 le verdict, dans cette session ou dans une autre :
